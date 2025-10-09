@@ -3135,10 +3135,10 @@ async function setupMicrophone() {
     await initializeRadioProcessing();
     
     // 📻 PROFESSIONAL RADIO BROADCAST CHAIN 📻
-    // Mic -> Analyser -> High-Pass -> PreAmp -> Compressor -> EQ (3-band) -> De-Esser -> Limiter -> Output Gain -> Master Gain
+    // Mic -> High-Pass -> PreAmp -> Compressor -> EQ (3-band) -> De-Esser -> Limiter -> Output Gain -> Analyser (Meter) -> Master Gain
+    // Note: Analyser positioned AFTER all processing to show final output level
     // Note: Gate removed (was ineffective - just reduced gain instead of true threshold-based gating)
-    micSourceNode.connect(micAnalyser);
-    micAnalyser.connect(highPassFilter);
+    micSourceNode.connect(highPassFilter);
     highPassFilter.connect(preAmp);
     preAmp.connect(micCompressorNode!);        // Compression for consistent level
     micCompressorNode!.connect(micEqLowNode!); // EQ chain for voice optimization
@@ -3147,7 +3147,8 @@ async function setupMicrophone() {
     micEqHighNode!.connect(micDeEsserNode!);   // De-esser before limiter
     micDeEsserNode!.connect(micLimiterNode!);  // Final limiter prevents clipping
     micLimiterNode!.connect(outputGain);       // Output gain control
-    outputGain.connect(microphoneGain);        // Master microphone gain
+    outputGain.connect(micAnalyser);           // Analyser AFTER processing (shows final output)
+    micAnalyser.connect(microphoneGain);       // Master microphone gain
     
     console.log(`?? Microphone connected with enhanced audio processing (${contextSampleRate}Hz, compression, dynamic compatibility)`);
     return true;

@@ -130,7 +130,7 @@ let microphoneStream: MediaStream | null = null;
 
 // Radio Broadcast Processing Nodes
 let micCompressorNode: DynamicsCompressorNode | null = null;
-let micGateNode: GainNode | null = null;
+// micGateNode removed - was just a gain reducer, not a real noise gate
 let micEqLowNode: BiquadFilterNode | null = null;
 let micEqMidNode: BiquadFilterNode | null = null;
 let micEqHighNode: BiquadFilterNode | null = null;
@@ -141,7 +141,7 @@ let micProcessingGain: GainNode | null = null;
 // Radio Processing State
 let micProcessingState = {
   compressor: true,    // Default ON - essential for broadcast
-  gate: true,          // Default ON - reduces background noise
+  // gate removed - was ineffective (just reduced gain, didn't gate noise)
   eq: true,            // Default ON - speech optimization
   limiter: true,       // Default ON - prevents clipping
   deesser: false       // Default OFF - only when needed
@@ -2175,7 +2175,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Radio Broadcast Processing Button Event Handlers
   const micCompressorBtn = document.getElementById('mic-compressor-btn');
-  const micGateBtn = document.getElementById('mic-gate-btn');
+  // Gate button removed - feature was ineffective
   const micEqBtn = document.getElementById('mic-eq-btn');
   const micLimiterBtn = document.getElementById('mic-limiter-btn');
   const micDeEsserBtn = document.getElementById('mic-deesser-btn');
@@ -2183,11 +2183,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   micCompressorBtn?.addEventListener('click', () => {
     toggleRadioProcessing('compressor');
     micCompressorBtn.classList.toggle('active', micProcessingState.compressor);
-  });
-
-  micGateBtn?.addEventListener('click', () => {
-    toggleRadioProcessing('gate');
-    micGateBtn.classList.toggle('active', micProcessingState.gate);
   });
 
   micEqBtn?.addEventListener('click', () => {
@@ -2849,9 +2844,9 @@ async function initializeRadioProcessing(): Promise<void> {
   micCompressorNode.attack.setValueAtTime(0.001, audioContext.currentTime);   // 1ms attack
   micCompressorNode.release.setValueAtTime(0.1, audioContext.currentTime);    // 100ms release
   
-  // Noise Gate (via gain control)
-  micGateNode = audioContext.createGain();
-  micGateNode.gain.setValueAtTime(1.0, audioContext.currentTime);
+  // Note: Noise gate removed - previous implementation was just a gain reducer,
+  // not a real threshold-based gate. For true noise gating, would need 
+  // threshold detection and dynamic gain control based on signal level.
   
   // 3-Band EQ for Voice Optimization
   micEqLowNode = audioContext.createBiquadFilter();
@@ -2894,7 +2889,7 @@ async function initializeRadioProcessing(): Promise<void> {
 
 
 // Toggle radio broadcast processing
-function toggleRadioProcessing(process: 'compressor' | 'gate' | 'eq' | 'limiter' | 'deesser'): void {
+function toggleRadioProcessing(process: 'compressor' | 'eq' | 'limiter' | 'deesser'): void {
   if (!audioContext) return;
   
   micProcessingState[process] = !micProcessingState[process];
@@ -2906,14 +2901,6 @@ function toggleRadioProcessing(process: 'compressor' | 'gate' | 'eq' | 'limiter'
         // Bypass by setting ratio to 1:1 or enable aggressive compression
         micCompressorNode.ratio.setValueAtTime(isActive ? 8 : 1, audioContext.currentTime);
         console.log(`📻 COMPRESSOR: ${isActive ? 'ON (8:1 ratio)' : 'OFF (1:1 ratio)'}`);
-      }
-      break;
-      
-    case 'gate':
-      if (micGateNode) {
-        // Simple gate implementation via gain
-        micGateNode.gain.setValueAtTime(isActive ? 1.0 : 0.5, audioContext.currentTime);
-        console.log(`📻 GATE: ${isActive ? 'ON (full gain)' : 'OFF (reduced gain)'}`);
       }
       break;
       
@@ -3148,18 +3135,17 @@ async function setupMicrophone() {
     await initializeRadioProcessing();
     
     // 📻 PROFESSIONAL RADIO BROADCAST CHAIN 📻
-    // Mic -> Analyser -> High-Pass -> PreAmp -> [Radio Processing] -> Final Gain
-    // Radio Processing: Gate -> Compressor -> EQ (3-band) -> De-Esser -> Limiter
+    // Mic -> Analyser -> High-Pass -> PreAmp -> Compressor -> EQ (3-band) -> De-Esser -> Limiter -> Output Gain -> Master Gain
+    // Note: Gate removed (was ineffective - just reduced gain instead of true threshold-based gating)
     micSourceNode.connect(micAnalyser);
     micAnalyser.connect(highPassFilter);
     highPassFilter.connect(preAmp);
-    preAmp.connect(micGateNode!);          // Noise gate first
-    micGateNode!.connect(micCompressorNode!); // Then compression
-    micCompressorNode!.connect(micEqLowNode!); // EQ chain
+    preAmp.connect(micCompressorNode!);        // Compression for consistent level
+    micCompressorNode!.connect(micEqLowNode!); // EQ chain for voice optimization
     micEqLowNode!.connect(micEqMidNode!);
     micEqMidNode!.connect(micEqHighNode!);
     micEqHighNode!.connect(micDeEsserNode!);   // De-esser before limiter
-    micDeEsserNode!.connect(micLimiterNode!);  // Final limiter
+    micDeEsserNode!.connect(micLimiterNode!);  // Final limiter prevents clipping
     micLimiterNode!.connect(outputGain);       // Output gain control
     outputGain.connect(microphoneGain);        // Master microphone gain
     

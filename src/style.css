@@ -3572,67 +3572,92 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 0; /* No gap, buttons touch like effect buttons */
   margin-top: 12px;
   width: 100%;
-  max-width: 200px;
+  max-width: 100%;
   margin-left: auto;
   margin-right: auto;
 }
 
 .mic-device-dropdown {
   flex: 1;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 8px 12px;
-  color: #fff;
-  font-size: 0.9rem;
+  background: rgba(0, 0, 0, 0.95); /* Match effect button background */
+  border: 2px solid #444; /* Match effect button border */
+  border-right: none; /* Remove right border to connect with refresh button */
+  border-radius: 0;
+  border-bottom-left-radius: 2px; /* Match effect button corners */
+  border-top-left-radius: 2px;
+  padding: 0.4rem 0.5rem; /* Match effect button padding */
+  color: #888; /* Match inactive effect button text color */
+  font-size: 8px; /* Match effect button font size */
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  text-align: center; /* Center text */
+  box-shadow: 
+    0 0 3px rgba(68, 68, 68, 0.3),
+    inset 0 0 2px rgba(68, 68, 68, 0.2);
 }
 
 .mic-device-dropdown:focus {
   outline: none;
-  border-color: #ff4444;
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 0 0 2px rgba(255, 68, 68, 0.2);
+  border-color: #4CAF50; /* Green focus like active effect buttons */
+  background: rgba(76, 175, 80, 0.15);
+  color: #4CAF50;
+  box-shadow: 
+    0 0 5px rgba(76, 175, 80, 0.6),
+    inset 0 0 3px rgba(76, 175, 80, 0.4);
 }
 
 .mic-device-dropdown option {
   background: #2a2a2a;
   color: #fff;
   padding: 8px;
+  text-align: center; /* Center dropdown options */
 }
 
 .mic-refresh-button {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 8px;
-  color: #fff;
+  background: rgba(0, 0, 0, 0.95); /* Match effect button background */
+  border: 2px solid #444; /* Match effect button border */
+  border-left: none; /* Remove left border to connect with dropdown */
+  border-radius: 0;
+  border-bottom-right-radius: 2px; /* Match effect button corners */
+  border-top-right-radius: 2px;
+  padding: 0.4rem 0.5rem; /* Match effect button padding */
+  color: #888; /* Match inactive effect button icon color */
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 36px;
-  height: 36px;
+  min-width: 0;
+  height: auto;
+  box-shadow: 
+    0 0 3px rgba(68, 68, 68, 0.3),
+    inset 0 0 2px rgba(68, 68, 68, 0.2);
 }
 
 .mic-refresh-button:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.4);
-  transform: rotate(90deg);
+  background: rgba(68, 68, 68, 0.15); /* Match effect button hover */
+  border-color: #666;
+  transform: translateY(-2px); /* No rotation, just lift like effect buttons */
+  box-shadow: 
+    0 0 5px rgba(68, 68, 68, 0.4),
+    inset 0 0 3px rgba(68, 68, 68, 0.3);
 }
 
 .mic-refresh-button .material-icons {
-  font-size: 18px;
+  font-size: 11px; /* Match effect button icon size */
+  color: #666; /* Match inactive effect button icon color */
+  transition: all 0.2s ease;
 }
 
 .auto-queue-btn {

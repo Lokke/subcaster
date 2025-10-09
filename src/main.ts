@@ -835,7 +835,10 @@ function createPlayerDeckHTML(side: 'a' | 'b' | 'c' | 'd'): string {
       
       <!-- Waveform Section (Full Width) -->
       <div class="waveform-container">
-        <div class="waveform" id="waveform-${side}"></div>
+        <!-- Zoomable waveform (top, no seek) -->
+        <div class="waveform-zoom" id="waveform-${side}-zoom"></div>
+        <!-- Overview waveform (bottom, seekable) -->
+        <div class="waveform-overview" id="waveform-${side}-overview"></div>
         <div class="waveform-loading" id="waveform-loading-${side}">Loading...</div>
         <!-- Glass overlay with gradient -->
         <div class="waveform-glass-overlay"></div>
@@ -1520,8 +1523,9 @@ function formatTime(seconds: number): string {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
-// WaveSurfer instances for both players
-const waveSurfers: { [key in 'a' | 'b' | 'c' | 'd']?: WaveSurfer } = {};
+// WaveSurfer instances for both players (zoom + overview per deck)
+const waveSurfersZoom: { [key in 'a' | 'b' | 'c' | 'd']?: WaveSurfer } = {};
+const waveSurfersOverview: { [key in 'a' | 'b' | 'c' | 'd']?: WaveSurfer } = {};
 
 // Waveform zoom levels for each deck (1.0 = 100%, 2.0 = 200%, etc.)
 const waveformZoom: { [key in 'a' | 'b' | 'c' | 'd']: number } = {
@@ -1531,16 +1535,21 @@ const waveformZoom: { [key in 'a' | 'b' | 'c' | 'd']: number } = {
   d: 1.0
 };
 
-// Initialize WaveSurfer for a player with adaptive settings
+// Initialize WaveSurfer for a player with dual waveforms (zoom + overview)
 function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: number): WaveSurfer {
-  const container = document.getElementById(`waveform-${side}`);
-  if (!container) {
-    throw new Error(`Waveform container not found for ${side} player`);
+  const containerZoom = document.getElementById(`waveform-${side}-zoom`);
+  const containerOverview = document.getElementById(`waveform-${side}-overview`);
+  
+  if (!containerZoom || !containerOverview) {
+    throw new Error(`Waveform containers not found for ${side} player`);
   }
 
-  // Destroy existing wavesurfer if it exists
-  if (waveSurfers[side]) {
-    waveSurfers[side]!.destroy();
+  // Destroy existing wavesurfers if they exist
+  if (waveSurfersZoom[side]) {
+    waveSurfersZoom[side]!.destroy();
+  }
+  if (waveSurfersOverview[side]) {
+    waveSurfersOverview[side]!.destroy();
   }
 
   // Adaptive settings based on track duration
@@ -1569,69 +1578,85 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
   const progressColor = getPlayerColor(side, 'dark');
 
   // Calculate default pixels per second for zoom level 1.0
-  // This ensures the entire track fits in the container at zoom 1.0
-  const containerWidth = container.clientWidth || 500; // Fallback
+  const containerWidth = containerZoom.clientWidth || 500; // Fallback
   const estimatedDuration = trackDuration || 180; // Fallback to 3 minutes
   const minPxPerSec = containerWidth / estimatedDuration;
 
-  // Create new WaveSurfer instance with performance optimizations
-  const wavesurfer = WaveSurfer.create({
-    container: container,
+  // 1. CREATE ZOOM WAVEFORM (top, zoomable, no seek)
+  const wavesurferZoom = WaveSurfer.create({
+    container: containerZoom,
+    waveColor: waveColor,
+    progressColor: progressColor,
+    cursorColor: 'transparent', // No cursor - no seek
+    barWidth: barWidth,
+    barGap: barGap,
+    height: 60,
+    normalize: true,
+    backend: 'WebAudio',
+    minPxPerSec: minPxPerSec,
+    interact: false // Disable all interactions (no seek)
+  });
+  
+  wavesurferZoom.setVolume(0);
+  console.log(`🎨 WaveSurfer Zoom ${side} created (no seek)`);
+
+  // 2. CREATE OVERVIEW WAVEFORM (bottom, always 1.0x, seekable)
+  const wavesurferOverview = WaveSurfer.create({
+    container: containerOverview,
     waveColor: waveColor,
     progressColor: progressColor,
     cursorColor: '#ffffff',
-    barWidth: barWidth,
-    barGap: barGap,
-    height: 104, // 80px + 30% = 104px for bottom overflow
+    barWidth: 1, // Thinner bars for overview
+    barGap: 0,
+    height: 20,
     normalize: true,
     backend: 'WebAudio',
-    minPxPerSec: minPxPerSec // Set initial zoom so full track fits
+    minPxPerSec: minPxPerSec, // Always show full track
+    interact: true // Enable seek interactions
   });
   
-  // WaveSurfer muten - es soll nur Visualization sein, kein Audio output
-  wavesurfer.setVolume(0);
-  console.log(`🎨 WaveSurfer ${side} set to mute (visualization only)`);
+  wavesurferOverview.setVolume(0);
+  console.log(`🎨 WaveSurfer Overview ${side} created (seekable)`);
 
-  // Add mouse wheel zoom handler
-  container.addEventListener('wheel', (e: WheelEvent) => {
-    e.preventDefault(); // Prevent page scroll
+  // Add mouse wheel zoom handler ONLY to zoom waveform container
+  containerZoom.addEventListener('wheel', (e: WheelEvent) => {
+    e.preventDefault();
     
-    const zoomDelta = -e.deltaY * 0.001; // Negative because wheel down = zoom out
+    const zoomDelta = -e.deltaY * 0.001;
     waveformZoom[side] = Math.max(1.0, Math.min(8.0, waveformZoom[side] + zoomDelta));
     
-    // Apply zoom to WaveSurfer
-    // WaveSurfer.zoom() expects pixels per second
-    // We need to recalculate based on actual track duration when available
     const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
     const actualDuration = audio?.duration || estimatedDuration;
-    
-    // Calculate base pps for zoom 1.0 (entire track visible)
     const basePxPerSec = containerWidth / actualDuration;
-    
-    // Apply zoom multiplier
     const zoomedPxPerSec = basePxPerSec * waveformZoom[side];
     
-    wavesurfer.zoom(zoomedPxPerSec);
-    
-    // Show zoom indicator
+    wavesurferZoom.zoom(zoomedPxPerSec);
     showZoomIndicator(side, waveformZoom[side]);
     
-    console.log(`🔍 Deck ${side.toUpperCase()}: Zoom ${waveformZoom[side].toFixed(2)}x (${zoomedPxPerSec.toFixed(1)} px/s, duration: ${actualDuration.toFixed(1)}s)`);
+    console.log(`🔍 Deck ${side.toUpperCase()}: Zoom ${waveformZoom[side].toFixed(2)}x`);
   }, { passive: false });
 
-  waveSurfers[side] = wavesurfer;
-  return wavesurfer;
+  waveSurfersZoom[side] = wavesurferZoom;
+  waveSurfersOverview[side] = wavesurferOverview;
+  
+  return wavesurferZoom; // Return zoom waveform as primary
 }
 
 // Reset WaveSurfer for a new track
 function resetWaveform(side: 'a' | 'b' | 'c' | 'd') {
-  const wavesurfer = waveSurfers[side];
-  if (wavesurfer) {
-    // Stop playback and reset to beginning
-    wavesurfer.stop();
-    wavesurfer.seekTo(0);
-    console.log(`Waveform reset for ${side} player`);
+  const wavesurferZoom = waveSurfersZoom[side];
+  const wavesurferOverview = waveSurfersOverview[side];
+  
+  if (wavesurferZoom) {
+    wavesurferZoom.stop();
+    wavesurferZoom.seekTo(0);
   }
+  if (wavesurferOverview) {
+    wavesurferOverview.stop();
+    wavesurferOverview.seekTo(0);
+  }
+  
+  console.log(`Waveform reset for ${side} player`);
   
   // Hide loading indicator if it's visible
   const loadingElement = document.getElementById(`waveform-loading-${side}`);
@@ -1676,33 +1701,44 @@ function showZoomIndicator(side: 'a' | 'b' | 'c' | 'd', zoomLevel: number) {
 
 // Completely clear WaveSurfer (for eject)
 function clearWaveform(side: 'a' | 'b' | 'c' | 'd') {
-  const wavesurfer = waveSurfers[side];
-  if (wavesurfer) {
-    // Destroy the waveform completely
-    wavesurfer.destroy();
-    delete waveSurfers[side];
-    
-    // Clear the container visually
-    const container = document.getElementById(`waveform-${side}`);
-    if (container) {
-      container.innerHTML = '';
-      container.style.opacity = '1';
-      
-      // Remove any lingering error indicators
-      const errorIndicator = document.getElementById(`waveform-error-${side}`);
-      if (errorIndicator && errorIndicator.parentNode) {
-        errorIndicator.remove();
-      }
-    }
-    
-    // Hide loading indicator
-    const loadingElement = document.getElementById(`waveform-loading-${side}`);
-    if (loadingElement) {
-      loadingElement.classList.remove('visible');
-    }
-    
-    console.log(`🗑️ Waveform completely cleared for ${side} player`);
+  const wavesurferZoom = waveSurfersZoom[side];
+  const wavesurferOverview = waveSurfersOverview[side];
+  
+  if (wavesurferZoom) {
+    wavesurferZoom.destroy();
+    delete waveSurfersZoom[side];
   }
+  if (wavesurferOverview) {
+    wavesurferOverview.destroy();
+    delete waveSurfersOverview[side];
+  }
+  
+  // Clear the containers visually
+  const containerZoom = document.getElementById(`waveform-${side}-zoom`);
+  const containerOverview = document.getElementById(`waveform-${side}-overview`);
+  
+  if (containerZoom) {
+    containerZoom.innerHTML = '';
+    containerZoom.style.opacity = '1';
+  }
+  if (containerOverview) {
+    containerOverview.innerHTML = '';
+    containerOverview.style.opacity = '1';
+  }
+  
+  // Remove any lingering error indicators
+  const errorIndicator = document.getElementById(`waveform-error-${side}`);
+  if (errorIndicator && errorIndicator.parentNode) {
+    errorIndicator.remove();
+  }
+  
+  // Hide loading indicator
+  const loadingElement = document.getElementById(`waveform-loading-${side}`);
+  if (loadingElement) {
+    loadingElement.classList.remove('visible');
+  }
+  
+  console.log(`🗑️ Waveform completely cleared for ${side} player`);
 }
 
 // Load audio file into WaveSurfer for a player
@@ -1713,12 +1749,12 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
   resetWaveform(side);
   
   // Initialize WaveSurfer if not exists (with adaptive settings)
-  if (!waveSurfers[side]) {
+  if (!waveSurfersZoom[side] || !waveSurfersOverview[side]) {
     initializeWaveSurfer(side, trackDuration);
   }
 
-  const wavesurfer = waveSurfers[side]!;
-  const container = document.getElementById(`waveform-${side}`);
+  const wavesurferZoom = waveSurfersZoom[side]!;
+  const wavesurferOverview = waveSurfersOverview[side]!;
   
   // Show the existing loading indicator and update it
   const loadingIndicator = document.getElementById(`waveform-loading-${side}`);
@@ -1727,13 +1763,8 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
     loadingIndicator.textContent = 'Loading waveform...';
   }
 
-  // Progressive loading events
-  let loadingProgress = 0;
-  
-  wavesurfer.on('loading', (percent: number) => {
-    loadingProgress = percent;
-    // Removed waveform loading percentage from console log
-    
+  // Progressive loading events (use overview for progress tracking)
+  wavesurferOverview.on('loading', (percent: number) => {
     const loadingElement = document.getElementById(`waveform-loading-${side}`);
     if (loadingElement) {
       loadingElement.textContent = `Loading waveform... ${Math.round(percent)}%`;
@@ -1741,15 +1772,16 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
     
     // Show partial waveform as it loads (visual feedback)
     if (percent > 10) {
-      const container = document.getElementById(`waveform-${side}`);
-      if (container) {
-        container.style.opacity = `${Math.min(percent / 100 + 0.3, 1)}`;
-      }
+      const containerZoom = document.getElementById(`waveform-${side}-zoom`);
+      const containerOverview = document.getElementById(`waveform-${side}-overview`);
+      const opacity = Math.min(percent / 100 + 0.3, 1);
+      if (containerZoom) containerZoom.style.opacity = `${opacity}`;
+      if (containerOverview) containerOverview.style.opacity = `${opacity}`;
     }
   });
 
-  wavesurfer.on('ready', () => {
-    console.log(`✅ Waveform ready for ${side} player - progress reset to 0`);
+  wavesurferOverview.on('ready', () => {
+    console.log(`✅ Overview Waveform ready for ${side} player`);
     
     // Hide loading indicator
     const loadingElement = document.getElementById(`waveform-loading-${side}`);
@@ -1758,39 +1790,44 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
     }
     
     // Ensure full opacity
-    const container = document.getElementById(`waveform-${side}`);
-    if (container) {
-      container.style.opacity = '1';
-    }
+    const containerZoom = document.getElementById(`waveform-${side}-zoom`);
+    const containerOverview = document.getElementById(`waveform-${side}-overview`);
+    if (containerZoom) containerZoom.style.opacity = '1';
+    if (containerOverview) containerOverview.style.opacity = '0.7'; // Slightly dimmed
     
     // Reset zoom to 1.0 and recalculate with actual track duration
     waveformZoom[side] = 1.0;
     const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-    const actualDuration = audio?.duration || wavesurfer.getDuration();
+    const actualDuration = audio?.duration || wavesurferOverview.getDuration();
     
     if (actualDuration > 0) {
-      const containerWidth = container?.clientWidth || 500;
+      const containerWidth = containerZoom?.clientWidth || 500;
       const correctMinPxPerSec = containerWidth / actualDuration;
-      wavesurfer.zoom(correctMinPxPerSec);
+      wavesurferZoom.zoom(correctMinPxPerSec);
       console.log(`🔍 Deck ${side.toUpperCase()}: Reset zoom to 1.0x (${correctMinPxPerSec.toFixed(2)} px/s for ${actualDuration.toFixed(1)}s track)`);
     }
     
-    // Ensure we're at the beginning
-    wavesurfer.seekTo(0);
+    // Ensure both are at the beginning
+    wavesurferZoom.seekTo(0);
+    wavesurferOverview.seekTo(0);
   });
 
-  // Sync WaveSurfer seek with audio element (critical for zoomed waveform clicks!)
-  wavesurfer.on('interaction', (progress: number) => {
+  // Sync overview waveform click-to-seek with audio element
+  wavesurferOverview.on('interaction', (progress: number) => {
     const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
     if (audio && audio.duration) {
       const seekTime = progress * audio.duration;
       audio.currentTime = seekTime;
-      console.log(`🎯 Deck ${side.toUpperCase()}: WaveSurfer click-to-seek → ${seekTime.toFixed(2)}s (${(progress * 100).toFixed(1)}%)`);
+      
+      // Also update zoom waveform position
+      wavesurferZoom.seekTo(progress);
+      
+      console.log(`🎯 Deck ${side.toUpperCase()}: Overview click-to-seek → ${seekTime.toFixed(2)}s (${(progress * 100).toFixed(1)}%)`);
     }
   });
 
-  wavesurfer.on('error', (error) => {
-    console.error(`❌ Waveform error for ${side} player:`, error);
+  wavesurferOverview.on('error', (error: any) => {
+    console.error(`❌ Overview waveform error for ${side} player:`, error);
     
     // Hide loading indicator on error
     const loadingElement = document.getElementById(`waveform-loading-${side}`);
@@ -1799,9 +1836,9 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
     }
     
     // Show temporary error state (2 seconds)
-    const container = document.getElementById(`waveform-${side}`);
-    if (container) {
-      container.style.opacity = '0.5';
+    const containerOverview = document.getElementById(`waveform-${side}-overview`);
+    if (containerOverview) {
+      containerOverview.style.opacity = '0.5';
       const errorIndicator = document.createElement('div');
       errorIndicator.id = `waveform-error-${side}`;
       errorIndicator.style.cssText = `
@@ -1815,20 +1852,21 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
         font-weight: bold;
       `;
       errorIndicator.textContent = 'Waveform load failed - retrying...';
-      container.appendChild(errorIndicator);
+      containerOverview.appendChild(errorIndicator);
       
       // Remove error message after 2 seconds and retry
       setTimeout(() => {
         if (errorIndicator && errorIndicator.parentNode) {
           errorIndicator.remove();
         }
-        container.style.opacity = '1';
+        containerOverview.style.opacity = '0.7';
         
         // Retry loading the waveform
         console.log(`🔄 Retrying waveform load for ${side} player`);
         setTimeout(() => {
           try {
-            wavesurfer.load(audioUrl);
+            wavesurferZoom.load(audioUrl);
+            wavesurferOverview.load(audioUrl);
           } catch (retryError) {
             console.error(`❌ Retry failed for ${side} waveform:`, retryError);
           }
@@ -1837,15 +1875,17 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
     }
   });
 
-  // Load the new audio file - this will trigger the loading events
-  wavesurfer.load(audioUrl);
+  // Load the new audio file into BOTH waveforms
+  wavesurferZoom.load(audioUrl);
+  wavesurferOverview.load(audioUrl);
 }
 
 // Sync WaveSurfer with HTML audio element
 // WaveSurfer Synchronisation (currently unused, but kept for future enhancement)
 function syncWaveSurferWithAudio(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) {
-  const wavesurfer = waveSurfers[side];
-  if (!wavesurfer) return;
+  const wavesurferZoom = waveSurfersZoom[side];
+  const wavesurferOverview = waveSurfersOverview[side];
+  if (!wavesurferZoom || !wavesurferOverview) return;
   
   // Flag to prevent sync loops
   let syncing = false;
@@ -1855,25 +1895,31 @@ function syncWaveSurferWithAudio(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioEl
     play: () => {
       if (syncing) return;
       syncing = true;
-      // Only sync if WaveSurfer is not already playing to avoid loop
-      if (!wavesurfer.isPlaying()) {
-        wavesurfer.play();
+      // Sync both waveforms
+      if (!wavesurferZoom.isPlaying()) {
+        wavesurferZoom.play();
+      }
+      if (!wavesurferOverview.isPlaying()) {
+        wavesurferOverview.play();
       }
       syncing = false;
     },
     pause: () => {
       if (syncing) return;
       syncing = true;
-      // Only sync if WaveSurfer is playing to avoid loop
-      if (wavesurfer.isPlaying()) {
-        wavesurfer.pause();
+      if (wavesurferZoom.isPlaying()) {
+        wavesurferZoom.pause();
+      }
+      if (wavesurferOverview.isPlaying()) {
+        wavesurferOverview.pause();
       }
       syncing = false;
     },
     seeked: () => {
       if (syncing) return;
       const progress = audio.currentTime / audio.duration;
-      wavesurfer.seekTo(progress || 0);
+      wavesurferZoom.seekTo(progress || 0);
+      wavesurferOverview.seekTo(progress || 0);
     },
     loadstart: () => {
       resetWaveform(side);
@@ -7108,7 +7154,8 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
   
   // Control Button Event Listeners
   playPauseBtn?.addEventListener('click', () => {
-    const wavesurfer = waveSurfers[side];
+    const wavesurferZoom = waveSurfersZoom[side];
+    const wavesurferOverview = waveSurfersOverview[side];
     
     // HTML Audio controls playback, WaveSurfer follows for visualization
     if (audio.paused) {
@@ -7118,12 +7165,19 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
           showError(`Cannot play on Player ${side.toUpperCase()}: ${e.message}`);
         });
         
-        // Sync WaveSurfer visualization if available
-        if (wavesurfer) {
+        // Sync both WaveSurfer visualizations if available
+        if (wavesurferZoom) {
           try {
-            wavesurfer.play();
+            wavesurferZoom.play();
           } catch (e) {
             console.warn(`?? WaveSurfer sync error on Player ${side}:`, e);
+          }
+        }
+        if (wavesurferOverview) {
+          try {
+            wavesurferOverview.play();
+          } catch (e) {
+            console.warn(`?? WaveSurfer Overview sync error on Player ${side}:`, e);
           }
         }
         
@@ -7137,12 +7191,19 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
     } else {
       audio.pause();
       
-      // Sync WaveSurfer visualization if available
-      if (wavesurfer) {
+      // Sync both WaveSurfer visualizations if available
+      if (wavesurferZoom) {
         try {
-          wavesurfer.pause();
+          wavesurferZoom.pause();
         } catch (e) {
           console.warn(`?? WaveSurfer sync error on Player ${side}:`, e);
+        }
+      }
+      if (wavesurferOverview) {
+        try {
+          wavesurferOverview.pause();
+        } catch (e) {
+          console.warn(`?? WaveSurfer Overview sync error on Player ${side}:`, e);
         }
       }
       
@@ -7181,14 +7242,24 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
     if (audio.src) {
       audio.currentTime = 0;
       
-      // WaveSurfer Progressbar auch zurücksetzen
-      const wavesurfer = waveSurfers[side];
-      if (wavesurfer) {
+      // WaveSurfer Progressbar auch zurücksetzen für beide Waveforms
+      const wavesurferZoom = waveSurfersZoom[side];
+      const wavesurferOverview = waveSurfersOverview[side];
+      
+      if (wavesurferZoom) {
         try {
-          wavesurfer.seekTo(0);
-          console.log(`🌊 WaveSurfer ${side.toUpperCase()} reset to position 0`);
+          wavesurferZoom.seekTo(0);
+          console.log(`🌊 WaveSurfer Zoom ${side.toUpperCase()} reset to position 0`);
         } catch (e) {
-          console.warn(`⚠️ WaveSurfer reset error on Player ${side}:`, e);
+          console.warn(`⚠️ WaveSurfer Zoom reset error on Player ${side}:`, e);
+        }
+      }
+      if (wavesurferOverview) {
+        try {
+          wavesurferOverview.seekTo(0);
+          console.log(`🌊 WaveSurfer Overview ${side.toUpperCase()} reset to position 0`);
+        } catch (e) {
+          console.warn(`⚠️ WaveSurfer Overview reset error on Player ${side}:`, e);
         }
       }
       

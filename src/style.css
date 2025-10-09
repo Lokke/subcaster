@@ -1380,6 +1380,37 @@ body {
   top: 0; /* Start at container top (0px) */
 }
 
+/* Dual waveform layout: zoom on top, overview on bottom */
+.waveform-container .waveform-zoom {
+  height: 58px; /* ~72.5% of 80px total (leaving 2px gap) */
+  background: transparent;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  pointer-events: none; /* Disable clicking - no seek in zoom view */
+}
+
+.waveform-container .waveform-overview {
+  height: 20px; /* ~25% of 80px total */
+  background: rgba(0, 0, 0, 0.3); /* Slightly darker background for distinction */
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  cursor: pointer; /* Enable clicking - seek in overview */
+  opacity: 0.7;
+  border-top: 1px solid rgba(255, 255, 255, 0.1); /* Subtle separator */
+  transition: opacity 0.2s ease;
+}
+
+.waveform-container .waveform-overview:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.2);
+}
+
 .waveform-container .waveform canvas {
   border-radius: 4px !important;
   height: 100% !important; /* Normal 100% height */

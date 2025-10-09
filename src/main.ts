@@ -1160,71 +1160,36 @@ function setupVolumeControls() {
         const sliderValue = parseFloat(target.value); // 0-100 from slider
         const volume = sliderValue / 100; // Convert to 0-1 for audio.volume
         audio.volume = volume;
-        // Convert slider value (0-100) to meter level (0-8) for visual feedback
-        const meterLevel = Math.floor((sliderValue / 100) * 8);
-        updateVolumeMeter(`volume-meter-${side}`, meterLevel);
+        // Note: Volume meter is driven by WebAudio analyser, not by slider value
+        // This ensures meter shows actual audio signal, not just slider position
       });
       
       // Audio level monitoring for volume meter
       if (audio) {
-        audio.addEventListener('play', () => {
-          startVolumeMeterAnimation(side);
-        });
+        // Volume meters are now exclusively driven by WebAudio analysers
+        // Started via startVolumeMeter() which uses real audio signal data
+        // No need for play/pause/ended event handlers here anymore
         
-        audio.addEventListener('pause', () => {
-          stopVolumeMeterAnimation(side);
-        });
-        
-        audio.addEventListener('ended', () => {
-          stopVolumeMeterAnimation(side);
-        });
+        // Note: The WebAudio-based meters in startVolumeMeter() automatically
+        // handle pause/mute states by reading actual audio data (which will be silent)
       }
     }
   });
 }
 
-// Animate Volume Meter Based on Audio
+// DEPRECATED: Legacy volume meter animation functions
+// These are replaced by WebAudio-based real-time analysis in startVolumeMeter()
+// Keeping for backwards compatibility but should not be used
 function startVolumeMeterAnimation(side: string) {
-  const meterId = `volume-meter-${side}`;
-  if (volumeMeterIntervals[meterId]) {
-    clearInterval(volumeMeterIntervals[meterId]);
-  }
-  
-  const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-  if (!audio) return;
-  
-  volumeMeterIntervals[meterId] = setInterval(() => {
-    if (audio.paused) {
-      stopVolumeMeterAnimation(side);
-      return;
-    }
-    
-    // Simulate audio level animation
-    const baseLevel = audio.volume;
-    const randomVariation = Math.random() * 0.3;
-    const currentLevel = Math.min(1, baseLevel + randomVariation);
-    
-    // Convert volume (0-1) to meter level (0-8)
-    const meterLevel = Math.floor(currentLevel * 8);
-    updateVolumeMeter(meterId, meterLevel);
-  }, 100);
+  console.warn(`⚠️ startVolumeMeterAnimation() is deprecated - use startVolumeMeter() instead`);
+  // Intentionally disabled - meters should only be driven by WebAudio analysers
+  return;
 }
 
 function stopVolumeMeterAnimation(side: string) {
-  const meterId = `volume-meter-${side}`;
-  if (volumeMeterIntervals[meterId]) {
-    clearInterval(volumeMeterIntervals[meterId]);
-    delete volumeMeterIntervals[meterId];
-  }
-  
-  // Reset meter to show only volume level
-  const volumeSlider = document.getElementById(`volume-${side}`) as HTMLInputElement;
-  if (volumeSlider) {
-    // Convert slider value (0-100) to meter level (0-8)
-    const sliderValue = parseFloat(volumeSlider.value) / 100; // Convert to 0-1
-    const meterLevel = Math.floor(sliderValue * 8);
-    updateVolumeMeter(meterId, meterLevel);
-  }
+  console.warn(`⚠️ stopVolumeMeterAnimation() is deprecated - WebAudio meters handle pause/stop automatically`);
+  // Intentionally disabled - meters should only be driven by WebAudio analysers
+  return;
 }
 
 // Consolidated Player System Initialization

@@ -1756,6 +1756,10 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
   const wavesurferZoom = waveSurfersZoom[side]!;
   const wavesurferOverview = waveSurfersOverview[side]!;
   
+  // Get container elements for direct event handling
+  const containerZoom = document.getElementById(`waveform-${side}-zoom`);
+  const containerOverview = document.getElementById(`waveform-${side}-overview`);
+  
   // Show the existing loading indicator and update it
   const loadingIndicator = document.getElementById(`waveform-loading-${side}`);
   if (loadingIndicator) {
@@ -1813,18 +1817,31 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
   });
 
   // Sync overview waveform click-to-seek with audio element
-  wavesurferOverview.on('interaction', (progress: number) => {
-    const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-    if (audio && audio.duration) {
-      const seekTime = progress * audio.duration;
+  // Use click event directly for more reliable seek
+  if (containerOverview) {
+    containerOverview.addEventListener('click', (e: MouseEvent) => {
+      const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+      if (!audio || !audio.duration) return;
+      
+      // Calculate click position relative to container
+      const rect = containerOverview.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const progress = clickX / rect.width;
+      
+      // Clamp progress between 0 and 1
+      const clampedProgress = Math.max(0, Math.min(1, progress));
+      const seekTime = clampedProgress * audio.duration;
+      
+      // Update audio position
       audio.currentTime = seekTime;
       
-      // Also update zoom waveform position
-      wavesurferZoom.seekTo(progress);
+      // Update both waveforms
+      wavesurferZoom.seekTo(clampedProgress);
+      wavesurferOverview.seekTo(clampedProgress);
       
-      console.log(`🎯 Deck ${side.toUpperCase()}: Overview click-to-seek → ${seekTime.toFixed(2)}s (${(progress * 100).toFixed(1)}%)`);
-    }
-  });
+      console.log(`🎯 Deck ${side.toUpperCase()}: Overview click-to-seek → ${seekTime.toFixed(2)}s (${(clampedProgress * 100).toFixed(1)}%)`);
+    });
+  }
 
   wavesurferOverview.on('error', (error: any) => {
     console.error(`❌ Overview waveform error for ${side} player:`, error);

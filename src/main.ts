@@ -620,7 +620,7 @@ async function initializeAudioMixing() {
     
     // Microphone Gain Nodes
     microphoneGain = audioContext.createGain();
-    microphoneGain.gain.value = 0; // Standardmäßig stumm (wird über Button aktiviert)
+    microphoneGain.gain.value = 1.0; // Start at 100% (matches slider default)
     
     // Microphone Monitor Gain (separate switch for self-monitoring)
     const microphoneMonitorGain = audioContext.createGain();

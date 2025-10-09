@@ -2143,8 +2143,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const audioInputs = devices.filter(device => device.kind === 'audioinput');
       
-      // Clear existing options
-      micDeviceSelect.innerHTML = '<option value="">Select microphone...</option>';
+      // Clear existing options (no placeholder option)
+      micDeviceSelect.innerHTML = '';
       
       // Add devices to dropdown
       audioInputs.forEach(device => {
@@ -2157,10 +2157,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       
       console.log(`🎤 Found ${audioInputs.length} microphone devices`);
       
-      // Auto-select first device if none selected
-      if (!selectedMicDeviceId && audioInputs.length > 0) {
+      // Always auto-select first device
+      if (audioInputs.length > 0) {
         selectedMicDeviceId = audioInputs[0].deviceId;
         micDeviceSelect.value = selectedMicDeviceId;
+        console.log(`🎤 Auto-selected first microphone: ${formatMicrophoneName(audioInputs[0].label || 'Microphone 1')}`);
       }
       
     } catch (error) {

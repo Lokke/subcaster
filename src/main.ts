@@ -1048,9 +1048,11 @@ async function handleWizardClick(playerLetter: string) {
         // Start with dice animation
         wizardIcon.style.display = 'none';
         diceAnimation.style.display = 'block';
+        loadingIcon.style.display = 'none';
         
         // After dice animation (600ms), switch to loading spinner
         setTimeout(() => {
+          wizardIcon.style.display = 'none'; // Keep wizard icon hidden
           diceAnimation.style.display = 'none';
           loadingIcon.style.display = 'block';
         }, 600);

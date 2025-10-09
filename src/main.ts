@@ -6995,9 +6995,13 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
       updateTimeDisplay(side, audio.currentTime, audio.duration);
       
       // ⭐ EXPLOSION SYSTEM: Check for track ending (last 15 seconds)
+      // Only trigger blinking if track is actually playing (not paused/stopped)
       const timeRemaining = audio.duration - audio.currentTime;
-      if (timeRemaining <= 15 && timeRemaining > 0) {
+      if (timeRemaining <= 15 && timeRemaining > 0 && !audio.paused) {
         handleTrackEnding(side, timeRemaining);
+      } else if (timeRemaining > 15 || audio.paused) {
+        // Clear blinking if we're not near the end or if paused
+        clearWaveformBlinking(side);
       }
       
       // WaveSurfer progress is automatically synced

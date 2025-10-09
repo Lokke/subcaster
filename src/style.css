@@ -3578,6 +3578,8 @@ body {
   max-width: 100%;
   margin-left: auto;
   margin-right: auto;
+  overflow: hidden; /* Prevent overflow */
+  min-width: 0; /* Allow shrinking */
 }
 
 .mic-device-dropdown {
@@ -3597,10 +3599,11 @@ body {
   font-family: inherit;
   cursor: pointer;
   transition: all 0.2s ease;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
+  overflow: hidden; /* Prevent text overflow */
+  text-overflow: ellipsis; /* Show ... for long text */
+  white-space: nowrap; /* Don't wrap to new line */
+  min-width: 0; /* Allow shrinking below content size */
+  max-width: 100%; /* Never exceed container width */
   text-align: center; /* Center text */
   box-shadow: 
     0 0 3px rgba(68, 68, 68, 0.3),
@@ -3638,7 +3641,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 0;
+  min-width: 24px; /* Fixed minimum width */
+  max-width: 24px; /* Fixed maximum width */
+  width: 24px; /* Fixed width */
+  flex-shrink: 0; /* Never shrink */
   height: auto;
   box-shadow: 
     0 0 3px rgba(68, 68, 68, 0.3),

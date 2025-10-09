@@ -1523,6 +1523,14 @@ function formatTime(seconds: number): string {
 // WaveSurfer instances for both players
 const waveSurfers: { [key in 'a' | 'b' | 'c' | 'd']?: WaveSurfer } = {};
 
+// Waveform zoom levels for each deck (1.0 = 100%, 2.0 = 200%, etc.)
+const waveformZoom: { [key in 'a' | 'b' | 'c' | 'd']: number } = {
+  a: 1.0,
+  b: 1.0,
+  c: 1.0,
+  d: 1.0
+};
+
 // Initialize WaveSurfer for a player with adaptive settings
 function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: number): WaveSurfer {
   const container = document.getElementById(`waveform-${side}`);
@@ -1575,7 +1583,33 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
   
   // WaveSurfer muten - es soll nur Visualization sein, kein Audio output
   wavesurfer.setVolume(0);
-  console.log(`?? WaveSurfer ${side} set to mute (visualization only)`);
+  console.log(`🎨 WaveSurfer ${side} set to mute (visualization only)`);
+
+  // Add mouse wheel zoom handler
+  container.addEventListener('wheel', (e: WheelEvent) => {
+    e.preventDefault(); // Prevent page scroll
+    
+    const zoomDelta = -e.deltaY * 0.001; // Negative because wheel down = zoom out
+    waveformZoom[side] = Math.max(1.0, Math.min(8.0, waveformZoom[side] + zoomDelta));
+    
+    // Apply zoom to WaveSurfer
+    // WaveSurfer.zoom() expects pixels per second
+    // Calculate: at zoom 1.0, if track is 180s and container is 500px, that's ~2.78 pps
+    // At zoom 2.0, we want 5.56 pps (double), etc.
+    const containerWidth = container.clientWidth;
+    const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+    const duration = audio?.duration || 180; // Fallback to 3 minutes
+    
+    const basePixelsPerSecond = containerWidth / duration;
+    const zoomedPixelsPerSecond = basePixelsPerSecond * waveformZoom[side];
+    
+    wavesurfer.zoom(zoomedPixelsPerSecond);
+    
+    // Show zoom indicator
+    showZoomIndicator(side, waveformZoom[side]);
+    
+    console.log(`🔍 Deck ${side.toUpperCase()}: Zoom ${waveformZoom[side].toFixed(2)}x (${zoomedPixelsPerSecond.toFixed(1)} px/s)`);
+  }, { passive: false });
 
   waveSurfers[side] = wavesurfer;
   return wavesurfer;
@@ -1596,6 +1630,40 @@ function resetWaveform(side: 'a' | 'b' | 'c' | 'd') {
   if (loadingElement) {
     loadingElement.classList.remove('visible');
   }
+}
+
+// Show zoom level indicator with fade in/out
+let zoomIndicatorTimeouts: { [key in 'a' | 'b' | 'c' | 'd']?: NodeJS.Timeout } = {};
+
+function showZoomIndicator(side: 'a' | 'b' | 'c' | 'd', zoomLevel: number) {
+  let indicator = document.getElementById(`zoom-indicator-${side}`);
+  
+  // Create indicator if it doesn't exist
+  if (!indicator) {
+    indicator = document.createElement('div');
+    indicator.id = `zoom-indicator-${side}`;
+    indicator.className = 'zoom-indicator';
+    const waveformContainer = document.querySelector(`#waveform-${side}`)?.parentElement;
+    if (waveformContainer) {
+      waveformContainer.appendChild(indicator);
+    }
+  }
+  
+  // Update text
+  indicator.textContent = `${zoomLevel.toFixed(1)}x`;
+  
+  // Show indicator
+  indicator.classList.add('visible');
+  
+  // Clear existing timeout
+  if (zoomIndicatorTimeouts[side]) {
+    clearTimeout(zoomIndicatorTimeouts[side]);
+  }
+  
+  // Hide after 1 second
+  zoomIndicatorTimeouts[side] = setTimeout(() => {
+    indicator?.classList.remove('visible');
+  }, 1000);
 }
 
 // Completely clear WaveSurfer (for eject)

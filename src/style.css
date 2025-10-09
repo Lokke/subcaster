@@ -1830,6 +1830,34 @@ body {
   border-radius: 8px !important;
 }
 
+/* Zoom Indicator - Shows current zoom level */
+.zoom-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.9);
+  border: 2px solid #4CAF50;
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-size: 24px;
+  font-weight: bold;
+  color: #4CAF50;
+  font-family: 'Source Code Pro', monospace;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  box-shadow: 
+    0 0 10px rgba(76, 175, 80, 0.5),
+    inset 0 0 5px rgba(76, 175, 80, 0.2);
+  text-shadow: 0 0 8px rgba(76, 175, 80, 0.8);
+}
+
+.zoom-indicator.visible {
+  opacity: 1;
+}
+
 /* Progress is now handled by WaveSurfer internally */
 
 .volume-control input[type="range"]::-moz-range-thumb {

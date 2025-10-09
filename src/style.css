@@ -2952,9 +2952,9 @@ body {
 /* Microphone Effects Container - Positioned at outer edges */
 .mic-effects-container {
   position: absolute;
-  left: -2px; /* Align with border edge */
-  right: -2px; /* Align with border edge */
-  bottom: -20px; /* Extend beyond the border edge */
+  left: -2px; /* Align exactly with mixer border edge */
+  right: -2px; /* Align exactly with mixer border edge */
+  bottom: -42px; /* Position completely outside mixer border */
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2970,7 +2970,7 @@ body {
   gap: 0.2rem;
   background: rgba(0, 0, 0, 0.95);
   padding: 0.4rem 0.5rem;
-  border: 2px solid #444;
+  border: 2px solid #444; /* Inactive: same gray as mixer border */
   border-radius: 0; /* Straight edges, no tilt */
   font-family: inherit;
   font-size: 8px;
@@ -2985,20 +2985,26 @@ body {
   min-width: 0; /* Allow shrinking */
   white-space: nowrap; /* Prevent text wrapping */
   overflow: hidden; /* Hide any overflow */
+  box-shadow: 
+    0 0 3px rgba(68, 68, 68, 0.3),
+    inset 0 0 2px rgba(68, 68, 68, 0.2);
 }
 
 .mic-effect-button:hover {
   border-color: #666;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(68, 68, 68, 0.15);
   transform: translateY(-2px);
+  box-shadow: 
+    0 0 5px rgba(68, 68, 68, 0.4),
+    inset 0 0 3px rgba(68, 68, 68, 0.3);
 }
 
 .mic-effect-button.active {
-  border-color: #ff6600;
-  background: rgba(255, 102, 0, 0.15);
+  border-color: #4CAF50; /* Active: same green as usernames */
+  background: rgba(76, 175, 80, 0.15);
   box-shadow: 
-    0 0 3px rgba(255, 102, 0, 0.6),
-    inset 0 0 2px rgba(255, 102, 0, 0.4);
+    0 0 5px rgba(76, 175, 80, 0.6),
+    inset 0 0 3px rgba(76, 175, 80, 0.4);
 }
 
 /* Individual button pulsing animations */
@@ -3026,75 +3032,75 @@ body {
 @keyframes subtlePulse1 {
   0%, 100% { 
     box-shadow: 
-      0 0 3px rgba(255, 102, 0, 0.6),
-      inset 0 0 2px rgba(255, 102, 0, 0.4);
+      0 0 5px rgba(76, 175, 80, 0.6),
+      inset 0 0 3px rgba(76, 175, 80, 0.4);
   }
   50% { 
     box-shadow: 
-      0 0 5px rgba(255, 102, 0, 0.8),
-      inset 0 0 3px rgba(255, 102, 0, 0.5);
+      0 0 8px rgba(76, 175, 80, 0.8),
+      inset 0 0 5px rgba(76, 175, 80, 0.5);
   }
 }
 
 @keyframes subtlePulse2 {
   0%, 100% { 
     box-shadow: 
-      0 0 3px rgba(255, 102, 0, 0.6),
-      inset 0 0 2px rgba(255, 102, 0, 0.4);
+      0 0 5px rgba(76, 175, 80, 0.6),
+      inset 0 0 3px rgba(76, 175, 80, 0.4);
   }
   35% { 
     box-shadow: 
-      0 0 4px rgba(255, 102, 0, 0.7),
-      inset 0 0 2px rgba(255, 102, 0, 0.45);
+      0 0 6px rgba(76, 175, 80, 0.7),
+      inset 0 0 4px rgba(76, 175, 80, 0.45);
   }
   65% { 
     box-shadow: 
-      0 0 5px rgba(255, 102, 0, 0.75),
-      inset 0 0 3px rgba(255, 102, 0, 0.48);
+      0 0 7px rgba(76, 175, 80, 0.75),
+      inset 0 0 4px rgba(76, 175, 80, 0.48);
   }
 }
 
 @keyframes subtlePulse3 {
   0%, 100% { 
     box-shadow: 
-      0 0 3px rgba(255, 102, 0, 0.6),
-      inset 0 0 2px rgba(255, 102, 0, 0.4);
+      0 0 5px rgba(76, 175, 80, 0.6),
+      inset 0 0 3px rgba(76, 175, 80, 0.4);
   }
   60% { 
     box-shadow: 
-      0 0 4px rgba(255, 102, 0, 0.72),
-      inset 0 0 2px rgba(255, 102, 0, 0.46);
+      0 0 6px rgba(76, 175, 80, 0.72),
+      inset 0 0 4px rgba(76, 175, 80, 0.46);
   }
 }
 
 @keyframes subtlePulse4 {
   0%, 100% { 
     box-shadow: 
-      0 0 3px rgba(255, 102, 0, 0.6),
-      inset 0 0 2px rgba(255, 102, 0, 0.4);
+      0 0 5px rgba(76, 175, 80, 0.6),
+      inset 0 0 3px rgba(76, 175, 80, 0.4);
   }
   25% { 
     box-shadow: 
-      0 0 4px rgba(255, 102, 0, 0.68),
-      inset 0 0 2px rgba(255, 102, 0, 0.43);
+      0 0 6px rgba(76, 175, 80, 0.68),
+      inset 0 0 4px rgba(76, 175, 80, 0.43);
   }
   75% { 
     box-shadow: 
-      0 0 5px rgba(255, 102, 0, 0.76),
-      inset 0 0 3px rgba(255, 102, 0, 0.47);
+      0 0 7px rgba(76, 175, 80, 0.76),
+      inset 0 0 4px rgba(76, 175, 80, 0.47);
   }
 }
 
 @keyframes subtlePulse5 {
   0%, 100% { 
     box-shadow: 
-      0 0 3px rgba(255, 102, 0, 0.6),
-      inset 0 0 2px rgba(255, 102, 0, 0.4);
+      0 0 5px rgba(76, 175, 80, 0.6),
+      inset 0 0 3px rgba(76, 175, 80, 0.4);
   }
   45% { 
     box-shadow: 
-      0 0 4px rgba(255, 102, 0, 0.7),
-      inset 0 0 2px rgba(255, 102, 0, 0.44);
+      0 0 6px rgba(76, 175, 80, 0.7),
+      inset 0 0 4px rgba(76, 175, 80, 0.44);
   }
 }
 
@@ -3118,21 +3124,21 @@ body {
 
 .mic-effect-button .effect-icon {
   font-size: 11px;
-  color: #888;
+  color: #666; /* Inactive: subtle gray matching mixer aesthetic */
   transition: all 0.2s ease;
 }
 
 .mic-effect-button.active .effect-icon {
-  color: #ff6600;
+  color: #4CAF50; /* Active: green like usernames */
 }
 
 .mic-effect-button .effect-text {
-  color: #ccc;
+  color: #888; /* Inactive: subtle gray matching mixer aesthetic */
   transition: all 0.2s ease;
 }
 
 .mic-effect-button.active .effect-text {
-  color: #ff6600;
+  color: #4CAF50; /* Active: green like usernames */
 }
 
 .live-dot {

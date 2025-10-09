@@ -838,22 +838,78 @@ body {
 
 .breadcrumb-element.volume-meter .meter-bar {
   flex: 1;
-  background: #333;
+  background: rgba(0, 0, 0, 0.5); /* Dark semi-transparent - won't cover active colors */
   height: 12px; /* Increased height from 4px */
   border-radius: 1px; /* Slightly rounded */
   transition: background-color 0.1s ease;
   min-width: 2px; /* Increased minimum width */
+  border: 1px solid rgba(255, 255, 255, 0.1); /* Subtle border for visibility */
 }
 
 /* Horizontal volume meter - intensity through color only */
-.meter-bar.active-1 { background: #4CAF50; }
-.meter-bar.active-2 { background: #8BC34A; }
-.meter-bar.active-3 { background: #CDDC39; }
-.meter-bar.active-4 { background: #FFEB3B; }
-.meter-bar.active-5 { background: #FFC107; }
-.meter-bar.active-6 { background: #FF9800; }
-.meter-bar.active-7 { background: #FF5722; }
-.meter-bar.active-8 { background: #F44336; }
+.meter-bar.active-1,
+.meter-bar-compact.active-1,
+.mic-volume-meter .meter-bar.active-1 { 
+  background: #4CAF50 !important; 
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.8);
+  border-color: #4CAF50;
+}
+
+.meter-bar.active-2,
+.meter-bar-compact.active-2,
+.mic-volume-meter .meter-bar.active-2 { 
+  background: #8BC34A !important; 
+  box-shadow: 0 0 8px rgba(139, 195, 74, 0.8);
+  border-color: #8BC34A;
+}
+
+.meter-bar.active-3,
+.meter-bar-compact.active-3,
+.mic-volume-meter .meter-bar.active-3 { 
+  background: #CDDC39 !important; 
+  box-shadow: 0 0 8px rgba(205, 220, 57, 0.8);
+  border-color: #CDDC39;
+}
+
+.meter-bar.active-4,
+.meter-bar-compact.active-4,
+.mic-volume-meter .meter-bar.active-4 { 
+  background: #FFEB3B !important; 
+  box-shadow: 0 0 8px rgba(255, 235, 59, 0.8);
+  border-color: #FFEB3B;
+}
+
+.meter-bar.active-5,
+.meter-bar-compact.active-5,
+.mic-volume-meter .meter-bar.active-5 { 
+  background: #FFC107 !important; 
+  box-shadow: 0 0 8px rgba(255, 193, 7, 0.8);
+  border-color: #FFC107;
+}
+
+.meter-bar.active-6,
+.meter-bar-compact.active-6,
+.mic-volume-meter .meter-bar.active-6 { 
+  background: #FF9800 !important; 
+  box-shadow: 0 0 8px rgba(255, 152, 0, 0.8);
+  border-color: #FF9800;
+}
+
+.meter-bar.active-7,
+.meter-bar-compact.active-7,
+.mic-volume-meter .meter-bar.active-7 { 
+  background: #FF5722 !important; 
+  box-shadow: 0 0 8px rgba(255, 87, 34, 0.8);
+  border-color: #FF5722;
+}
+
+.meter-bar.active-8,
+.meter-bar-compact.active-8,
+.mic-volume-meter .meter-bar.active-8 { 
+  background: #F44336 !important; 
+  box-shadow: 0 0 8px rgba(244, 67, 54, 0.8);
+  border-color: #F44336;
+}
 
 /* Waveform in Compact Layout */
 .waveform-section-compact {
@@ -3288,8 +3344,8 @@ body {
 .meter-bar-compact {
   width: 12px;
   height: 6px;
-  background: #111;
-  border: 1px solid #000;
+  background: rgba(0, 0, 0, 0.5); /* Dark semi-transparent - won't cover active colors */
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 1px;
   transition: all 0.1s ease;
 }
@@ -3501,8 +3557,8 @@ body {
 .mic-volume-meter .meter-bar {
   width: 10px;
   height: 8px;
-  background: #333;
-  border: 1px solid #222;
+  background: rgba(0, 0, 0, 0.5); /* Dark semi-transparent - won't cover active colors */
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 2px;
   transition: all 0.1s ease;
 }

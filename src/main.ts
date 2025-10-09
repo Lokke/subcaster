@@ -1509,23 +1509,14 @@ function setupPlayerDeckDragToQueue() {
     
     // Make player deck draggable when it has a track loaded (but not playing)
     function updateDeckDragability() {
+      // REMOVED: Player deck dragging disabled
+      // Only album cover is draggable now to avoid accidental drops
+      // This function kept for compatibility but does nothing
       if (!playerDeck) return;
       
-      const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-      const isPlaying = audio && audio.src && !audio.paused;
-      const hasLoadedTrack = audio && audio.src;
-      const songData = deckSongs[side];
-      
-      if (hasLoadedTrack && !isPlaying && songData) {
-        // Track loaded but NOT playing - allow dragging to queue
-        playerDeck.draggable = true;
-        playerDeck.style.cursor = 'grab';
-        console.log(`🎵 Deck ${side} draggable to queue (track loaded, not playing)`);
-      } else {
-        // No track or track is playing - disable dragging
-        playerDeck.draggable = false;
-        playerDeck.style.cursor = 'default';
-      }
+      // Always make deck NOT draggable (only album cover should be draggable)
+      playerDeck.draggable = false;
+      playerDeck.style.cursor = 'default';
     }
     
     // Update dragability when track state changes
@@ -1541,63 +1532,9 @@ function setupPlayerDeckDragToQueue() {
     // Initial check
     updateDeckDragability();
     
-    playerDeck.addEventListener('dragstart', (e) => {
-      const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-      
-      // Prevent drag if track is playing
-      if (audio && !audio.paused) {
-        e.preventDefault();
-        console.log(`🎵 Prevented deck ${side} drag - track is playing`);
-        return;
-      }
-      
-      const song = deckSongs[side];
-      if (!song || !audio || !audio.src) {
-        e.preventDefault();
-        console.log(`🎵 Prevented deck ${side} drag - no track loaded`);
-        return;
-      }
-      
-      console.log(`🎵 Dragging deck ${side} to queue: "${song.title}"`);
-      playerDeck.style.cursor = 'grabbing';
-      
-      if (e.dataTransfer) {
-        const dragData = {
-          type: 'deck-song',
-          song: song,
-          sourceDeck: side
-        };
-        e.dataTransfer.setData('application/json', JSON.stringify(dragData));
-        e.dataTransfer.setData('text/plain', side);
-        e.dataTransfer.effectAllowed = 'move'; // Move operation: deck to deck/queue
-      }
-      
-      // Visual feedback
-      playerDeck.style.opacity = '0.7';
-    });
-    
-    playerDeck.addEventListener('dragend', () => {
-      // Reset all visual drag states
-      playerDeck.style.opacity = '1';
-      playerDeck.style.cursor = 'grab';
-      playerDeck.classList.remove('drag-over', 'drop-blocked');
-      
-      // Also ensure all other decks are cleaned up
-      const allSides: ('a' | 'b' | 'c' | 'd')[] = ['a', 'b', 'c', 'd'];
-      allSides.forEach(otherSide => {
-        if (otherSide !== side) {
-          const otherDeck = document.getElementById(`player-${otherSide}`);
-          if (otherDeck) {
-            otherDeck.classList.remove('drag-over', 'drop-blocked');
-            // Reset any opacity that might have been set
-            otherDeck.style.opacity = '1';
-          }
-        }
-      });
-      
-      updateDeckDragability();
-      console.log(`🏁 Dragend on deck ${side} - cleaned up all drag states`);
-    });
+    // REMOVED: Player deck dragstart/dragend handlers
+    // Only album cover is draggable now to avoid accidental deck-to-deck/deck-to-queue drops
+    // Users must grab the album cover specifically to drag tracks
   });
 }
 
@@ -8582,7 +8519,7 @@ function startVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic') {
           delete volumeMeterIntervals[side];
         }
       }
-    }, 50);
+    }, 30); // Faster update rate: ~33 FPS for quicker response
     
     console.log(`🎤 Volume meter started for microphone`);
     return;
@@ -8705,10 +8642,11 @@ function startVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic') {
   // Standard Web Audio API Volume Meter
   const analyser = audioContext.createAnalyser();
   analyser.fftSize = 256;
-  analyser.smoothingTimeConstant = 0.8;
+  analyser.smoothingTimeConstant = 0.3; // Lower for faster response (was 0.8)
   
   // Verbinde Gain Node mit Analyser (ohne Audio-Flow zu stören)
   gainNode.connect(analyser);
+  // Analyser does NOT connect to destination - it's just for monitoring
   
   const bufferLength = analyser.frequencyBinCount;
   const dataArray = new Uint8Array(bufferLength);
@@ -8747,7 +8685,7 @@ function startVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic') {
         delete volumeMeterIntervals[side];
       }
     }
-  }, 50); // 20 FPS Update-Rate
+  }, 30); // Faster update rate: ~33 FPS (was 50ms/20fps)
   
   console.log(`🔊 WebAudio volume meter started for player ${side}`);
 }

@@ -2102,7 +2102,8 @@ body {
   align-items: center;
   gap: 0.75rem; /* Reduziert von 1.5rem */
   width: 100%;
-  max-width: 420px;
+  max-width: 270px;
+  min-width: 270px; /* Fixed width - prevent any shrinking or expanding */
   background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
   border: 2px solid #444;
   border-radius: 4px;
@@ -2123,7 +2124,9 @@ body {
   gap: 1.5rem; /* Reduziert von 2rem */
   align-items: center;
   width: 100%;
-  max-width: 300px;
+  max-width: 100%; /* Use full available width within mixer */
+  min-width: 0; /* Allow content to shrink if needed */
+  overflow: hidden; /* Prevent content from expanding mixer */
 }
 
 .mic-volume-control,
@@ -2132,6 +2135,8 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 0.25rem; /* Reduziert von 0.5rem */
+  min-width: 0; /* Allow shrinking */
+  overflow: hidden; /* Prevent overflow */
 }
 
 /* Station Selection Dropdown (triggered by STREAM button) */
@@ -2264,6 +2269,9 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
+  min-width: 0; /* Allow shrinking */
+  overflow: hidden; /* Prevent expansion */
+  max-width: 100%; /* Never exceed container width */
 }
 
 /* Crossfader Section - Compact */
@@ -3235,6 +3243,10 @@ body {
 .mic-label {
   font-size: 9px;
   letter-spacing: 1px;
+  overflow: hidden; /* Prevent text overflow */
+  text-overflow: ellipsis; /* Show ... for long text */
+  white-space: nowrap; /* Don't wrap */
+  max-width: 100%; /* Never exceed container */
 }
 
 /* Control Labels */
@@ -3246,6 +3258,10 @@ body {
   text-align: center;
   margin: 0;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  overflow: hidden; /* Prevent text overflow */
+  text-overflow: ellipsis; /* Show ... for long text */
+  white-space: nowrap; /* Don't wrap */
+  max-width: 100%; /* Never exceed container */
 }
 
 /* Compact Volume Meters - Angular */

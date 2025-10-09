@@ -2165,6 +2165,35 @@ document.addEventListener("DOMContentLoaded", async () => {
   const micRefreshBtn = document.getElementById("mic-refresh-btn") as HTMLButtonElement;
   let selectedMicDeviceId: string | null = null;
 
+  // Helper function to format microphone device names
+  function formatMicrophoneName(label: string): string {
+    // Common prefixes in different languages that should be replaced with mic icon
+    const prefixes = [
+      'Mikrofon',
+      'Microphone',
+      'Mic',
+      'Mikro',
+      'Audio Input',
+      'Audioeingabe',
+      'Audio Eingabe',
+      'Line In',
+      'Line-In'
+    ];
+    
+    // Check if label starts with any of these prefixes (case-insensitive)
+    for (const prefix of prefixes) {
+      const regex = new RegExp(`^${prefix}\\s*[\\(\\-\\:]?\\s*`, 'i');
+      if (regex.test(label)) {
+        // Replace prefix with mic icon and keep the rest
+        const deviceName = label.replace(regex, '').trim();
+        return deviceName ? `🎤 ${deviceName}` : '🎤 ' + label;
+      }
+    }
+    
+    // If no prefix found, just add mic icon at the beginning
+    return `🎤 ${label}`;
+  }
+
   // Function to populate microphone devices
   async function populateMicrophoneDevices(): Promise<void> {
     try {
@@ -2184,7 +2213,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       audioInputs.forEach(device => {
         const option = document.createElement('option');
         option.value = device.deviceId;
-        option.textContent = device.label || `Microphone ${audioInputs.indexOf(device) + 1}`;
+        const deviceLabel = device.label || `Microphone ${audioInputs.indexOf(device) + 1}`;
+        option.textContent = formatMicrophoneName(deviceLabel);
         micDeviceSelect.appendChild(option);
       });
       

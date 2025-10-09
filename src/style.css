@@ -3680,6 +3680,16 @@ body {
   box-shadow: 
     0 0 3px rgba(68, 68, 68, 0.3),
     inset 0 0 2px rgba(68, 68, 68, 0.2);
+  
+  /* Custom dropdown arrow styling */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  background-size: 8px;
+  padding-right: 16px; /* Make room for arrow */
 }
 
 .mic-device-dropdown:focus {
@@ -3690,13 +3700,30 @@ body {
   box-shadow: 
     0 0 5px rgba(76, 175, 80, 0.6),
     inset 0 0 3px rgba(76, 175, 80, 0.4);
+  
+  /* Green arrow on focus */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%234CAF50' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
 }
 
 .mic-device-dropdown option {
-  background: #2a2a2a;
-  color: #fff;
-  padding: 8px;
-  text-align: center; /* Center dropdown options */
+  background: rgba(0, 0, 0, 0.95); /* Match dropdown background */
+  color: #fff; /* White text for readability */
+  padding: 10px 8px;
+  text-align: left; /* Left align options for better readability */
+  font-size: 11px; /* Slightly larger in dropdown */
+  text-transform: none; /* Remove uppercase in dropdown for readability */
+  letter-spacing: 0;
+}
+
+.mic-device-dropdown option:hover {
+  background: rgba(76, 175, 80, 0.2); /* Green hover like focus state */
+  color: #4CAF50;
+}
+
+.mic-device-dropdown option:checked {
+  background: rgba(76, 175, 80, 0.3); /* Green for selected option */
+  color: #4CAF50;
+  font-weight: bold;
 }
 
 .mic-refresh-button {

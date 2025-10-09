@@ -1568,6 +1568,12 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
   const waveColor = getPlayerColor(side);
   const progressColor = getPlayerColor(side, 'dark');
 
+  // Calculate default pixels per second for zoom level 1.0
+  // This ensures the entire track fits in the container at zoom 1.0
+  const containerWidth = container.clientWidth || 500; // Fallback
+  const estimatedDuration = trackDuration || 180; // Fallback to 3 minutes
+  const minPxPerSec = containerWidth / estimatedDuration;
+
   // Create new WaveSurfer instance with performance optimizations
   const wavesurfer = WaveSurfer.create({
     container: container,
@@ -1578,7 +1584,8 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
     barGap: barGap,
     height: 104, // 80px + 30% = 104px for bottom overflow
     normalize: true,
-    backend: 'WebAudio'
+    backend: 'WebAudio',
+    minPxPerSec: minPxPerSec // Set initial zoom so full track fits
   });
   
   // WaveSurfer muten - es soll nur Visualization sein, kein Audio output
@@ -1594,21 +1601,22 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
     
     // Apply zoom to WaveSurfer
     // WaveSurfer.zoom() expects pixels per second
-    // Calculate: at zoom 1.0, if track is 180s and container is 500px, that's ~2.78 pps
-    // At zoom 2.0, we want 5.56 pps (double), etc.
-    const containerWidth = container.clientWidth;
+    // We need to recalculate based on actual track duration when available
     const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-    const duration = audio?.duration || 180; // Fallback to 3 minutes
+    const actualDuration = audio?.duration || estimatedDuration;
     
-    const basePixelsPerSecond = containerWidth / duration;
-    const zoomedPixelsPerSecond = basePixelsPerSecond * waveformZoom[side];
+    // Calculate base pps for zoom 1.0 (entire track visible)
+    const basePxPerSec = containerWidth / actualDuration;
     
-    wavesurfer.zoom(zoomedPixelsPerSecond);
+    // Apply zoom multiplier
+    const zoomedPxPerSec = basePxPerSec * waveformZoom[side];
+    
+    wavesurfer.zoom(zoomedPxPerSec);
     
     // Show zoom indicator
     showZoomIndicator(side, waveformZoom[side]);
     
-    console.log(`🔍 Deck ${side.toUpperCase()}: Zoom ${waveformZoom[side].toFixed(2)}x (${zoomedPixelsPerSecond.toFixed(1)} px/s)`);
+    console.log(`🔍 Deck ${side.toUpperCase()}: Zoom ${waveformZoom[side].toFixed(2)}x (${zoomedPxPerSec.toFixed(1)} px/s, duration: ${actualDuration.toFixed(1)}s)`);
   }, { passive: false });
 
   waveSurfers[side] = wavesurfer;
@@ -1755,8 +1763,30 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
       container.style.opacity = '1';
     }
     
+    // Reset zoom to 1.0 and recalculate with actual track duration
+    waveformZoom[side] = 1.0;
+    const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+    const actualDuration = audio?.duration || wavesurfer.getDuration();
+    
+    if (actualDuration > 0) {
+      const containerWidth = container?.clientWidth || 500;
+      const correctMinPxPerSec = containerWidth / actualDuration;
+      wavesurfer.zoom(correctMinPxPerSec);
+      console.log(`🔍 Deck ${side.toUpperCase()}: Reset zoom to 1.0x (${correctMinPxPerSec.toFixed(2)} px/s for ${actualDuration.toFixed(1)}s track)`);
+    }
+    
     // Ensure we're at the beginning
     wavesurfer.seekTo(0);
+  });
+
+  // Sync WaveSurfer seek with audio element (critical for zoomed waveform clicks!)
+  wavesurfer.on('interaction', (progress: number) => {
+    const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+    if (audio && audio.duration) {
+      const seekTime = progress * audio.duration;
+      audio.currentTime = seekTime;
+      console.log(`🎯 Deck ${side.toUpperCase()}: WaveSurfer click-to-seek → ${seekTime.toFixed(2)}s (${(progress * 100).toFixed(1)}%)`);
+    }
   });
 
   wavesurfer.on('error', (error) => {

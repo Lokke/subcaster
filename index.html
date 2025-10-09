@@ -448,11 +448,16 @@
               
               <!-- Crossfader Section -->
               <div class="crossfader-section">
-                <label class="control-label">CROSSFADER</label>
-                <input type="range" min="0" max="100" value="50" id="crossfader" class="crossfader-pro">
-                <div class="crossfader-labels">
-                  <span>A</span>
-                  <span>B</span>
+                <div class="crossfader-2d-container" id="crossfader-2d">
+                  <div class="crossfader-2d-area">
+                    <div class="crossfader-point" id="crossfader-point"></div>
+                    <div class="crossfader-corner-labels">
+                      <span class="corner-label top-left">A</span>
+                      <span class="corner-label top-right">B</span>
+                      <span class="corner-label bottom-right">C</span>
+                      <span class="corner-label bottom-left">D</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 

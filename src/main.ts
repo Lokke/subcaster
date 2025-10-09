@@ -1252,8 +1252,8 @@ function initializePlayerSystem() {
     setupAudioPlayer('d', audioD);
   }
   
-  // 3. Initialize crossfader functionality
-  initializeCrossfader();
+  // 3. Initialize 2D crossfader functionality
+  initialize2DCrossfader();
   
   // 4. Setup drop zones for drag & drop (with delay to ensure DOM is ready)
   setTimeout(() => {
@@ -1265,6 +1265,10 @@ function initializePlayerSystem() {
     // Setup album cover drag & drop after drop zones are ready
     setupAlbumCoverDragDrop();
     console.log('🎯 Album cover drag & drop initialized');
+    
+    // Setup player deck drag to queue
+    setupPlayerDeckDragToQueue();
+    console.log('🎯 Player deck drag to queue initialized');
   }, 500);
   
   // 5. Setup auto-queue controls
@@ -1474,71 +1478,127 @@ function setupAlbumCoverDragDrop() {
     });
     
     albumCover.addEventListener('dragend', () => {
+      // Reset all visual drag states
       albumCover.style.opacity = '1';
+      
+      // Clean up drag classes from all decks
+      const allSides: ('a' | 'b' | 'c' | 'd')[] = ['a', 'b', 'c', 'd'];
+      allSides.forEach(otherSide => {
+        const otherDeck = document.getElementById(`player-${otherSide}`);
+        if (otherDeck) {
+          otherDeck.classList.remove('drag-over', 'drop-blocked');
+          otherDeck.style.opacity = '1';
+        }
+      });
+      
       updateDragability();
-    });
-    
-    // Set up drop zones
-    albumCover.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      if (e.dataTransfer) {
-        e.dataTransfer.dropEffect = 'move';
-      }
-      albumCover.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-    });
-    
-    albumCover.addEventListener('dragleave', () => {
-      albumCover.style.backgroundColor = '';
-    });
-    
-    albumCover.addEventListener('drop', (e) => {
-      e.preventDefault();
-      albumCover.style.backgroundColor = '';
-      
-      if (!e.dataTransfer) return;
-      
-      const sourceSide = e.dataTransfer.getData('text/plain') as 'a' | 'b' | 'c' | 'd';
-      const targetSide = side;
-      
-      if (sourceSide === targetSide) return; // Same deck
-      
-      // Check if source track is playing
-      const sourceAudio = document.getElementById(`audio-${sourceSide}`) as HTMLAudioElement;
-      if (sourceAudio && !sourceAudio.paused) {
-        console.log('Cannot move playing track');
-        return;
-      }
-      
-      // Check if target has a playing track
-      const targetAudio = document.getElementById(`audio-${targetSide}`) as HTMLAudioElement;
-      if (targetAudio && !targetAudio.paused) {
-        console.log('Cannot drop on deck with playing track');
-        return;
-      }
-      
-      console.log(`🔄 Moving track from deck ${sourceSide.toUpperCase()} to deck ${targetSide.toUpperCase()}`);
-      
-      // Get source track data from stored songs
-      const song = deckSongs[sourceSide];
-      if (!song) {
-        console.error('No song data found on source deck');
-        return;
-      }
-      
-      console.log(`📀 Found song: "${song.title}" by ${song.artist}`);
-      
-      // Load track on target deck using the same method as drag from search
-      loadTrackToPlayer(targetSide, song, false);
-      console.log(`✅ Track "${song.title}" moved from deck ${sourceSide.toUpperCase()} to deck ${targetSide.toUpperCase()}`);
-      
-      // Clear source deck
-      setTimeout(() => {
-        clearPlayerDeck(sourceSide);
-      }, 100);
+      console.log(`🏁 Dragend on album cover ${side} - cleaned up all drag states`);
     });
     
     // Initial dragability check
     updateDragability();
+  });
+}
+
+// Setup Player Deck Drag to Queue
+function setupPlayerDeckDragToQueue() {
+  const sides: ('a' | 'b' | 'c' | 'd')[] = ['a', 'b', 'c', 'd'];
+  
+  sides.forEach(side => {
+    const playerDeck = document.getElementById(`player-${side}`);
+    if (!playerDeck) return;
+    
+    // Make player deck draggable when it has a track loaded (but not playing)
+    function updateDeckDragability() {
+      if (!playerDeck) return;
+      
+      const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+      const isPlaying = audio && audio.src && !audio.paused;
+      const hasLoadedTrack = audio && audio.src;
+      const songData = deckSongs[side];
+      
+      if (hasLoadedTrack && !isPlaying && songData) {
+        // Track loaded but NOT playing - allow dragging to queue
+        playerDeck.draggable = true;
+        playerDeck.style.cursor = 'grab';
+        console.log(`🎵 Deck ${side} draggable to queue (track loaded, not playing)`);
+      } else {
+        // No track or track is playing - disable dragging
+        playerDeck.draggable = false;
+        playerDeck.style.cursor = 'default';
+      }
+    }
+    
+    // Update dragability when track state changes
+    const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+    if (audio) {
+      audio.addEventListener('loadstart', updateDeckDragability);
+      audio.addEventListener('loadeddata', updateDeckDragability);
+      audio.addEventListener('play', updateDeckDragability);
+      audio.addEventListener('pause', updateDeckDragability);
+      audio.addEventListener('ended', updateDeckDragability);
+    }
+    
+    // Initial check
+    updateDeckDragability();
+    
+    playerDeck.addEventListener('dragstart', (e) => {
+      const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+      
+      // Prevent drag if track is playing
+      if (audio && !audio.paused) {
+        e.preventDefault();
+        console.log(`🎵 Prevented deck ${side} drag - track is playing`);
+        return;
+      }
+      
+      const song = deckSongs[side];
+      if (!song || !audio || !audio.src) {
+        e.preventDefault();
+        console.log(`🎵 Prevented deck ${side} drag - no track loaded`);
+        return;
+      }
+      
+      console.log(`🎵 Dragging deck ${side} to queue: "${song.title}"`);
+      playerDeck.style.cursor = 'grabbing';
+      
+      if (e.dataTransfer) {
+        const dragData = {
+          type: 'deck-song',
+          song: song,
+          sourceDeck: side
+        };
+        e.dataTransfer.setData('application/json', JSON.stringify(dragData));
+        e.dataTransfer.setData('text/plain', side);
+        e.dataTransfer.effectAllowed = 'move'; // Move operation: deck to deck/queue
+      }
+      
+      // Visual feedback
+      playerDeck.style.opacity = '0.7';
+    });
+    
+    playerDeck.addEventListener('dragend', () => {
+      // Reset all visual drag states
+      playerDeck.style.opacity = '1';
+      playerDeck.style.cursor = 'grab';
+      playerDeck.classList.remove('drag-over', 'drop-blocked');
+      
+      // Also ensure all other decks are cleaned up
+      const allSides: ('a' | 'b' | 'c' | 'd')[] = ['a', 'b', 'c', 'd'];
+      allSides.forEach(otherSide => {
+        if (otherSide !== side) {
+          const otherDeck = document.getElementById(`player-${otherSide}`);
+          if (otherDeck) {
+            otherDeck.classList.remove('drag-over', 'drop-blocked');
+            // Reset any opacity that might have been set
+            otherDeck.style.opacity = '1';
+          }
+        }
+      });
+      
+      updateDeckDragability();
+      console.log(`🏁 Dragend on deck ${side} - cleaned up all drag states`);
+    });
   });
 }
 
@@ -2042,13 +2102,14 @@ function initializeFullApp() {
   }, 200);
   
   // 3. Initialize other systems
-  initializeCrossfader();
+  initialize2DCrossfader();
   
   // 4. Setup drop zones with delay
   setTimeout(() => {
     initializePlayerDropZones();
     setupQueueDropZone();
     setupAlbumCoverDragDrop();
+    setupPlayerDeckDragToQueue();
     setupAutoQueueControls();
     setupRadioStreamSelector();
   }, 500);
@@ -3311,6 +3372,10 @@ async function initializeMusicLibrary() {
       // Re-initialize album cover drag & drop after library load
       setupAlbumCoverDragDrop();
       console.log("🎯 Album cover drag & drop re-initialized after library load");
+      
+      // Re-initialize player deck drag to queue after library load
+      setupPlayerDeckDragToQueue();
+      console.log("🎯 Player deck drag to queue re-initialized after library load");
     }, 1000);
     
   } catch (error) {
@@ -3549,23 +3614,9 @@ function createCompactQueueSongElement(song: OpenSubsonicSong): HTMLElement {
     </div>
   `;
   
-  // Drag and Drop aktivieren
-  songButton.draggable = true;
-  songButton.addEventListener('dragstart', (e) => {
-    console.log('🚀 DRAGSTART on queue item:', song.title, 'by', song.artist);
-    
-    if (e.dataTransfer) {
-      const dragData = {
-        type: 'song',
-        song: song,
-        sourceUrl: openSubsonicClient?.getStreamUrl(song.id)
-      };
-      
-      e.dataTransfer.setData('application/json', JSON.stringify(dragData));
-      e.dataTransfer.setData('text/plain', song.id);
-      e.dataTransfer.effectAllowed = 'copy';
-    }
-  });
+  // WICHTIG: Element selbst ist NICHT draggable, da der Wrapper das Drag-Event handelt
+  // Dies verhindert doppelte DragStart-Events die sich gegenseitig überschreiben
+  songButton.draggable = false;
   
   return songButton;
 }
@@ -3585,21 +3636,9 @@ function createCompactQueueMicrophoneElement(): HTMLElement {
     </div>
   `;
   
-  // Drag and Drop aktivieren
-  micButton.draggable = true;
-  micButton.addEventListener('dragstart', (e) => {
-    console.log('🚀 DRAGSTART on microphone placeholder');
-    
-    if (e.dataTransfer) {
-      const dragData = {
-        type: 'microphone-placeholder'
-      };
-      
-      e.dataTransfer.setData('application/json', JSON.stringify(dragData));
-      e.dataTransfer.setData('text/plain', 'microphone');
-      e.dataTransfer.effectAllowed = 'copy';
-    }
-  });
+  // WICHTIG: Element selbst ist NICHT draggable, da der Wrapper das Drag-Event handelt
+  // Dies verhindert doppelte DragStart-Events die sich gegenseitig überschreiben
+  micButton.draggable = false;
   
   return micButton;
 }
@@ -4695,13 +4734,34 @@ function setupQueueItemDrag(wrapper: HTMLElement, index: number) {
     wrapper.classList.add('dragging');
     
     if (e.dataTransfer) {
-      // Store queue reordering data
-      e.dataTransfer.setData('application/json', JSON.stringify({
-        type: 'queue-reorder',
-        queueIndex: index,
-        queueItem: queueItem
-      }));
-      e.dataTransfer.effectAllowed = 'move';
+      // WICHTIG: Kombinierte Drag-Daten für Queue-Reordering UND Deck-Drop
+      if (isSongQueueItem(queueItem)) {
+        // Für Songs: Nutze IDENTISCHES Format wie Library-Songs (type: 'song')
+        // PLUS zusätzlich queueIndex für Queue-Reordering
+        const dragData = {
+          type: 'song',              // IDENTISCH zu Library-Songs für Deck-Kompatibilität
+          song: queueItem.song,      // Song-Objekt für Deck-Drop
+          sourceUrl: openSubsonicClient?.getStreamUrl(queueItem.song.id),
+          queueIndex: index          // EXTRA: Für Queue-Reordering
+        };
+        
+        e.dataTransfer.setData('application/json', JSON.stringify(dragData));
+        e.dataTransfer.setData('text/plain', queueItem.song.id); // Fallback: Song-ID
+        console.log('🎵 Queue song draggable (as library song):', queueItem.song.title, '| Queue Index:', index);
+      } else if (isMicrophoneQueueItem(queueItem)) {
+        // Für Mikrofon: Nur Queue-Reordering
+        const dragData = {
+          type: 'queue-microphone',
+          queueIndex: index,
+          queueItem: queueItem
+        };
+        
+        e.dataTransfer.setData('application/json', JSON.stringify(dragData));
+        e.dataTransfer.setData('text/plain', 'microphone');
+        console.log('� Queue microphone draggable | Index:', index);
+      }
+      
+      e.dataTransfer.effectAllowed = 'copy';
     }
   });
   
@@ -4727,7 +4787,13 @@ function setupQueueItemDropZone(wrapper: HTMLElement, index: number) {
     
     try {
       const dragData = JSON.parse(data);
-      if (dragData.type !== 'queue-reorder') return;
+      
+      // Akzeptiere: type='song' mit queueIndex (Queue-Songs) ODER type='queue-microphone'
+      // Ignoriere Library-Songs (type='song' OHNE queueIndex)
+      const isQueueSong = dragData.type === 'song' && dragData.queueIndex !== undefined;
+      const isQueueMic = dragData.type === 'queue-microphone';
+      
+      if (!isQueueSong && !isQueueMic) return;
       
       // Don't allow dropping on self
       if (dragData.queueIndex === index) return;
@@ -4769,7 +4835,13 @@ function setupQueueItemDropZone(wrapper: HTMLElement, index: number) {
     
     try {
       const dragData = JSON.parse(data);
-      if (dragData.type !== 'queue-reorder') return;
+      
+      // Akzeptiere: type='song' mit queueIndex (Queue-Songs) ODER type='queue-microphone'
+      // Ignoriere Library-Songs (type='song' OHNE queueIndex)
+      const isQueueSong = dragData.type === 'song' && dragData.queueIndex !== undefined;
+      const isQueueMic = dragData.type === 'queue-microphone';
+      
+      if (!isQueueSong && !isQueueMic) return;
       
       const sourceIndex = dragData.queueIndex;
       if (sourceIndex === index) return; // Can't drop on self
@@ -5405,15 +5477,25 @@ function updateRadioStreamDisplay(deck: string, station: any) {
     nowPlaying: station.now_playing?.song
   });
   
-  // Use the waveform display elements (zweckentfremden für Radio-Streams)
-  const titleElement = document.getElementById(`track-title-${deck}`) as HTMLElement;
-  const artistElement = document.getElementById(`track-artist-${deck}`) as HTMLElement;
-  const albumCoverElement = document.getElementById(`album-cover-${deck}`) as HTMLElement;
+  // Update waveform info overlay (visible metadata display)
+  const waveformInfo = document.getElementById(`waveform-info-${deck}`);
+  
+  console.log(`📻 Found waveform-info for deck ${deck}:`, !!waveformInfo);
+  
+  if (!waveformInfo) {
+    console.error(`❌ waveform-info-${deck} not found`);
+    return;
+  }
+  
+  // Get child elements within waveform info
+  const titleElement = waveformInfo.querySelector('.track-title') as HTMLElement;
+  const artistElement = waveformInfo.querySelector('.track-artist') as HTMLElement;
+  const albumElement = waveformInfo.querySelector('.track-album') as HTMLElement;
   
   console.log(`📻 Found elements for deck ${deck}:`, {
     titleElement: !!titleElement,
     artistElement: !!artistElement,
-    albumCoverElement: !!albumCoverElement
+    albumElement: !!albumElement
   });
   
   // Get live and now playing info
@@ -5441,7 +5523,23 @@ function updateRadioStreamDisplay(deck: string, station: any) {
     }
   }
   
+  // Update album field with station description or genre
+  if (albumElement) {
+    albumElement.textContent = station.description || station.genre || 'Live Radio';
+  }
+  
+  // Also update hidden metadata elements (for compatibility)
+  const hiddenTitle = document.getElementById(`track-title-${deck}`);
+  const hiddenArtist = document.getElementById(`track-artist-${deck}`);
+  if (hiddenTitle) {
+    hiddenTitle.textContent = nowPlaying?.title || `📻 ${station.name}`;
+  }
+  if (hiddenArtist) {
+    hiddenArtist.textContent = nowPlaying?.artist || `${station.name} - Live Radio`;
+  }
+  
   // Update waveform album cover with current track art
+  const albumCoverElement = document.getElementById(`album-cover-${deck}`) as HTMLElement;
   if (albumCoverElement) {
     if (nowPlaying?.art) {
       albumCoverElement.innerHTML = `<img src="${nowPlaying.art}" alt="Album Cover" style="width: 100%; height: 100%; object-fit: cover;">`;
@@ -5460,18 +5558,23 @@ function updateRadioStreamDisplay(deck: string, station: any) {
 function updateRadioStreamFromWebSocket(deck: string, station: any, data: AzuraCastNowPlayingData) {
   console.log(`📻 WebSocket update for deck ${deck.toUpperCase()}:`, data);
   
-  // Use the waveform display elements (zweckentfremden für Radio-Stream Updates)
-  const titleElement = document.getElementById(`track-title-${deck}`) as HTMLElement;
-  const artistElement = document.getElementById(`track-artist-${deck}`) as HTMLElement;
-  const albumCoverElement = document.getElementById(`album-cover-${deck}`) as HTMLElement;
+  // Update waveform info overlay (visible metadata display)
+  const waveformInfo = document.getElementById(`waveform-info-${deck}`);
+  
+  if (!waveformInfo) {
+    console.error(`❌ waveform-info-${deck} not found`);
+    return;
+  }
+  
+  // Get child elements within waveform info
+  const titleElement = waveformInfo.querySelector('.track-title') as HTMLElement;
+  const artistElement = waveformInfo.querySelector('.track-artist') as HTMLElement;
+  const albumElement = waveformInfo.querySelector('.track-album') as HTMLElement;
   
   console.log(`📻 WebSocket elements found for deck ${deck}:`, {
     titleElement: !!titleElement,
     artistElement: !!artistElement,
-    albumCoverElement: !!albumCoverElement,
-    titleElementId: `track-title-${deck}`,
-    artistElementId: `track-artist-${deck}`,
-    albumElementId: `album-cover-${deck}`
+    albumElement: !!albumElement
   });
   
   // Update waveform title with real-time track info
@@ -5480,7 +5583,7 @@ function updateRadioStreamFromWebSocket(deck: string, station: any, data: AzuraC
     console.log(`📻 Setting title for deck ${deck}: "${newTitle}"`);
     titleElement.textContent = newTitle;
   } else {
-    console.error(`❌ Title element not found: track-title-${deck}`);
+    console.error(`❌ Title element not found in waveform-info-${deck}`);
   }
   
   // Update waveform artist with real-time artist or streamer info
@@ -5496,10 +5599,28 @@ function updateRadioStreamFromWebSocket(deck: string, station: any, data: AzuraC
     console.log(`📻 Setting artist for deck ${deck}: "${newArtist}"`);
     artistElement.textContent = newArtist;
   } else {
-    console.error(`❌ Artist element not found: track-artist-${deck}`);
+    console.error(`❌ Artist element not found in waveform-info-${deck}`);
+  }
+  
+  // Update album field with station info
+  if (albumElement) {
+    albumElement.textContent = station.description || station.genre || 'Live Radio';
+  }
+  
+  // Also update hidden metadata elements (for compatibility)
+  const hiddenTitle = document.getElementById(`track-title-${deck}`);
+  const hiddenArtist = document.getElementById(`track-artist-${deck}`);
+  if (hiddenTitle) {
+    hiddenTitle.textContent = data.now_playing?.song?.title || `📻 ${station.name}`;
+  }
+  if (hiddenArtist) {
+    const newArtist = data.now_playing?.song?.artist || 
+                      (data.live?.is_live && data.live?.streamer_name ? `🔴 Live: ${data.live.streamer_name}` : `${station.name} - Live Radio`);
+    hiddenArtist.textContent = newArtist;
   }
   
   // Update waveform album cover automatically when it changes
+  const albumCoverElement = document.getElementById(`album-cover-${deck}`) as HTMLElement;
   if (albumCoverElement) {
     const newCoverUrl = data.now_playing?.song?.art;
     const currentCover = albumCoverElement.querySelector('img');
@@ -5808,11 +5929,13 @@ function setupRadioStreamSelector() {
     try {
       console.log(`📻 Loading ${station.name} to Deck ${deck.toUpperCase()}`);
       
-      // Get the audio element for the deck
+      // ✅ CLEAR DECK COMPLETELY before loading radio stream
+      // This removes any previous local files, OpenSubsonic tracks, or other radio streams
+      const deckType = deck as 'a' | 'b' | 'c' | 'd';
+      clearPlayerDeck(deckType);
+      
+      // Get the audio element for the deck (after clearing)
       const audio = document.getElementById(`audio-${deck}`) as HTMLAudioElement;
-      const titleElement = document.getElementById(`title-${deck}`) as HTMLSpanElement;
-      const artistElement = document.getElementById(`artist-${deck}`) as HTMLSpanElement;
-      const albumCoverElement = document.getElementById(`album-cover-${deck}`) as HTMLImageElement;
       
       if (!audio) {
         console.error(`❌ Audio element for deck ${deck} not found`);
@@ -5953,7 +6076,6 @@ function setupRadioStreamSelector() {
       (window as any)[`radioRefreshInterval_${deck}`] = refreshInterval;
       
       // Reset waveform first (before loading new stream)
-      const deckType = deck as 'a' | 'b' | 'c' | 'd';
       resetWaveform(deckType);
       
       // Update initial display
@@ -7231,39 +7353,24 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   }
   
   const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-  const titleElement = document.getElementById(`track-title-${side}`);
-  const artistElement = document.getElementById(`track-artist-${side}`);
   
   if (!audio) return;
   
   console.log(`Loading "${song.title}" to Player ${side.toUpperCase()}${autoPlay ? ' (auto-play)' : ''}`);
   
+  // ✅ CLEAR DECK COMPLETELY before loading new track
+  // This removes any previous local files, radio streams, or other track data
+  clearPlayerDeck(side);
+  
+  // Get UI elements (after clearing to ensure they exist)
+  const titleElement = document.getElementById(`track-title-${side}`);
+  const artistElement = document.getElementById(`track-artist-${side}`);
+  
   // Stream URL von OpenSubsonic
   const streamUrl = openSubsonicClient.getStreamUrl(song.id);
   
-  // Reset WaveSurfer first (bevor neuer Track geladen wird)
-  resetWaveform(side);
-
-  // Vorherigen Track stoppen und zurücksetzen
-  audio.pause();
-  audio.currentTime = 0;
-  
   // PLAYER STATE: Track loaded but not playing yet
   setPlayerState(side, song, false);
-  
-  // Cleanup radio stream if one was loaded before
-  const radioTrack = (window as any)[`radioTrack_${side}`];
-  if (radioTrack) {
-    console.log(`📻 Cleaning up radio stream for deck ${side.toUpperCase()}`);
-    
-    // Unsubscribe from WebSocket updates
-    if (radioTrack.shortcode && radioTrack.serverUrl) {
-      azuraCastWebSocket.unsubscribeAll(radioTrack.serverUrl, radioTrack.shortcode);
-    }
-    
-    // Remove radio track reference
-    delete (window as any)[`radioTrack_${side}`];
-  }
   
   // Store song data for drag & drop functionality
   deckSongs[side] = song;
@@ -7342,59 +7449,80 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
 
 // Crossfader anwenden (für neue Tracks)
 function applyCrossfader() {
-  const crossfader = document.getElementById('crossfader') as HTMLInputElement;
-  if (crossfader) {
-    // Triggere crossfader update
-    crossfader.dispatchEvent(new Event('input'));
-  }
+  // Verwende 2D Crossfader
+  apply2DCrossfader(crossfaderState.x, crossfaderState.y);
 }
 
-// Crossfader initialisieren
-function initializeCrossfader() {
-  const crossfader = document.getElementById('crossfader') as HTMLInputElement;
+// 2D Crossfader State
+interface CrossfaderState {
+  x: number; // 0-1 (left to right)
+  y: number; // 0-1 (top to bottom)
+}
+
+let crossfaderState: CrossfaderState = { x: 0.5, y: 0.5 };
+
+// 2D Crossfader - Volume-Berechnung basierend auf Entfernung zu Ecken
+function calculate2DCrossfaderGains(x: number, y: number): { a: number; b: number; c: number; d: number } {
+  // Eckpositionen (0-1 Koordinaten)
+  const corners = {
+    a: { x: 0, y: 0 },     // Oben links
+    b: { x: 1, y: 0 },     // Oben rechts  
+    c: { x: 1, y: 1 },     // Unten rechts
+    d: { x: 0, y: 1 }      // Unten links
+  };
+  
+  // Entfernungen zu jeder Ecke berechnen
+  const distances = {
+    a: Math.sqrt(Math.pow(x - corners.a.x, 2) + Math.pow(y - corners.a.y, 2)),
+    b: Math.sqrt(Math.pow(x - corners.b.x, 2) + Math.pow(y - corners.b.y, 2)),
+    c: Math.sqrt(Math.pow(x - corners.c.x, 2) + Math.pow(y - corners.c.y, 2)),
+    d: Math.sqrt(Math.pow(x - corners.d.x, 2) + Math.pow(y - corners.d.y, 2))
+  };
+  
+  // Maximale Entfernung im Quadrat (Ecke zu Ecke)
+  const maxDistance = Math.sqrt(2);
+  
+  // Inverse Entfernungen (je näher, desto lauter)
+  const inverseDistances = {
+    a: maxDistance - distances.a,
+    b: maxDistance - distances.b,
+    c: maxDistance - distances.c,
+    d: maxDistance - distances.d
+  };
+  
+  // Summe aller inversen Entfernungen
+  const totalInverse = inverseDistances.a + inverseDistances.b + inverseDistances.c + inverseDistances.d;
+  
+  // Normalisierte Gains (0-1)
+  const gains = {
+    a: inverseDistances.a / totalInverse,
+    b: inverseDistances.b / totalInverse,
+    c: inverseDistances.c / totalInverse,
+    d: inverseDistances.d / totalInverse
+  };
+  
+  return gains;
+}
+
+// 2D Crossfader auf Audio-Pipeline anwenden
+function apply2DCrossfader(x: number, y: number) {
+  const gains = calculate2DCrossfaderGains(x, y);
+  
+  // Audio-Pipeline Crossfader setzen falls verfügbar
+  if (crossfaderGain) {
+    crossfaderGain.a.gain.value = gains.a;
+    crossfaderGain.b.gain.value = gains.b;
+    crossfaderGain.c.gain.value = gains.c;
+    crossfaderGain.d.gain.value = gains.d;
+    
+    console.log(`🎚️ 2D Crossfader: x=${x.toFixed(2)}, y=${y.toFixed(2)} | A=${(gains.a*100).toFixed(0)}%, B=${(gains.b*100).toFixed(0)}%, C=${(gains.c*100).toFixed(0)}%, D=${(gains.d*100).toFixed(0)}%`);
+  }
+  
+  // Fallback: Direkte Audio-Element-Kontrolle für A+B Decks
   const audioLeft = document.getElementById('audio-left') as HTMLAudioElement;
   const audioRight = document.getElementById('audio-right') as HTMLAudioElement;
   
-  if (!crossfader || !audioLeft || !audioRight) return;
-  
-  crossfader.addEventListener('input', () => {
-    const value = parseInt(crossfader.value);
-    
-    // Konvertiere Crossfader-Position (0-100) zu Audio-Pipeline-Position (0-1)
-    const position = value / 100;
-    
-    // Audio-Pipeline Crossfader setzen falls verfügbar
-    if (crossfaderGain) {
-      // Position zwischen 0 und 1 begrenzen
-      const clampedPosition = Math.max(0, Math.min(1, position));
-      
-      // Links: maximum bei 0, minimum bei 1
-      const leftGain = Math.cos(clampedPosition * Math.PI / 2);
-      // Rechts: minimum bei 0, maximum bei 1
-      const rightGain = Math.sin(clampedPosition * Math.PI / 2);
-      
-      // Monitor-Crossfader
-      crossfaderGain.a.gain.value = leftGain;
-      crossfaderGain.b.gain.value = rightGain;
-      
-      console.log(`🎚️ Crossfader Web Audio: ${position}, Left: ${leftGain.toFixed(2)}, Right: ${rightGain.toFixed(2)} (Monitor)`);
-    }
-    
-    // Fallback: Direkte Audio-Element-Kontrolle
-    // Crossfader: 0 = nur links, 50 = beide gleich, 100 = nur rechts
-    // Korrekte Berechnung für fließenden Übergang
-    let leftVolume, rightVolume;
-    
-    if (value <= 50) {
-      // Von 0 bis 50: Links bleibt bei 100%, Rechts steigt von 0% auf 100%
-      leftVolume = 1.0;
-      rightVolume = value / 50.0;
-    } else {
-      // Von 50 bis 100: Rechts bleibt bei 100%, Links sinkt von 100% auf 0%
-      leftVolume = (100 - value) / 50.0;
-      rightVolume = 1.0;
-    }
-    
+  if (audioLeft && audioRight) {
     // Basis-Volume von den Volume-Slidern
     const leftSlider = document.getElementById('volume-left') as HTMLInputElement;
     const rightSlider = document.getElementById('volume-right') as HTMLInputElement;
@@ -7403,15 +7531,104 @@ function initializeCrossfader() {
     const rightBaseVolume = rightSlider ? parseInt(rightSlider.value) / 100 : 0.8;
     
     // Kombinierte Volume setzen
-    audioLeft.volume = Math.min(1, leftVolume * leftBaseVolume);
-    audioRight.volume = Math.min(1, rightVolume * rightBaseVolume);
+    audioLeft.volume = Math.min(1, gains.a * leftBaseVolume);
+    audioRight.volume = Math.min(1, gains.b * rightBaseVolume);
+  }
+}
+
+// 2D Crossfader initialisieren
+function initialize2DCrossfader() {
+  const crossfaderContainer = document.getElementById('crossfader-2d') as HTMLElement;
+  const crossfaderArea = crossfaderContainer?.querySelector('.crossfader-2d-area') as HTMLElement;
+  const crossfaderPoint = document.getElementById('crossfader-point') as HTMLElement;
+  
+  if (!crossfaderContainer || !crossfaderArea || !crossfaderPoint) {
+    console.error('2D Crossfader elements not found');
+    return;
+  }
+  
+  let isDragging = false;
+  
+  // Position des Punktes aktualisieren
+  function updatePointPosition(x: number, y: number) {
+    crossfaderState.x = Math.max(0, Math.min(1, x));
+    crossfaderState.y = Math.max(0, Math.min(1, y));
     
-    console.log(`Crossfader: ${value}% - Left: ${Math.round(audioLeft.volume * 100)}%, Right: ${Math.round(audioRight.volume * 100)}%`);
+    const areaRect = crossfaderArea.getBoundingClientRect();
+    const pointWidth = 20; // Breite des Crossfader-Punktes
+    const pointHeight = 20; // Höhe des Crossfader-Punktes
+    
+    // Position innerhalb des Bereichs berechnen (abzüglich der Punkt-Größe)
+    const pointX = (crossfaderState.x * (areaRect.width - pointWidth));
+    const pointY = (crossfaderState.y * (areaRect.height - pointHeight));
+    
+    crossfaderPoint.style.left = pointX + 'px';
+    crossfaderPoint.style.top = pointY + 'px';
+    
+    apply2DCrossfader(crossfaderState.x, crossfaderState.y);
+  }
+  
+  // Maus-/Touch-Position zu Koordinaten konvertieren
+  function getRelativePosition(event: MouseEvent | TouchEvent): { x: number, y: number } {
+    const rect = crossfaderArea.getBoundingClientRect();
+    const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
+    const clientY = 'touches' in event ? event.touches[0].clientY : event.clientY;
+    
+    const x = (clientX - rect.left) / rect.width;
+    const y = (clientY - rect.top) / rect.height;
+    
+    return { x, y };
+  }
+  
+  // Mouse Events
+  crossfaderArea.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    const pos = getRelativePosition(e);
+    updatePointPosition(pos.x, pos.y);
+    e.preventDefault();
   });
   
-  // Initial Crossfader Position (Mitte)
-  crossfader.value = '50';
-  crossfader.dispatchEvent(new Event('input'));
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const pos = getRelativePosition(e);
+    updatePointPosition(pos.x, pos.y);
+    e.preventDefault();
+  });
+  
+  document.addEventListener('mouseup', () => {
+    isDragging = false;
+  });
+  
+  // Touch Events für Mobile
+  crossfaderArea.addEventListener('touchstart', (e) => {
+    isDragging = true;
+    const pos = getRelativePosition(e);
+    updatePointPosition(pos.x, pos.y);
+    e.preventDefault();
+  });
+  
+  document.addEventListener('touchmove', (e) => {
+    if (!isDragging) return;
+    const pos = getRelativePosition(e);
+    updatePointPosition(pos.x, pos.y);
+    e.preventDefault();
+  }, { passive: false });
+  
+  document.addEventListener('touchend', () => {
+    isDragging = false;
+  });
+  
+  // Doppelklick zum Zurücksetzen
+  crossfaderArea.addEventListener('dblclick', () => {
+    crossfaderState.x = 0.5;
+    crossfaderState.y = 0.5;
+    updatePointPosition(0.5, 0.5);
+    console.log('🎚️ 2D Crossfader reset to center - All decks at 100%');
+  });
+  
+  // Initial Position (Mitte)
+  updatePointPosition(0.5, 0.5);
+  console.log('🎚️ 2D Crossfader initialized');
 }
 
 // Player Drop Zones initialisieren
@@ -7492,7 +7709,11 @@ async function loadLocalFileToDeck(deck: 'a' | 'b' | 'c' | 'd', file: File): Pro
       return;
     }
     
-    // Get audio element
+    // ✅ CLEAR DECK COMPLETELY before loading local file
+    // This removes any previous OpenSubsonic tracks, radio streams, or other local files
+    clearPlayerDeck(deck);
+    
+    // Get audio element (after clearing)
     const audio = document.getElementById(`audio-${deck}`) as HTMLAudioElement;
     if (!audio) {
       console.error(`❌ Audio element for deck ${deck} not found`);
@@ -7730,12 +7951,23 @@ async function extractAudioMetadata(file: File, reuseObjectUrl?: string): Promis
  * Update display for local file
  */
 function updateLocalFileDisplay(deck: 'a' | 'b' | 'c' | 'd', track: any): void {
-  // Update title and artist
-  const titleElement = document.getElementById(`track-title-${deck}`);
-  const artistElement = document.getElementById(`track-artist-${deck}`);
+  // Update waveform info overlay (visible metadata display)
+  const waveformInfo = document.getElementById(`waveform-info-${deck}`);
+  if (waveformInfo) {
+    const titleElement = waveformInfo.querySelector('.track-title') as HTMLElement;
+    const artistElement = waveformInfo.querySelector('.track-artist') as HTMLElement;
+    const albumElement = waveformInfo.querySelector('.track-album') as HTMLElement;
+    
+    if (titleElement) titleElement.textContent = track.title;
+    if (artistElement) artistElement.textContent = track.artist;
+    if (albumElement) albumElement.textContent = track.album || 'Local Files';
+  }
   
-  if (titleElement) titleElement.textContent = track.title;
-  if (artistElement) artistElement.textContent = track.artist;
+  // Also update hidden metadata elements (for compatibility)
+  const hiddenTitle = document.getElementById(`track-title-${deck}`);
+  const hiddenArtist = document.getElementById(`track-artist-${deck}`);
+  if (hiddenTitle) hiddenTitle.textContent = track.title;
+  if (hiddenArtist) hiddenArtist.textContent = track.artist;
   
   // Update album cover (show file icon for local files)
   const albumCover = document.getElementById(`album-cover-${deck}`) as HTMLElement;
@@ -8086,8 +8318,20 @@ function initializePlayerDropZone(side: 'a' | 'b' | 'c' | 'd') {
   playerDeck.addEventListener('drop', async (e) => {
     console.log(`🎯 DROP EVENT on player ${side}!`);
     e.preventDefault();
-    playerDeck.classList.remove('drag-over');
-    playerDeck.classList.remove('drop-blocked');
+    
+    // CRITICAL: Clean up ALL drag visual states immediately
+    playerDeck.classList.remove('drag-over', 'drop-blocked');
+    playerDeck.style.opacity = '1';
+    
+    // Clean up ALL other decks as well
+    const allSides: ('a' | 'b' | 'c' | 'd')[] = ['a', 'b', 'c', 'd'];
+    allSides.forEach(deckSide => {
+      const deck = document.getElementById(`player-${deckSide}`);
+      if (deck) {
+        deck.classList.remove('drag-over', 'drop-blocked');
+        deck.style.opacity = '1';
+      }
+    });
     
     const dragEvent = e as DragEvent;
     

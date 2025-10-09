@@ -1252,10 +1252,7 @@ function initializePlayerSystem() {
     setupAudioPlayer('d', audioD);
   }
   
-  // 3. Initialize 2D crossfader functionality
-  initialize2DCrossfader();
-  
-  // 4. Setup drop zones for drag & drop (with delay to ensure DOM is ready)
+  // 3. Setup drop zones for drag & drop (with delay to ensure DOM is ready)
   setTimeout(() => {
     console.log('🎯 Initializing drop zones after DOM is ready...');
     initializePlayerDropZones();
@@ -2101,10 +2098,7 @@ function initializeFullApp() {
     });
   }, 200);
   
-  // 3. Initialize other systems
-  initialize2DCrossfader();
-  
-  // 4. Setup drop zones with delay
+  // 3. Setup drop zones with delay
   setTimeout(() => {
     initializePlayerDropZones();
     setupQueueDropZone();
@@ -7447,188 +7441,17 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   console.log(`Player ${side.toUpperCase()}: "${song.title}" loaded successfully`);
 }
 
-// Crossfader anwenden (für neue Tracks)
+// Apply full volume to all decks (no crossfader)
 function applyCrossfader() {
-  // Verwende 2D Crossfader
-  apply2DCrossfader(crossfaderState.x, crossfaderState.y);
-}
-
-// 2D Crossfader State
-interface CrossfaderState {
-  x: number; // 0-1 (left to right)
-  y: number; // 0-1 (top to bottom)
-}
-
-let crossfaderState: CrossfaderState = { x: 0.5, y: 0.5 };
-
-// 2D Crossfader - Volume-Berechnung basierend auf Entfernung zu Ecken
-function calculate2DCrossfaderGains(x: number, y: number): { a: number; b: number; c: number; d: number } {
-  // Eckpositionen (0-1 Koordinaten)
-  const corners = {
-    a: { x: 0, y: 0 },     // Oben links
-    b: { x: 1, y: 0 },     // Oben rechts  
-    c: { x: 1, y: 1 },     // Unten rechts
-    d: { x: 0, y: 1 }      // Unten links
-  };
-  
-  // Entfernungen zu jeder Ecke berechnen
-  const distances = {
-    a: Math.sqrt(Math.pow(x - corners.a.x, 2) + Math.pow(y - corners.a.y, 2)),
-    b: Math.sqrt(Math.pow(x - corners.b.x, 2) + Math.pow(y - corners.b.y, 2)),
-    c: Math.sqrt(Math.pow(x - corners.c.x, 2) + Math.pow(y - corners.c.y, 2)),
-    d: Math.sqrt(Math.pow(x - corners.d.x, 2) + Math.pow(y - corners.d.y, 2))
-  };
-  
-  // Maximale Entfernung im Quadrat (Ecke zu Ecke)
-  const maxDistance = Math.sqrt(2);
-  
-  // Inverse Entfernungen (je näher, desto lauter)
-  const inverseDistances = {
-    a: maxDistance - distances.a,
-    b: maxDistance - distances.b,
-    c: maxDistance - distances.c,
-    d: maxDistance - distances.d
-  };
-  
-  // Summe aller inversen Entfernungen
-  const totalInverse = inverseDistances.a + inverseDistances.b + inverseDistances.c + inverseDistances.d;
-  
-  // Normalisierte Gains (0-1)
-  const gains = {
-    a: inverseDistances.a / totalInverse,
-    b: inverseDistances.b / totalInverse,
-    c: inverseDistances.c / totalInverse,
-    d: inverseDistances.d / totalInverse
-  };
-  
-  return gains;
-}
-
-// 2D Crossfader auf Audio-Pipeline anwenden
-function apply2DCrossfader(x: number, y: number) {
-  const gains = calculate2DCrossfaderGains(x, y);
-  
-  // Audio-Pipeline Crossfader setzen falls verfügbar
+  // Set all deck gains to 100% (1.0)
   if (crossfaderGain) {
-    crossfaderGain.a.gain.value = gains.a;
-    crossfaderGain.b.gain.value = gains.b;
-    crossfaderGain.c.gain.value = gains.c;
-    crossfaderGain.d.gain.value = gains.d;
+    crossfaderGain.a.gain.value = 1.0;
+    crossfaderGain.b.gain.value = 1.0;
+    crossfaderGain.c.gain.value = 1.0;
+    crossfaderGain.d.gain.value = 1.0;
     
-    console.log(`🎚️ 2D Crossfader: x=${x.toFixed(2)}, y=${y.toFixed(2)} | A=${(gains.a*100).toFixed(0)}%, B=${(gains.b*100).toFixed(0)}%, C=${(gains.c*100).toFixed(0)}%, D=${(gains.d*100).toFixed(0)}%`);
+    console.log(`🎚️ All decks at 100% volume`);
   }
-  
-  // Fallback: Direkte Audio-Element-Kontrolle für A+B Decks
-  const audioLeft = document.getElementById('audio-left') as HTMLAudioElement;
-  const audioRight = document.getElementById('audio-right') as HTMLAudioElement;
-  
-  if (audioLeft && audioRight) {
-    // Basis-Volume von den Volume-Slidern
-    const leftSlider = document.getElementById('volume-left') as HTMLInputElement;
-    const rightSlider = document.getElementById('volume-right') as HTMLInputElement;
-    
-    const leftBaseVolume = leftSlider ? parseInt(leftSlider.value) / 100 : 0.8;
-    const rightBaseVolume = rightSlider ? parseInt(rightSlider.value) / 100 : 0.8;
-    
-    // Kombinierte Volume setzen
-    audioLeft.volume = Math.min(1, gains.a * leftBaseVolume);
-    audioRight.volume = Math.min(1, gains.b * rightBaseVolume);
-  }
-}
-
-// 2D Crossfader initialisieren
-function initialize2DCrossfader() {
-  const crossfaderContainer = document.getElementById('crossfader-2d') as HTMLElement;
-  const crossfaderArea = crossfaderContainer?.querySelector('.crossfader-2d-area') as HTMLElement;
-  const crossfaderPoint = document.getElementById('crossfader-point') as HTMLElement;
-  
-  if (!crossfaderContainer || !crossfaderArea || !crossfaderPoint) {
-    console.error('2D Crossfader elements not found');
-    return;
-  }
-  
-  let isDragging = false;
-  
-  // Position des Punktes aktualisieren
-  function updatePointPosition(x: number, y: number) {
-    crossfaderState.x = Math.max(0, Math.min(1, x));
-    crossfaderState.y = Math.max(0, Math.min(1, y));
-    
-    const areaRect = crossfaderArea.getBoundingClientRect();
-    const pointWidth = 20; // Breite des Crossfader-Punktes
-    const pointHeight = 20; // Höhe des Crossfader-Punktes
-    
-    // Position innerhalb des Bereichs berechnen (abzüglich der Punkt-Größe)
-    const pointX = (crossfaderState.x * (areaRect.width - pointWidth));
-    const pointY = (crossfaderState.y * (areaRect.height - pointHeight));
-    
-    crossfaderPoint.style.left = pointX + 'px';
-    crossfaderPoint.style.top = pointY + 'px';
-    
-    apply2DCrossfader(crossfaderState.x, crossfaderState.y);
-  }
-  
-  // Maus-/Touch-Position zu Koordinaten konvertieren
-  function getRelativePosition(event: MouseEvent | TouchEvent): { x: number, y: number } {
-    const rect = crossfaderArea.getBoundingClientRect();
-    const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
-    const clientY = 'touches' in event ? event.touches[0].clientY : event.clientY;
-    
-    const x = (clientX - rect.left) / rect.width;
-    const y = (clientY - rect.top) / rect.height;
-    
-    return { x, y };
-  }
-  
-  // Mouse Events
-  crossfaderArea.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    const pos = getRelativePosition(e);
-    updatePointPosition(pos.x, pos.y);
-    e.preventDefault();
-  });
-  
-  document.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    const pos = getRelativePosition(e);
-    updatePointPosition(pos.x, pos.y);
-    e.preventDefault();
-  });
-  
-  document.addEventListener('mouseup', () => {
-    isDragging = false;
-  });
-  
-  // Touch Events für Mobile
-  crossfaderArea.addEventListener('touchstart', (e) => {
-    isDragging = true;
-    const pos = getRelativePosition(e);
-    updatePointPosition(pos.x, pos.y);
-    e.preventDefault();
-  });
-  
-  document.addEventListener('touchmove', (e) => {
-    if (!isDragging) return;
-    const pos = getRelativePosition(e);
-    updatePointPosition(pos.x, pos.y);
-    e.preventDefault();
-  }, { passive: false });
-  
-  document.addEventListener('touchend', () => {
-    isDragging = false;
-  });
-  
-  // Doppelklick zum Zurücksetzen
-  crossfaderArea.addEventListener('dblclick', () => {
-    crossfaderState.x = 0.5;
-    crossfaderState.y = 0.5;
-    updatePointPosition(0.5, 0.5);
-    console.log('🎚️ 2D Crossfader reset to center - All decks at 100%');
-  });
-  
-  // Initial Position (Mitte)
-  updatePointPosition(0.5, 0.5);
-  console.log('🎚️ 2D Crossfader initialized');
 }
 
 // Player Drop Zones initialisieren

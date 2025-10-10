@@ -1527,12 +1527,12 @@ function formatTime(seconds: number): string {
 const waveSurfersZoom: { [key in 'a' | 'b' | 'c' | 'd']?: WaveSurfer } = {};
 const waveSurfersOverview: { [key in 'a' | 'b' | 'c' | 'd']?: WaveSurfer } = {};
 
-// Waveform zoom levels for each deck (1.0 = 100%, 2.0 = 200%, etc.)
+// Waveform zoom levels for each deck (8.0 = 800% default zoom for detail)
 const waveformZoom: { [key in 'a' | 'b' | 'c' | 'd']: number } = {
-  a: 1.0,
-  b: 1.0,
-  c: 1.0,
-  d: 1.0
+  a: 8.0,
+  b: 8.0,
+  c: 8.0,
+  d: 8.0
 };
 
 // Initialize WaveSurfer for a player with dual waveforms (zoom + overview)
@@ -1582,7 +1582,7 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
   const estimatedDuration = trackDuration || 180; // Fallback to 3 minutes
   const minPxPerSec = containerWidth / estimatedDuration;
 
-  // 1. CREATE ZOOM WAVEFORM (top, zoomable, no seek)
+  // 1. CREATE ZOOM WAVEFORM (top, zoomable, no seek, centered playhead)
   const wavesurferZoom = WaveSurfer.create({
     container: containerZoom,
     waveColor: waveColor,
@@ -1594,7 +1594,8 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
     normalize: true,
     backend: 'WebAudio',
     minPxPerSec: minPxPerSec,
-    interact: false // Disable all interactions (no seek)
+    interact: false, // Disable all interactions (no seek)
+    hideScrollbar: true // Explicitly hide scrollbar
   });
   
   wavesurferZoom.setVolume(0);
@@ -1612,7 +1613,8 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
     normalize: true,
     backend: 'WebAudio',
     minPxPerSec: minPxPerSec, // Always show full track
-    interact: true // Enable seek interactions
+    interact: true, // Enable seek interactions
+    hideScrollbar: true // Explicitly hide scrollbar
   });
   
   wavesurferOverview.setVolume(0);
@@ -1784,6 +1786,34 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
     }
   });
 
+  // Zoom waveform ready event - apply initial zoom
+  wavesurferZoom.on('ready', () => {
+    console.log(`✅ Zoom Waveform ready for ${side} player`);
+    
+    // Set zoom to 8.0x (default for detailed view) and recalculate with actual track duration
+    waveformZoom[side] = 8.0;
+    const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+    const actualDuration = audio?.duration || wavesurferZoom.getDuration();
+    
+    if (actualDuration > 0) {
+      const containerZoom = document.getElementById(`waveform-${side}-zoom`);
+      const containerWidth = containerZoom?.clientWidth || 500;
+      const correctMinPxPerSec = containerWidth / actualDuration;
+      const zoomedPxPerSec = correctMinPxPerSec * 8.0; // Apply 8.0x zoom
+      
+      try {
+        wavesurferZoom.zoom(zoomedPxPerSec);
+        showZoomIndicator(side, 8.0); // Show initial zoom level
+        console.log(`🔍 Deck ${side.toUpperCase()}: Initial zoom to 8.0x (${zoomedPxPerSec.toFixed(2)} px/s for ${actualDuration.toFixed(1)}s track)`);
+      } catch (e) {
+        console.warn(`⚠️ Could not apply initial zoom to ${side}:`, e);
+      }
+    }
+    
+    // Ensure at the beginning
+    wavesurferZoom.seekTo(0);
+  });
+
   wavesurferOverview.on('ready', () => {
     console.log(`✅ Overview Waveform ready for ${side} player`);
     
@@ -1799,20 +1829,7 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
     if (containerZoom) containerZoom.style.opacity = '1';
     if (containerOverview) containerOverview.style.opacity = '0.7'; // Slightly dimmed
     
-    // Reset zoom to 1.0 and recalculate with actual track duration
-    waveformZoom[side] = 1.0;
-    const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-    const actualDuration = audio?.duration || wavesurferOverview.getDuration();
-    
-    if (actualDuration > 0) {
-      const containerWidth = containerZoom?.clientWidth || 500;
-      const correctMinPxPerSec = containerWidth / actualDuration;
-      wavesurferZoom.zoom(correctMinPxPerSec);
-      console.log(`🔍 Deck ${side.toUpperCase()}: Reset zoom to 1.0x (${correctMinPxPerSec.toFixed(2)} px/s for ${actualDuration.toFixed(1)}s track)`);
-    }
-    
-    // Ensure both are at the beginning
-    wavesurferZoom.seekTo(0);
+    // Ensure overview is at the beginning
     wavesurferOverview.seekTo(0);
   });
 
@@ -2888,12 +2905,20 @@ document.addEventListener("DOMContentLoaded", async () => {
       const volume = parseInt(micVolumeSlider?.value || "100") / 100;
       setMicrophoneEnabled(true, volume);
       micBtn.classList.add("active");
+      
+      // Check if user is "doooni" and add special effects
+      if (openSubsonicClient && openSubsonicClient.getUsername().toLowerCase() === 'doooni') {
+        micBtn.classList.add("doooni-mode");
+        console.log("🎉 DOOONI MODE ACTIVATED! 🎉");
+      }
+      
       micBtn.innerHTML = '<span class="material-icons">mic</span> MICROPHONE ON';
       console.log(`🎤 Microphone volume enabled: ${Math.round(volume * 100)}%`);
     } else {
       // Mute microphone but keep stream running
       setMicrophoneEnabled(false);
       micBtn.classList.remove("active");
+      micBtn.classList.remove("doooni-mode"); // Remove doooni mode when deactivating
       micBtn.innerHTML = '<span class="material-icons">mic</span> MICROPHONE';
       console.log("🎤 Microphone muted (stream still active)");
       
@@ -7057,6 +7082,33 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
       // Zeit-Anzeige aktualisieren
       updateTimeDisplay(side, audio.currentTime, audio.duration);
       
+      // ⭐ CENTER WAVEFORM: Keep playhead centered in zoom view (DJ mode)
+      const wavesurferZoom = waveSurfersZoom[side];
+      if (wavesurferZoom && waveformZoom[side] > 1.0) {
+        const progress = audio.currentTime / audio.duration;
+        const containerZoom = document.getElementById(`waveform-${side}-zoom`);
+        
+        if (containerZoom) {
+          // Get the waveform wrapper (scrollable element)
+          const waveformWrapper = containerZoom.querySelector('wave') as HTMLElement;
+          
+          if (waveformWrapper) {
+            const containerWidth = containerZoom.clientWidth;
+            const waveformWidth = waveformWrapper.scrollWidth;
+            
+            // Calculate scroll position to center the playhead
+            // Center position = current progress position - half container width
+            const targetScrollPosition = (progress * waveformWidth) - (containerWidth / 2);
+            
+            // Clamp to valid scroll range
+            const maxScroll = waveformWidth - containerWidth;
+            const clampedScroll = Math.max(0, Math.min(targetScrollPosition, maxScroll));
+            
+            waveformWrapper.scrollLeft = clampedScroll;
+          }
+        }
+      }
+      
       // ⭐ EXPLOSION SYSTEM: Check for track ending (last 15 seconds)
       // Only trigger blinking if track is actually playing (not paused/stopped)
       const timeRemaining = audio.duration - audio.currentTime;
@@ -7472,8 +7524,16 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   const titleElement = document.getElementById(`track-title-${side}`);
   const artistElement = document.getElementById(`track-artist-${side}`);
   
-  // Stream URL von OpenSubsonic
-  const streamUrl = openSubsonicClient.getStreamUrl(song.id);
+  // Check if this is a Discord message (direct audio URL)
+  let streamUrl: string;
+  if ((song as any).isDiscordMessage && (song as any).streamUrl) {
+    // Discord audio: use direct URL
+    streamUrl = (song as any).streamUrl;
+    console.log(`🎵 Discord audio URL (direct): ${streamUrl}`);
+  } else {
+    // OpenSubsonic track: use stream proxy
+    streamUrl = openSubsonicClient.getStreamUrl(song.id);
+  }
   
   // PLAYER STATE: Track loaded but not playing yet
   setPlayerState(side, song, false);
@@ -12373,4 +12433,492 @@ class GitHubCat {
 const githubCat = new GitHubCat();
 
 // Make it globally available for debugging
+(window as any).githubCat = githubCat;
+
+// ============================================
+// Discord Wishbox Integration
+// ============================================
+
+import { initializeDiscord, getDiscordClient, type DiscordGatewayClient } from './discordGateway';
+
+// Wishbox UI elements
+const wishboxBtn = document.getElementById('wishbox-btn') as HTMLButtonElement;
+const wishboxDropdown = document.getElementById('wishbox-dropdown') as HTMLDivElement;
+const wishboxSortBtn = document.getElementById('wishbox-sort-btn') as HTMLButtonElement;
+const wishboxCloseBtn = document.getElementById('wishbox-close-btn') as HTMLButtonElement;
+const wishboxStatus = document.getElementById('wishbox-status') as HTMLDivElement;
+const wishboxContent = document.getElementById('wishbox-content') as HTMLDivElement;
+
+// Sort order state (load from localStorage)
+let wishboxSortOrder: 'newest' | 'oldest' = (localStorage.getItem('wishboxSortOrder') as 'newest' | 'oldest') || 'newest';
+
+// Update sort button icon based on current order
+function updateSortButtonIcon() {
+  if (wishboxSortOrder === 'oldest') {
+    wishboxSortBtn.classList.add('ascending');
+    wishboxSortBtn.title = 'Sortierung: Älteste zuerst (aufsteigend)';
+  } else {
+    wishboxSortBtn.classList.remove('ascending');
+    wishboxSortBtn.title = 'Sortierung: Neueste zuerst (absteigend)';
+  }
+}
+
+// Initialize sort button
+updateSortButtonIcon();
+
+// Message storage
+const discordMessages: Array<{
+  id: string;
+  content: string;
+  author: {
+    id: string;
+    username: string;
+    avatar: string | null;
+    discriminator: string;
+  };
+  timestamp: string;
+}> = [];
+
+/**
+ * Format Discord timestamp to readable format
+ */
+function formatDiscordTimestamp(timestamp: string): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  
+  // Less than 1 minute
+  if (diff < 60000) {
+    return 'gerade eben';
+  }
+  
+  // Less than 1 hour
+  if (diff < 3600000) {
+    const minutes = Math.floor(diff / 60000);
+    return `vor ${minutes} Minute${minutes > 1 ? 'n' : ''}`;
+  }
+  
+  // Less than 1 day
+  if (diff < 86400000) {
+    const hours = Math.floor(diff / 3600000);
+    return `vor ${hours} Stunde${hours > 1 ? 'n' : ''}`;
+  }
+  
+  // Show date
+  return date.toLocaleDateString('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * Get Discord avatar URL or generate default initials
+ */
+function getDiscordAvatar(author: any): string | null {
+  if (author.avatar) {
+    return `https://cdn.discordapp.com/avatars/${author.id}/${author.avatar}.png?size=128`;
+  }
+  return null;
+}
+
+/**
+ * Render a Discord message in the wishbox
+ */
+function renderDiscordMessage(message: any): HTMLElement {
+  const messageEl = document.createElement('div');
+  messageEl.className = 'discord-message';
+  messageEl.dataset.messageId = message.id;
+  
+  const avatarUrl = getDiscordAvatar(message.author);
+  const initials = message.author.username.substring(0, 2).toUpperCase();
+  
+  // Debug: Log message structure
+  console.log('📨 Rendering message:', {
+    id: message.id,
+    content: message.content,
+    hasAttachments: !!message.attachments,
+    attachmentsCount: message.attachments?.length || 0,
+    attachments: message.attachments
+  });
+  
+  // Build attachments HTML (audio files)
+  let attachmentsHtml = '';
+  let hasAudioAttachment = false;
+  
+  if (message.attachments && message.attachments.length > 0) {
+    console.log('🎵 Found attachments:', message.attachments);
+    
+    const audioAttachments = message.attachments.filter((att: any) => 
+      att.content_type?.startsWith('audio/') || 
+      /\.(mp3|wav|ogg|m4a|flac)$/i.test(att.filename)
+    );
+    
+    console.log('🎵 Audio attachments:', audioAttachments);
+    
+    if (audioAttachments.length > 0) {
+      hasAudioAttachment = true;
+      attachmentsHtml = audioAttachments.map((att: any) => {
+        // Proxy Discord audio URL through backend to avoid CORS
+        const proxiedUrl = `${window.location.origin}/api/discord-audio?url=${encodeURIComponent(att.url)}`;
+        
+        return `
+          <div class="discord-message-audio" data-audio-url="${att.url}" data-audio-filename="${escapeHtml(att.filename)}">
+            <div class="audio-info">
+              <span class="material-icons">music_note</span>
+              <span class="audio-filename">${escapeHtml(att.filename)}</span>
+            </div>
+            <audio controls preload="metadata">
+              <source src="${proxiedUrl}" type="${att.content_type || 'audio/mpeg'}">
+              Dein Browser unterstützt keine Audio-Wiedergabe.
+            </audio>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+  
+  messageEl.innerHTML = `
+    <div class="discord-message-header">
+      <div class="discord-message-avatar">
+        ${avatarUrl ? `<img src="${avatarUrl}" alt="${message.author.username}">` : initials}
+      </div>
+      <div class="discord-message-info">
+        <div class="discord-message-author">${message.author.username}</div>
+        <div class="discord-message-timestamp">${formatDiscordTimestamp(message.timestamp)}</div>
+      </div>
+      <button class="discord-message-delete" data-message-id="${message.id}" title="Nachricht löschen">
+        <span class="material-icons">delete</span>
+      </button>
+    </div>
+    ${message.content ? `<div class="discord-message-content">${escapeHtml(message.content)}</div>` : ''}
+    ${attachmentsHtml}
+  `;
+  
+  // Make message draggable if it has audio attachment
+  if (hasAudioAttachment) {
+    messageEl.draggable = true;
+    messageEl.classList.add('draggable');
+    
+    // Store message data for drag
+    messageEl.dataset.authorUsername = message.author.username;
+    
+    // Drag start event
+    messageEl.addEventListener('dragstart', (e) => {
+      const dragEvent = e as DragEvent;
+      const audioContainer = messageEl.querySelector('.discord-message-audio') as HTMLElement;
+      const audioUrl = audioContainer?.dataset.audioUrl || '';
+      const audioFilename = audioContainer?.dataset.audioFilename || 'audio.mp3';
+      const authorName = message.author.username;
+      
+      console.log('🎵 Dragging Discord audio:', { audioUrl, audioFilename, authorName });
+      
+      // Proxy Discord audio URL through backend to avoid CORS
+      const proxiedAudioUrl = `${window.location.origin}/api/discord-audio?url=${encodeURIComponent(audioUrl)}`;
+      
+      // Create a pseudo-song object for the deck
+      const pseudoSong = {
+        id: `discord-${message.id}`,
+        title: `Audio-Nachricht von ${authorName}`,
+        artist: 'Discord Wunschbox',
+        album: 'Discord Wünsche',
+        duration: 0, // Unknown duration
+        streamUrl: proxiedAudioUrl,
+        coverArt: '', // No cover art
+        albumId: '',
+        artistId: '',
+        year: new Date().getFullYear(),
+        genre: 'Voice Message',
+        isDiscordMessage: true, // Flag to identify Discord messages
+      };
+      
+      // Set drag data
+      dragEvent.dataTransfer!.effectAllowed = 'copy';
+      dragEvent.dataTransfer!.setData('application/json', JSON.stringify({
+        type: 'song',
+        song: pseudoSong
+      }));
+      
+      // Visual feedback
+      messageEl.classList.add('dragging');
+    });
+    
+    messageEl.addEventListener('dragend', () => {
+      messageEl.classList.remove('dragging');
+    });
+  }
+  
+  // Add delete handler
+  const deleteBtn = messageEl.querySelector('.discord-message-delete') as HTMLButtonElement;
+  deleteBtn?.addEventListener('click', () => deleteDiscordMessage(message.id, message.channel_id));
+  
+  return messageEl;
+}
+
+/**
+ * Delete a Discord message via REST API
+ */
+async function deleteDiscordMessage(messageId: string, channelId: string) {
+  const token = import.meta.env.VITE_DISCORD_BOT_TOKEN;
+  
+  if (!token) {
+    console.error('❌ Cannot delete message: No bot token configured');
+    return;
+  }
+  
+  try {
+    console.log(`🗑️ Deleting Discord message ${messageId}...`);
+    
+    // Use backend proxy to avoid CORS issues
+    const proxyUrl = `${window.location.origin}/api/discord/channels/${channelId}/messages/${messageId}`;
+    
+    const response = await fetch(proxyUrl, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bot ${token}`,
+      },
+    });
+    
+    if (response.status === 204) {
+      console.log('✅ Message deleted successfully');
+      
+      // Remove from local storage
+      const index = discordMessages.findIndex(m => m.id === messageId);
+      if (index !== -1) {
+        discordMessages.splice(index, 1);
+      }
+      
+      // Remove from UI
+      const messageEl = document.querySelector(`[data-message-id="${messageId}"]`);
+      if (messageEl) {
+        messageEl.classList.add('deleting');
+        setTimeout(() => {
+          messageEl.remove();
+          
+          // Update UI if no messages left
+          if (discordMessages.length === 0) {
+            updateWishboxContent();
+          }
+        }, 300);
+      }
+    } else {
+      const errorText = await response.text();
+      console.error('❌ Failed to delete message:', response.status, errorText);
+      alert('Fehler beim Löschen der Nachricht. Möglicherweise fehlen Bot-Rechte (Manage Messages).');
+    }
+  } catch (error) {
+    console.error('❌ Error deleting message:', error);
+    alert('Fehler beim Löschen der Nachricht.');
+  }
+}
+
+/**
+ * Update wishbox content with all messages
+ */
+function updateWishboxContent() {
+  wishboxContent.innerHTML = '';
+  
+  if (discordMessages.length === 0) {
+    wishboxContent.innerHTML = `
+      <div class="wishbox-empty">
+        <span class="material-icons">chat_bubble_outline</span>
+        <p>Noch keine Wünsche vorhanden.<br>Warte auf neue Nachrichten...</p>
+      </div>
+    `;
+    return;
+  }
+  
+  // Sort messages based on current sort order
+  let sortedMessages = [...discordMessages];
+  
+  if (wishboxSortOrder === 'newest') {
+    // Newest first (reverse chronological)
+    sortedMessages.reverse();
+  }
+  // If 'oldest', keep original order (chronological)
+  
+  sortedMessages.forEach(message => {
+    const messageEl = renderDiscordMessage(message);
+    wishboxContent.appendChild(messageEl);
+  });
+  
+  // Scroll behavior based on sort order
+  if (wishboxSortOrder === 'newest') {
+    wishboxContent.scrollTop = 0; // Scroll to top for newest
+  } else {
+    wishboxContent.scrollTop = wishboxContent.scrollHeight; // Scroll to bottom for oldest
+  }
+}
+
+/**
+ * Handle new Discord message
+ */
+function handleNewDiscordMessage(message: any) {
+  console.log('💬 New Discord wish:', message);
+  
+  // Add to messages array
+  discordMessages.push(message);
+  
+  // Keep only last 50 messages
+  if (discordMessages.length > 50) {
+    discordMessages.shift();
+  }
+  
+  // Update UI if wishbox is open
+  if (wishboxDropdown.classList.contains('show')) {
+    updateWishboxContent();
+  }
+  
+  // Show notification badge (optional)
+  wishboxBtn.classList.add('active');
+}
+
+/**
+ * Toggle wishbox dropdown
+ */
+function toggleWishbox() {
+  const isOpen = wishboxDropdown.classList.contains('show');
+  
+  if (isOpen) {
+    closeWishbox();
+  } else {
+    openWishbox();
+  }
+}
+
+/**
+ * Open wishbox dropdown
+ */
+function openWishbox() {
+  wishboxDropdown.classList.add('show');
+  wishboxBtn.classList.add('active');
+  updateWishboxContent();
+  
+  // Hide status if connected
+  const client = getDiscordClient();
+  if (client) {
+    wishboxStatus.classList.add('hidden');
+  }
+}
+
+/**
+ * Close wishbox dropdown
+ */
+function closeWishbox() {
+  wishboxDropdown.classList.remove('show');
+  wishboxBtn.classList.remove('active');
+}
+
+// Event listeners for wishbox
+wishboxBtn?.addEventListener('click', toggleWishbox);
+wishboxCloseBtn?.addEventListener('click', closeWishbox);
+
+// Sort button event listener
+wishboxSortBtn?.addEventListener('click', (e) => {
+  e.stopPropagation(); // Prevent closing wishbox
+  
+  // Toggle sort order
+  wishboxSortOrder = wishboxSortOrder === 'newest' ? 'oldest' : 'newest';
+  
+  // Save to localStorage
+  localStorage.setItem('wishboxSortOrder', wishboxSortOrder);
+  
+  // Update button icon
+  updateSortButtonIcon();
+  
+  // Refresh UI with new sort order
+  updateWishboxContent();
+  
+  console.log(`🔄 Sort order changed to: ${wishboxSortOrder}`);
+});
+
+// Close wishbox when clicking outside
+document.addEventListener('click', (e) => {
+  if (!wishboxDropdown.contains(e.target as Node) && 
+      !wishboxBtn.contains(e.target as Node) &&
+      wishboxDropdown.classList.contains('show')) {
+    closeWishbox();
+  }
+});
+
+// Initialize Discord Gateway connection and load existing messages
+const discordClient = initializeDiscord();
+
+if (discordClient) {
+  console.log('🔗 Discord Gateway client initialized');
+  
+  // Subscribe to new messages
+  discordClient.onNewMessage(handleNewDiscordMessage);
+  
+  // Load existing messages from channel
+  (async () => {
+    try {
+      wishboxStatus.innerHTML = `
+        <span class="material-icons spinning">sync</span>
+        Lade vorhandene Nachrichten...
+      `;
+      
+      const { fetchChannelMessages } = await import('./discordGateway');
+      const existingMessages = await fetchChannelMessages(50);
+      
+      console.log(`📥 Loaded ${existingMessages.length} existing messages`);
+      
+      // Add messages to storage and UI
+      existingMessages.forEach((message: any) => {
+        // Check if message already exists (avoid duplicates)
+        const exists = discordMessages.some(m => m.id === message.id);
+        if (!exists) {
+          // Store complete message including attachments
+          discordMessages.push(message);
+        }
+      });
+      
+      // Update UI
+      updateWishboxContent();
+      
+      // Update status when connected
+      setTimeout(() => {
+        wishboxStatus.innerHTML = `
+          <span class="material-icons" style="color: #43b581;">check_circle</span>
+          Verbunden - ${discordMessages.length} Nachrichten
+        `;
+      }, 1000);
+      
+    } catch (error) {
+      console.error('❌ Failed to load existing messages:', error);
+    }
+  })();
+  
+  // Old status update (fallback)
+  setTimeout(() => {
+    if (wishboxStatus.innerHTML.includes('Verbinde')) {
+      wishboxStatus.innerHTML = `
+        <span class="material-icons" style="color: #43b581;">check_circle</span>
+        Verbunden mit Discord
+      `;
+      setTimeout(() => {
+        wishboxStatus.classList.add('hidden');
+      }, 3000);
+    }
+  }, 2000);
+} else {
+  console.warn('⚠️ Discord Gateway not initialized (missing env variables)');
+  
+  // Show error in status
+  wishboxStatus.innerHTML = `
+    <span class="material-icons" style="color: #f04747;">error</span>
+    Discord nicht konfiguriert
+  `;
+  
+  // Disable wishbox button
+  if (wishboxBtn) {
+    wishboxBtn.disabled = true;
+    wishboxBtn.style.opacity = '0.5';
+    wishboxBtn.style.cursor = 'not-allowed';
+    wishboxBtn.title = 'Discord nicht konfiguriert (env Variablen fehlen)';
+  }
+}
+
 (window as any).githubCat = githubCat;

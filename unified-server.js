@@ -172,6 +172,233 @@ app.get('/api/opensubsonic-cover', async (req, res) => {
     }
 });
 
+// Discord Gateway Proxy (CORS umgehen)
+app.get('/api/discord/gateway', async (req, res) => {
+    console.log('🔗 Discord Gateway Request');
+    
+    try {
+        const fetch = (await import('node-fetch')).default;
+        
+        const response = await fetch('https://discord.com/api/v10/gateway', {
+            headers: {
+                'User-Agent': 'WebDJ-Discord-Bot'
+            }
+        });
+        
+        const data = await response.json();
+        
+        console.log(`✅ Discord Gateway response:`, data);
+        
+        // CORS-Headers hinzufügen
+        res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+        });
+        
+        res.json(data);
+        
+    } catch (error) {
+        console.error(`❌ Discord Gateway Proxy Error:`, error.message);
+        res.status(500).json({ error: 'Proxy Error', details: error.message });
+    }
+});
+
+// Discord API Proxy für DELETE requests (Message löschen)
+app.delete('/api/discord/channels/:channelId/messages/:messageId', async (req, res) => {
+    const { channelId, messageId } = req.params;
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader) {
+        return res.status(401).json({ error: 'Missing Authorization header' });
+    }
+    
+    console.log(`🗑️ Discord Delete Message: ${messageId} in channel ${channelId}`);
+    
+    try {
+        const fetch = (await import('node-fetch')).default;
+        
+        const response = await fetch(
+            `https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`,
+            {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': authHeader,
+                    'User-Agent': 'WebDJ-Discord-Bot'
+                }
+            }
+        );
+        
+        console.log(`📥 Discord Delete response: ${response.status}`);
+        
+        // CORS-Headers hinzufügen
+        res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        });
+        
+        // Status Code weiterleiten
+        res.status(response.status);
+        
+        if (response.status === 204) {
+            res.end();
+        } else {
+            const errorData = await response.text();
+            res.send(errorData);
+        }
+        
+    } catch (error) {
+        console.error(`❌ Discord Delete Proxy Error:`, error.message);
+        res.status(500).json({ error: 'Proxy Error', details: error.message });
+    }
+});
+
+// Discord Get Messages Proxy (GET /api/discord/channels/:channelId/messages)
+app.get('/api/discord/channels/:channelId/messages', async (req, res) => {
+    const { channelId } = req.params;
+    const { limit = 50 } = req.query;
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader) {
+        return res.status(401).json({ error: 'Missing Authorization header' });
+    }
+    
+    try {
+        console.log(`📥 Discord Get Messages Proxy: GET /channels/${channelId}/messages?limit=${limit}`);
+        
+        const response = await fetch(
+            `https://discord.com/api/v10/channels/${channelId}/messages?limit=${limit}`,
+            {
+                method: 'GET',
+                headers: {
+                    'Authorization': authHeader,
+                    'User-Agent': 'WebDJ-Discord-Bot'
+                }
+            }
+        );
+        
+        console.log(`📥 Discord Get Messages response: ${response.status}`);
+        
+        // CORS-Headers hinzufügen
+        res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        });
+        
+        if (response.ok) {
+            const messages = await response.json();
+            res.json(messages);
+        } else {
+            const errorData = await response.text();
+            res.status(response.status).send(errorData);
+        }
+        
+    } catch (error) {
+        console.error(`❌ Discord Get Messages Proxy Error:`, error.message);
+        res.status(500).json({ error: 'Proxy Error', details: error.message });
+    }
+});
+
+// Discord Audio Proxy (GET /api/discord-audio)
+// Proxies Discord CDN audio files to avoid CORS issues
+app.get('/api/discord-audio', async (req, res) => {
+    const { url } = req.query;
+    
+    if (!url) {
+        return res.status(400).json({ error: 'Missing url parameter' });
+    }
+    
+    // Validate that it's a Discord CDN URL
+    if (!url.startsWith('https://cdn.discordapp.com/')) {
+        return res.status(403).json({ error: 'Invalid URL - must be Discord CDN' });
+    }
+    
+    try {
+        console.log(`🎵 Discord Audio Proxy: GET ${url.substring(0, 100)}...`);
+        
+        // Handle range requests for seeking
+        const range = req.headers.range;
+        const fetchHeaders = {
+            'User-Agent': 'WebDJ-Discord-Bot'
+        };
+        
+        if (range) {
+            fetchHeaders['Range'] = range;
+            console.log(`📍 Range request: ${range}`);
+        }
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: fetchHeaders
+        });
+        
+        console.log(`📥 Discord Audio response: ${response.status}`);
+        
+        if (response.ok || response.status === 206) {
+            // Get content type from Discord response
+            const contentType = response.headers.get('content-type') || 'audio/mpeg';
+            const contentLength = response.headers.get('content-length');
+            const contentRange = response.headers.get('content-range');
+            
+            // Set response status
+            res.status(response.status);
+            
+            // Set CORS and content headers
+            const headers = {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                'Access-Control-Allow-Headers': 'Range, Content-Type',
+                'Content-Type': contentType,
+                'Accept-Ranges': 'bytes',
+            };
+            
+            if (contentLength) {
+                headers['Content-Length'] = contentLength;
+            }
+            
+            if (contentRange) {
+                headers['Content-Range'] = contentRange;
+            }
+            
+            res.set(headers);
+            
+            // Stream audio using Node.js streams
+            const reader = response.body.getReader();
+            const stream = new ReadableStream({
+                async start(controller) {
+                    try {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            controller.enqueue(value);
+                        }
+                        controller.close();
+                    } catch (error) {
+                        controller.error(error);
+                    }
+                }
+            });
+            
+            // Convert ReadableStream to Node.js stream
+            for await (const chunk of stream) {
+                res.write(Buffer.from(chunk));
+            }
+            res.end();
+            
+        } else {
+            console.error(`❌ Discord Audio error: ${response.status}`);
+            const errorData = await response.text();
+            res.status(response.status).send(errorData);
+        }
+        
+    } catch (error) {
+        console.error(`❌ Discord Audio Proxy Error:`, error.message);
+        res.status(500).json({ error: 'Proxy Error', details: error.message });
+    }
+});
+
 // AzuraCast Liquidsoap Telnet Proxy für Metadata Updates
 app.post('/api/azuracast-telnet', async (req, res) => {
     const { serverUrl, stationId, apiKey, command } = req.body;

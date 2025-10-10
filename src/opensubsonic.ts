@@ -90,6 +90,11 @@ class SubsonicApiClient {
     this.config = config;
   }
 
+  // Get current username
+  getUsername(): string {
+    return this.config.username;
+  }
+
   // MD5 Hash Funktion für Authentifizierung (echte MD5-Implementierung)
   private md5(text: string): string {
     // Echte MD5-Implementierung für korrekte OpenSubsonic-Authentifizierung

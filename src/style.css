@@ -1389,7 +1389,32 @@ body {
   left: 0;
   right: 0;
   z-index: 2;
-  pointer-events: none; /* Disable clicking - no seek in zoom view */
+  pointer-events: auto; /* Enable mouse wheel for zoom */
+  overflow: hidden !important; /* Hide scrollbars but allow scrolling */
+  cursor: default;
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+/* Hide ALL scrollbars in zoom waveform and all child elements */
+.waveform-container .waveform-zoom::-webkit-scrollbar,
+.waveform-container .waveform-zoom *::-webkit-scrollbar,
+.waveform-container .waveform-zoom wave::-webkit-scrollbar,
+.waveform-container .waveform-zoom wave > *::-webkit-scrollbar,
+.waveform-container .waveform-zoom div::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.waveform-container .waveform-zoom *,
+.waveform-container .waveform-zoom wave,
+.waveform-container .waveform-zoom wave > *,
+.waveform-container .waveform-zoom div {
+  overflow-x: scroll !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE/Edge */
 }
 
 .waveform-container .waveform-overview {
@@ -1404,6 +1429,25 @@ body {
   opacity: 0.7;
   border-top: 1px solid rgba(255, 255, 255, 0.1); /* Subtle separator */
   transition: opacity 0.2s ease;
+  overflow: hidden !important; /* Hide scrollbars */
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+/* Hide ALL scrollbars in overview waveform */
+.waveform-container .waveform-overview::-webkit-scrollbar,
+.waveform-container .waveform-overview *::-webkit-scrollbar,
+.waveform-container .waveform-overview div::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.waveform-container .waveform-overview *,
+.waveform-container .waveform-overview div {
+  overflow: hidden !important;
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE/Edge */
 }
 
 .waveform-container .waveform-overview:hover {
@@ -3351,6 +3395,259 @@ body {
   border-color: #ff8888;
 }
 
+/* DOOONI SPECIAL EFFECTS - Ultra Wild Microphone Animation */
+.mic-btn-pro.active.doooni-mode {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  z-index: 999 !important;
+  border-radius: 4px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: all !important;
+  cursor: pointer !important;
+  background: 
+    radial-gradient(circle at 50% 50%, rgba(255, 0, 0, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 30% 70%, rgba(255, 68, 255, 0.2) 0%, transparent 40%),
+    radial-gradient(circle at 70% 30%, rgba(68, 255, 255, 0.2) 0%, transparent 40%),
+    linear-gradient(145deg, rgba(255, 68, 68, 0.1), rgba(204, 51, 51, 0.1));
+  border: 20px solid;
+  border-image: linear-gradient(45deg, 
+    #ff0000, #ff00ff, #00ffff, #00ff00, #ffff00, #ff0000
+  ) 1;
+  box-shadow: 
+    0 0 100px rgba(255, 68, 68, 1),
+    0 0 200px rgba(255, 0, 255, 0.8),
+    0 0 300px rgba(0, 255, 255, 0.6),
+    inset 0 0 100px rgba(255, 255, 255, 0.3);
+  animation: 
+    doooniBorderRotate 3s linear infinite,
+    doooniPulse 0.5s ease-in-out infinite,
+    doooniShake 0.1s ease-in-out infinite,
+    doooniColorCycle 2s linear infinite !important;
+}
+
+.mic-btn-pro.active.doooni-mode .mic-icon {
+  font-size: 20vw !important;
+  animation: 
+    doooniIconSpin 2s linear infinite,
+    doooniIconScale 0.3s ease-in-out infinite,
+    doooniIconGlitch 0.15s steps(5) infinite,
+    doooniRainbow 1.5s linear infinite !important;
+  text-shadow: 
+    0 0 20px rgba(255, 255, 255, 1),
+    0 0 40px rgba(255, 68, 68, 1),
+    0 0 60px rgba(255, 0, 255, 1),
+    0 0 80px rgba(0, 255, 255, 1),
+    0 0 100px rgba(255, 255, 0, 1),
+    0 0 120px rgba(255, 68, 68, 0.8),
+    10px 10px 0 rgba(255, 0, 0, 0.5),
+    -10px -10px 0 rgba(0, 255, 255, 0.5),
+    10px -10px 0 rgba(255, 0, 255, 0.5),
+    -10px 10px 0 rgba(0, 255, 0, 0.5);
+  filter: 
+    drop-shadow(0 0 30px rgba(255, 68, 68, 1))
+    drop-shadow(0 0 50px rgba(255, 0, 255, 1))
+    hue-rotate(0deg)
+    saturate(200%)
+    brightness(1.5);
+}
+
+.mic-btn-pro.active.doooni-mode .mic-label {
+  font-size: 4vw !important;
+  font-weight: 900 !important;
+  letter-spacing: 1vw !important;
+  animation: 
+    doooniTextWave 1s ease-in-out infinite,
+    doooniTextGlitch 0.2s steps(3) infinite,
+    doooniRainbow 1s linear infinite !important;
+  text-shadow: 
+    0 0 10px rgba(255, 255, 255, 1),
+    0 0 20px rgba(255, 68, 68, 1),
+    0 0 30px rgba(255, 0, 255, 1),
+    0 0 40px rgba(0, 255, 255, 1),
+    5px 5px 0 rgba(255, 0, 0, 0.7),
+    -5px -5px 0 rgba(0, 255, 255, 0.7);
+}
+
+/* Doooni Animation Keyframes */
+@keyframes doooniBorderRotate {
+  0%, 100% { 
+    border-image: linear-gradient(45deg, 
+      #ff0000, #ff00ff, #00ffff, #00ff00, #ffff00, #ff0000
+    ) 1; 
+  }
+  16.666% { 
+    border-image: linear-gradient(45deg, 
+      #ff00ff, #00ffff, #00ff00, #ffff00, #ff0000, #ff00ff
+    ) 1; 
+  }
+  33.333% { 
+    border-image: linear-gradient(45deg, 
+      #00ffff, #00ff00, #ffff00, #ff0000, #ff00ff, #00ffff
+    ) 1; 
+  }
+  50% { 
+    border-image: linear-gradient(45deg, 
+      #00ff00, #ffff00, #ff0000, #ff00ff, #00ffff, #00ff00
+    ) 1; 
+  }
+  66.666% { 
+    border-image: linear-gradient(45deg, 
+      #ffff00, #ff0000, #ff00ff, #00ffff, #00ff00, #ffff00
+    ) 1; 
+  }
+  83.333% { 
+    border-image: linear-gradient(45deg, 
+      #ff0000, #ff00ff, #00ffff, #00ff00, #ffff00, #ff0000
+    ) 1; 
+  }
+}
+
+@keyframes doooniPulse {
+  0%, 100% { 
+    transform: scale(0.95) rotate(0deg); 
+    filter: brightness(1) saturate(1);
+  }
+  25% { 
+    transform: scale(1.05) rotate(2deg); 
+    filter: brightness(1.3) saturate(1.5);
+  }
+  50% { 
+    transform: scale(0.98) rotate(-1deg); 
+    filter: brightness(1.1) saturate(1.2);
+  }
+  75% { 
+    transform: scale(1.02) rotate(1deg); 
+    filter: brightness(1.2) saturate(1.4);
+  }
+}
+
+@keyframes doooniShake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  10% { transform: translate(-5px, 5px) rotate(-2deg); }
+  20% { transform: translate(5px, -5px) rotate(2deg); }
+  30% { transform: translate(-5px, -5px) rotate(-1deg); }
+  40% { transform: translate(5px, 5px) rotate(1deg); }
+  50% { transform: translate(-3px, 3px) rotate(-1deg); }
+  60% { transform: translate(3px, -3px) rotate(1deg); }
+  70% { transform: translate(-3px, -3px) rotate(-2deg); }
+  80% { transform: translate(3px, 3px) rotate(2deg); }
+  90% { transform: translate(-2px, 2px) rotate(-1deg); }
+}
+
+@keyframes doooniColorCycle {
+  0% { background-color: rgba(255, 0, 0, 0.1); }
+  16.666% { background-color: rgba(255, 0, 255, 0.1); }
+  33.333% { background-color: rgba(0, 255, 255, 0.1); }
+  50% { background-color: rgba(0, 255, 0, 0.1); }
+  66.666% { background-color: rgba(255, 255, 0, 0.1); }
+  83.333% { background-color: rgba(255, 68, 68, 0.1); }
+  100% { background-color: rgba(255, 0, 0, 0.1); }
+}
+
+@keyframes doooniIconSpin {
+  0% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(90deg) scale(1.1); }
+  50% { transform: rotate(180deg) scale(0.9); }
+  75% { transform: rotate(270deg) scale(1.05); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+@keyframes doooniIconScale {
+  0%, 100% { transform: scale(1) skew(0deg); }
+  25% { transform: scale(1.15) skew(5deg); }
+  50% { transform: scale(0.95) skew(-5deg); }
+  75% { transform: scale(1.1) skew(3deg); }
+}
+
+@keyframes doooniIconGlitch {
+  0% { 
+    filter: hue-rotate(0deg) saturate(200%) brightness(1.5);
+    transform: translate(0, 0);
+  }
+  20% { 
+    filter: hue-rotate(90deg) saturate(300%) brightness(2);
+    transform: translate(-10px, 10px);
+  }
+  40% { 
+    filter: hue-rotate(180deg) saturate(250%) brightness(1.8);
+    transform: translate(10px, -10px);
+  }
+  60% { 
+    filter: hue-rotate(270deg) saturate(350%) brightness(2.2);
+    transform: translate(-8px, -8px);
+  }
+  80% { 
+    filter: hue-rotate(360deg) saturate(200%) brightness(1.5);
+    transform: translate(8px, 8px);
+  }
+  100% { 
+    filter: hue-rotate(0deg) saturate(200%) brightness(1.5);
+    transform: translate(0, 0);
+  }
+}
+
+@keyframes doooniRainbow {
+  0% { color: #ff0000; filter: hue-rotate(0deg); }
+  16.666% { color: #ff00ff; filter: hue-rotate(60deg); }
+  33.333% { color: #00ffff; filter: hue-rotate(120deg); }
+  50% { color: #00ff00; filter: hue-rotate(180deg); }
+  66.666% { color: #ffff00; filter: hue-rotate(240deg); }
+  83.333% { color: #ff6600; filter: hue-rotate(300deg); }
+  100% { color: #ff0000; filter: hue-rotate(360deg); }
+}
+
+@keyframes doooniTextWave {
+  0%, 100% { 
+    transform: translateY(0) rotate(0deg) scale(1); 
+  }
+  25% { 
+    transform: translateY(-20px) rotate(5deg) scale(1.1); 
+  }
+  50% { 
+    transform: translateY(0) rotate(-5deg) scale(0.95); 
+  }
+  75% { 
+    transform: translateY(20px) rotate(3deg) scale(1.05); 
+  }
+}
+
+@keyframes doooniTextGlitch {
+  0% { 
+    transform: translate(0, 0) skew(0deg);
+    text-shadow: 
+      0 0 10px rgba(255, 255, 255, 1),
+      0 0 20px rgba(255, 68, 68, 1);
+  }
+  33% { 
+    transform: translate(-5px, 5px) skew(5deg);
+    text-shadow: 
+      5px -5px 0 rgba(255, 0, 255, 0.7),
+      -5px 5px 0 rgba(0, 255, 255, 0.7);
+  }
+  66% { 
+    transform: translate(5px, -5px) skew(-5deg);
+    text-shadow: 
+      -5px 5px 0 rgba(255, 255, 0, 0.7),
+      5px -5px 0 rgba(0, 255, 0, 0.7);
+  }
+  100% { 
+    transform: translate(0, 0) skew(0deg);
+    text-shadow: 
+      0 0 10px rgba(255, 255, 255, 1),
+      0 0 20px rgba(255, 68, 68, 1);
+  }
+}
+
 .mic-icon {
   font-size: 28px;
 }
@@ -4477,6 +4774,8 @@ body {
 .queue-section {
   grid-area: queue;
   position: relative;
+  margin-left: -25px; /* 10px nach links verschieben */
+  z-index: 10; /* Über Library anzeigen */
 }
 
 /* Queue Label Row - seamlessly connected to search bar */
@@ -4804,6 +5103,398 @@ body {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   Discord Wishbox Button & Dropdown Styles
+   (Matching radio-stream design)
+   ============================================ */
+
+/* Wishbox Selector Container (matching radio-stream-selector) */
+.wishbox-selector {
+  position: relative;
+  display: inline-block;
+}
+
+/* Wishbox Button (similar to Radio button) */
+.wishbox-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8) !important;
+  padding: 8px 12px;
+  border: 1px solid #444 !important;
+  clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%) !important;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  transition: all 0.2s ease;
+  margin-right: 4px;
+  min-height: 30px;
+  height: 30px;
+  line-height: 1;
+  cursor: pointer;
+  color: #7289DA !important; /* Discord blurple */
+  box-shadow: none !important;
+  flex-shrink: 0;
+  min-width: 44px;
+}
+
+.wishbox-btn:hover {
+  color: #99AAB5 !important;
+  border-color: #7289DA !important;
+  background: rgba(114, 137, 218, 0.1) !important;
+  transform: translateY(-1px);
+  box-shadow: none !important;
+}
+
+.wishbox-btn.active {
+  color: #7289DA !important;
+  border-color: #7289DA !important;
+  background: rgba(114, 137, 218, 0.2) !important;
+  box-shadow: none !important;
+}
+
+/* Wishbox Dropdown (matching radio-stream-dropdown) */
+.wishbox-dropdown {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
+  border: 2px solid #444;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+  min-width: 350px;
+  max-width: 500px;
+  max-height: 500px;
+  overflow: hidden;
+  display: none;
+  flex-direction: column;
+}
+
+.wishbox-dropdown.show {
+  display: flex;
+  animation: fadeInScale 0.2s ease-out;
+}
+
+/* Wishbox Header (matching radio-stream-header) */
+.wishbox-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(114, 137, 218, 0.1);
+  border-bottom: 1px solid #444;
+  color: #7289DA;
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.wishbox-header .material-icons {
+  font-size: 18px;
+}
+
+.wishbox-header span:not(.material-icons) {
+  flex: 1;
+}
+
+.wishbox-sort-btn {
+  background: transparent;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+.wishbox-sort-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #7289DA;
+}
+
+.wishbox-sort-btn .material-icons {
+  font-size: 18px;
+  transition: transform 0.3s ease;
+}
+
+.wishbox-sort-btn.ascending .material-icons {
+  transform: rotate(180deg);
+}
+
+.wishbox-close-btn {
+  background: transparent;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+.wishbox-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.wishbox-close-btn .material-icons {
+  font-size: 18px;
+}
+
+/* Wishbox Status (connecting message) */
+.wishbox-status {
+  padding: 16px;
+  text-align: center;
+  color: #7289DA;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.wishbox-status.hidden {
+  display: none;
+}
+
+.wishbox-status .material-icons {
+  font-size: 16px;
+}
+
+/* Wishbox Content (messages list) */
+.wishbox-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.wishbox-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.wishbox-content::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+.wishbox-content::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+
+.wishbox-content::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Discord Message Item (matching radio-stream-item) */
+.discord-message {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px;
+  border-bottom: 1px solid #333;
+  transition: background-color 0.2s ease;
+  animation: messageSlideIn 0.3s ease;
+}
+
+/* Draggable Discord Messages */
+.discord-message.draggable {
+  cursor: grab;
+}
+
+.discord-message.draggable:active {
+  cursor: grabbing;
+}
+
+.discord-message.dragging {
+  opacity: 0.5;
+  background: rgba(114, 137, 218, 0.2);
+  border: 1px solid #7289DA;
+}
+
+@keyframes messageSlideIn {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.discord-message:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.discord-message.draggable:hover {
+  background: rgba(114, 137, 218, 0.1);
+  border-left: 3px solid #7289DA;
+}
+
+.discord-message:last-child {
+  border-bottom: none;
+}
+
+.discord-message-header {
+  display: none; /* Avatar und Name verstecken */
+}
+
+.discord-message-avatar {
+  display: none; /* Kein Avatar */
+}
+
+.discord-message-info {
+  width: 100%;
+}
+
+.discord-message-delete {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid #ed4245;
+  color: #ed4245;
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.discord-message:hover .discord-message-delete {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.discord-message-delete:hover {
+  background: rgba(237, 66, 69, 0.2);
+  color: #fff;
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+.discord-message-delete .material-icons {
+  font-size: 20px;
+}
+
+.discord-message.deleting {
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: all 0.3s ease;
+}
+
+.discord-message-author {
+  display: none; /* Kein Absendername */
+}
+
+.discord-message-timestamp {
+  color: #72767d;
+  font-size: 11px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.discord-message-content {
+  color: #dcddde;
+  font-size: 14px;
+  line-height: 1.5;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  width: 100%;
+}
+
+/* Discord Audio Attachments */
+.discord-message-audio {
+  margin-top: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 10px;
+  width: 100%;
+}
+
+.discord-message-audio .audio-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: #7289DA;
+  font-size: 13px;
+}
+
+.discord-message-audio .audio-info .material-icons {
+  font-size: 16px;
+}
+
+.discord-message-audio .audio-filename {
+  color: #dcddde;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discord-message-audio audio {
+  width: 100%;
+  height: 32px;
+  outline: none;
+}
+
+.discord-message-audio audio::-webkit-media-controls-panel {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.discord-message-audio audio::-webkit-media-controls-play-button,
+.discord-message-audio audio::-webkit-media-controls-mute-button {
+  filter: brightness(1.2);
+}
+
+.discord-message-audio audio::-webkit-media-controls-timeline {
+  border-radius: 2px;
+}
+
+/* Empty State */
+.wishbox-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  color: #72767d;
+}
+
+.wishbox-empty .material-icons {
+  font-size: 64px;
+  color: #40444b;
+  margin-bottom: 16px;
+}
+
+.wishbox-empty p {
+  margin: 0;
+  font-size: 14px;
 }
 
 /* No Search State */

@@ -12589,10 +12589,10 @@ function renderDiscordMessage(message: any): HTMLElement {
         <div class="discord-message-author">${message.author.username}</div>
         <div class="discord-message-timestamp">${formatDiscordTimestamp(message.timestamp)}</div>
       </div>
-      <button class="discord-message-delete" data-message-id="${message.id}" title="Nachricht löschen">
-        <span class="material-icons">delete</span>
-      </button>
     </div>
+    <button class="discord-message-delete" data-message-id="${message.id}" title="Nachricht löschen">
+      <span class="material-icons">delete</span>
+    </button>
     ${message.content ? `<div class="discord-message-content">${escapeHtml(message.content)}</div>` : ''}
     ${attachmentsHtml}
   `;

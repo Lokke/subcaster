@@ -141,6 +141,18 @@ body {
   justify-content: center;
 }
 
+/* DJ Section Layout Adjustment when Deck C+D are hidden */
+/* When both player-c and player-d are hidden, collapse to single row */
+.dj-section:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"]) {
+  grid-template-rows: 1fr; /* Single row instead of two */
+  min-height: auto; /* Allow section to shrink */
+}
+
+/* Center controls should only span one row when C+D are hidden */
+.dj-section:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"]) .center-controls {
+  grid-row: 1; /* Only span single row */
+}
+
 /* Professional Player Deck Design - Harmonized with Mixer */
 .player-deck {
   background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
@@ -2259,43 +2271,102 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.75rem; /* Reduziert von 1.5rem */
+  gap: 0; /* Kein Gap zwischen Elementen */
   width: 100%;
   max-width: 270px;
   min-width: 270px; /* Fixed width - prevent any shrinking or expanding */
   background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
   border: 2px solid #444;
   border-radius: 4px;
-  padding: 1.25rem 1.25rem 3rem 1.25rem; /* Extra bottom padding for effect buttons */
+  padding: 1.25rem 1.25rem 0.25rem 1.25rem; /* Minimales bottom padding */
   box-shadow: 
     0 4px 12px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
   position: relative;
-  height: fit-content;
-  min-height: 160px; /* Gleiche Höhe wie Player */
+  height: 100%; /* Füllt die verfügbare Höhe der Player-Decks */
+  min-height: 160px; /* Gleiche Mindesthöhe wie Player */
+  max-height: 100%; /* Begrenzt auf Player-Höhe */
   overflow: visible; /* Allow config panel to be visible */
 }
 
-/* Microphone Section - Kompakter */
+/* Microphone Section - Button zentriert */
 .microphone-section {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 1.5rem; /* Reduziert von 2rem */
+  grid-template-columns: 1fr auto 1fr; /* Gleiche Spalten links/rechts, Button mittig */
+  gap: 0;
   align-items: center;
   width: 100%;
-  max-width: 100%; /* Use full available width within mixer */
-  min-width: 0; /* Allow content to shrink if needed */
-  overflow: hidden; /* Prevent content from expanding mixer */
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
-.mic-volume-control,
-.mic-meter-control {
+/* Effekte linksbündig in linker Spalte */
+.mic-effects-vertical {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  flex-shrink: 1;
+  justify-self: start;
+}
+
+/* Button zentriert in mittlerer Spalte */
+.mic-button-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  max-width: 100%;
+  justify-self: center;
+}
+
+/* Combined Meters Section - rechtsbündig in rechter Spalte */
+.combined-meters-section {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  justify-self: end;
+}
+
+/* Rechte Meter Gruppe */
+.combined-meters-section > .master-meter-control:nth-child(2),
+.combined-meters-section > .master-meter-control:nth-child(3) {
+  justify-self: start; /* Linksbündig in dritter Spalte */
+}
+
+.mic-meter-control,
+.master-meter-control {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.25rem; /* Reduziert von 0.5rem */
-  min-width: 0; /* Allow shrinking */
-  overflow: hidden; /* Prevent overflow */
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.master-meter-icon {
+  font-size: 12px;
+  color: #666;
+  margin-top: 2px;
+  transition: all 0.2s ease;
+}
+
+/* Icon colors based on meter activity */
+#mic-volume-meter.has-signal ~ .master-meter-icon {
+  color: #ff6b6b;
+}
+
+#deck-master-meter.has-signal ~ .master-meter-icon {
+  color: #00ff88;
+}
+
+#stream-output-meter.has-signal ~ .master-meter-icon {
+  color: #4CAF50;
 }
 
 /* Station Selection Dropdown (triggered by STREAM button) */
@@ -2422,15 +2493,6 @@ body {
   font-size: 11px;
   color: #999;
   font-style: italic;
-}
-
-.mic-button-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-width: 0; /* Allow shrinking */
-  overflow: hidden; /* Prevent expansion */
-  max-width: 100%; /* Never exceed container width */
 }
 
 /* Crossfader Section - Compact */
@@ -3116,196 +3178,165 @@ body {
   color: #4CAF50;
 }
 
-/* Microphone Effects Container - Positioned at outer edges */
-.mic-effects-container {
-  position: absolute;
-  left: -2px; /* Align exactly with mixer border edge */
-  right: -2px; /* Align exactly with mixer border edge */
-  bottom: -42px; /* Position completely outside mixer border */
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 40px;
-  pointer-events: none; /* Allow clicks through container */
-}
+/* ============================================
+   MICROPHONE EFFECT BUTTONS - Unified Styling
+   ============================================ */
 
-/* Microphone Effect Buttons - Positioned without gaps */
+/* Base Button */
 .mic-effect-button {
-  position: relative;
+  /* Layout */
   display: flex;
   align-items: center;
-  gap: 0.2rem;
+  justify-content: center;
+  
+  /* Sizing */
+  padding: 0.3rem 0.5rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  
+  /* Visual */
   background: rgba(0, 0, 0, 0.95);
-  padding: 0.4rem 0.5rem;
-  border: 2px solid #444; /* Inactive: same gray as mixer border */
-  border-radius: 0; /* Straight edges, no tilt */
+  border: 2px solid #444;
+  border-radius: 0;
+  
+  /* Typography */
   font-family: inherit;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.3px;
   text-transform: uppercase;
-  transition: all 0.2s ease;
-  cursor: pointer;
-  user-select: none;
-  pointer-events: all; /* Enable clicks on buttons */
-  flex: 1; /* Distribute evenly across container width */
-  min-width: 0; /* Allow shrinking */
-  white-space: nowrap; /* Prevent text wrapping */
-  overflow: hidden; /* Hide any overflow */
+  white-space: nowrap;
+  
+  /* Effects */
   box-shadow: 
     0 0 3px rgba(68, 68, 68, 0.3),
     inset 0 0 2px rgba(68, 68, 68, 0.2);
+  transition: all 0.2s ease;
+  
+  /* Interaction */
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
 }
 
+/* Icon Element (optional, falls später wieder gebraucht) */
+.mic-effect-button .effect-icon {
+  font-size: 14px;
+  color: #666;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+/* Text Element */
+.mic-effect-button .effect-text {
+  color: #ccc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 0.2s ease;
+}
+
+/* Hover State */
 .mic-effect-button:hover {
-  border-color: #666;
   background: rgba(68, 68, 68, 0.15);
-  transform: translateY(-2px);
+  border-color: #666;
   box-shadow: 
     0 0 5px rgba(68, 68, 68, 0.4),
     inset 0 0 3px rgba(68, 68, 68, 0.3);
 }
 
+.mic-effect-button:hover .effect-icon {
+  color: #888;
+}
+
+/* Active State */
 .mic-effect-button.active {
-  border-color: #4CAF50; /* Active: same green as usernames */
   background: rgba(76, 175, 80, 0.15);
+  border-color: #4CAF50;
   box-shadow: 
     0 0 5px rgba(76, 175, 80, 0.6),
     inset 0 0 3px rgba(76, 175, 80, 0.4);
 }
 
-/* Individual button pulsing animations */
-.mic-effect-button.active#mic-compressor-btn {
-  animation: subtlePulse1 2.8s infinite ease-in-out;
-}
-
-.mic-effect-button.active#mic-gate-btn {
-  animation: subtlePulse2 3.4s infinite ease-in-out;
-}
-
-.mic-effect-button.active#mic-eq-btn {
-  animation: subtlePulse3 2.6s infinite ease-in-out;
-}
-
-.mic-effect-button.active#mic-limiter-btn {
-  animation: subtlePulse4 3.1s infinite ease-in-out;
-}
-
-.mic-effect-button.active#mic-deesser-btn {
-  animation: subtlePulse5 2.9s infinite ease-in-out;
-}
-
-/* Subtle individual pulsing animations for each button */
-@keyframes subtlePulse1 {
-  0%, 100% { 
-    box-shadow: 
-      0 0 5px rgba(76, 175, 80, 0.6),
-      inset 0 0 3px rgba(76, 175, 80, 0.4);
-  }
-  50% { 
-    box-shadow: 
-      0 0 8px rgba(76, 175, 80, 0.8),
-      inset 0 0 5px rgba(76, 175, 80, 0.5);
-  }
-}
-
-@keyframes subtlePulse2 {
-  0%, 100% { 
-    box-shadow: 
-      0 0 5px rgba(76, 175, 80, 0.6),
-      inset 0 0 3px rgba(76, 175, 80, 0.4);
-  }
-  35% { 
-    box-shadow: 
-      0 0 6px rgba(76, 175, 80, 0.7),
-      inset 0 0 4px rgba(76, 175, 80, 0.45);
-  }
-  65% { 
-    box-shadow: 
-      0 0 7px rgba(76, 175, 80, 0.75),
-      inset 0 0 4px rgba(76, 175, 80, 0.48);
-  }
-}
-
-@keyframes subtlePulse3 {
-  0%, 100% { 
-    box-shadow: 
-      0 0 5px rgba(76, 175, 80, 0.6),
-      inset 0 0 3px rgba(76, 175, 80, 0.4);
-  }
-  60% { 
-    box-shadow: 
-      0 0 6px rgba(76, 175, 80, 0.72),
-      inset 0 0 4px rgba(76, 175, 80, 0.46);
-  }
-}
-
-@keyframes subtlePulse4 {
-  0%, 100% { 
-    box-shadow: 
-      0 0 5px rgba(76, 175, 80, 0.6),
-      inset 0 0 3px rgba(76, 175, 80, 0.4);
-  }
-  25% { 
-    box-shadow: 
-      0 0 6px rgba(76, 175, 80, 0.68),
-      inset 0 0 4px rgba(76, 175, 80, 0.43);
-  }
-  75% { 
-    box-shadow: 
-      0 0 7px rgba(76, 175, 80, 0.76),
-      inset 0 0 4px rgba(76, 175, 80, 0.47);
-  }
-}
-
-@keyframes subtlePulse5 {
-  0%, 100% { 
-    box-shadow: 
-      0 0 5px rgba(76, 175, 80, 0.6),
-      inset 0 0 3px rgba(76, 175, 80, 0.4);
-  }
-  45% { 
-    box-shadow: 
-      0 0 6px rgba(76, 175, 80, 0.7),
-      inset 0 0 4px rgba(76, 175, 80, 0.44);
-  }
-}
-
-/* First and last buttons have special border radius to match container */
-.mic-effect-button:first-child {
-  border-bottom-left-radius: 2px;
-}
-
-.mic-effect-button:last-child {
-  border-bottom-right-radius: 2px;
-}
-
-/* Remove gaps between buttons */
-.mic-effect-button:not(:last-child) {
-  border-right: none;
-}
-
-.mic-effect-button:not(:first-child) {
-  border-left: none;
-}
-
-.mic-effect-button .effect-icon {
-  font-size: 11px;
-  color: #666; /* Inactive: subtle gray matching mixer aesthetic */
-  transition: all 0.2s ease;
-}
-
 .mic-effect-button.active .effect-icon {
-  color: #4CAF50; /* Active: green like usernames */
-}
-
-.mic-effect-button .effect-text {
-  color: #888; /* Inactive: subtle gray matching mixer aesthetic */
-  transition: all 0.2s ease;
+  color: #4CAF50;
 }
 
 .mic-effect-button.active .effect-text {
-  color: #4CAF50; /* Active: green like usernames */
+  color: #4CAF50;
+}
+
+/* Active Animations - Individual pulsing per button */
+.mic-effect-button.active#mic-compressor-btn {
+  animation: effectPulse1 2.8s infinite ease-in-out;
+}
+
+.mic-effect-button.active#mic-gate-btn {
+  animation: effectPulse2 3.4s infinite ease-in-out;
+}
+
+.mic-effect-button.active#mic-eq-btn {
+  animation: effectPulse3 2.6s infinite ease-in-out;
+}
+
+.mic-effect-button.active#mic-limiter-btn {
+  animation: effectPulse4 3.1s infinite ease-in-out;
+}
+
+.mic-effect-button.active#mic-deesser-btn {
+  animation: effectPulse5 2.9s infinite ease-in-out;
+}
+
+/* Keyframe Animations */
+@keyframes effectPulse1 {
+  0%, 100% { 
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.6), inset 0 0 3px rgba(76, 175, 80, 0.4);
+  }
+  50% { 
+    box-shadow: 0 0 8px rgba(76, 175, 80, 0.8), inset 0 0 5px rgba(76, 175, 80, 0.5);
+  }
+}
+
+@keyframes effectPulse2 {
+  0%, 100% { 
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.6), inset 0 0 3px rgba(76, 175, 80, 0.4);
+  }
+  35% { 
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.7), inset 0 0 4px rgba(76, 175, 80, 0.45);
+  }
+  65% { 
+    box-shadow: 0 0 7px rgba(76, 175, 80, 0.75), inset 0 0 4px rgba(76, 175, 80, 0.48);
+  }
+}
+
+@keyframes effectPulse3 {
+  0%, 100% { 
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.6), inset 0 0 3px rgba(76, 175, 80, 0.4);
+  }
+  60% { 
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.72), inset 0 0 4px rgba(76, 175, 80, 0.46);
+  }
+}
+
+@keyframes effectPulse4 {
+  0%, 100% { 
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.6), inset 0 0 3px rgba(76, 175, 80, 0.4);
+  }
+  25% { 
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.68), inset 0 0 4px rgba(76, 175, 80, 0.43);
+  }
+  75% { 
+    box-shadow: 0 0 7px rgba(76, 175, 80, 0.76), inset 0 0 4px rgba(76, 175, 80, 0.47);
+  }
+}
+
+@keyframes effectPulse5 {
+  0%, 100% { 
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.6), inset 0 0 3px rgba(76, 175, 80, 0.4);
+  }
+  45% { 
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.7), inset 0 0 4px rgba(76, 175, 80, 0.44);
+  }
 }
 
 .live-dot {
@@ -3681,7 +3712,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0;
   min-height: 80px;
 }
 
@@ -3995,111 +4026,98 @@ body {
   animation: pulse-red 1.5s ease-in-out infinite;
 }
 
-/* Microphone Device Selection */
+/* Microphone Device Selection - Kompakter und höher positioniert */
 .mic-device-selector {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0; /* No gap, buttons touch like effect buttons */
-  margin-top: 12px;
+  gap: 0;
+  margin-top: 0.15rem; /* Gleicher Abstand wie zwischen Effekt-Buttons */
   width: 100%;
   max-width: 100%;
   margin-left: auto;
   margin-right: auto;
-  overflow: hidden; /* Prevent overflow */
-  min-width: 0; /* Allow shrinking */
+  overflow: hidden;
+  min-width: 0;
 }
 
 .mic-device-dropdown {
   flex: 1;
-  background: rgba(0, 0, 0, 0.95); /* Match effect button background */
-  border: 2px solid #444; /* Match effect button border */
-  border-right: none; /* Remove right border to connect with refresh button */
+  background: rgba(0, 0, 0, 0.95);
+  border: 2px solid #444;
+  border-right: none;
   border-radius: 0;
-  border-bottom-left-radius: 2px; /* Match effect button corners */
+  border-bottom-left-radius: 2px;
   border-top-left-radius: 2px;
-  padding: 0.4rem 0.5rem; /* Match effect button padding */
-  color: #888; /* Match inactive effect button text color */
-  font-size: 8px; /* Match effect button font size */
+  padding: 0.2rem 0.4rem; /* Reduziert für kompaktere Höhe */
+  color: #ccc;
+  font-size: 8px;
   font-weight: 600;
   letter-spacing: 0.3px;
   text-transform: uppercase;
   font-family: inherit;
   cursor: pointer;
   transition: all 0.2s ease;
-  overflow: hidden; /* Prevent text overflow */
-  text-overflow: ellipsis; /* Show ... for long text */
-  white-space: nowrap; /* Don't wrap to new line */
-  min-width: 0; /* Allow shrinking below content size */
-  max-width: 100%; /* Never exceed container width */
-  text-align: center; /* Center text */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  text-align: center;
   box-shadow: 
     0 0 3px rgba(68, 68, 68, 0.3),
     inset 0 0 2px rgba(68, 68, 68, 0.2);
   
-  /* Custom dropdown arrow styling */
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 4px center;
-  background-size: 8px;
-  padding-right: 16px; /* Make room for arrow */
+}
+
+.mic-device-dropdown:hover {
+  background: rgba(68, 68, 68, 0.15);
+  border-color: #666;
+  box-shadow: 
+    0 0 5px rgba(68, 68, 68, 0.4),
+    inset 0 0 3px rgba(68, 68, 68, 0.3);
 }
 
 .mic-device-dropdown:focus {
   outline: none;
-  border-color: #4CAF50; /* Green focus like active effect buttons */
-  background: rgba(76, 175, 80, 0.15);
-  color: #4CAF50;
+  border-color: #666;
+  background: rgba(68, 68, 68, 0.15);
+  color: #ccc;
   box-shadow: 
-    0 0 5px rgba(76, 175, 80, 0.6),
-    inset 0 0 3px rgba(76, 175, 80, 0.4);
-  
-  /* Green arrow on focus */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%234CAF50' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    0 0 5px rgba(68, 68, 68, 0.4),
+    inset 0 0 3px rgba(68, 68, 68, 0.3);
 }
 
 .mic-device-dropdown option {
-  background: rgba(0, 0, 0, 0.95); /* Match dropdown background */
-  color: #fff; /* White text for readability */
-  padding: 10px 8px;
-  text-align: left; /* Left align options for better readability */
-  font-size: 11px; /* Slightly larger in dropdown */
-  text-transform: none; /* Remove uppercase in dropdown for readability */
+  background: rgba(0, 0, 0, 0.95);
+  color: #ccc;
+  padding: 8px;
+  font-size: 10px;
+  text-transform: none;
   letter-spacing: 0;
 }
 
-.mic-device-dropdown option:hover {
-  background: rgba(76, 175, 80, 0.2); /* Green hover like focus state */
-  color: #4CAF50;
-}
-
-.mic-device-dropdown option:checked {
-  background: rgba(76, 175, 80, 0.3); /* Green for selected option */
-  color: #4CAF50;
-  font-weight: bold;
-}
-
 .mic-refresh-button {
-  background: rgba(0, 0, 0, 0.95); /* Match effect button background */
-  border: 2px solid #444; /* Match effect button border */
-  border-left: none; /* Remove left border to connect with dropdown */
+  background: rgba(0, 0, 0, 0.95);
+  border: 2px solid #444;
+  border-left: none;
   border-radius: 0;
-  border-bottom-right-radius: 2px; /* Match effect button corners */
+  border-bottom-right-radius: 2px;
   border-top-right-radius: 2px;
-  padding: 0.4rem 0.5rem; /* Match effect button padding */
-  color: #888; /* Match inactive effect button icon color */
+  padding: 0.2rem 0.4rem;
+  color: #ccc;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 24px; /* Fixed minimum width */
-  max-width: 24px; /* Fixed maximum width */
-  width: 24px; /* Fixed width */
-  flex-shrink: 0; /* Never shrink */
+  min-width: 20px;
+  max-width: 20px;
+  width: 20px;
+  flex-shrink: 0;
   height: auto;
   box-shadow: 
     0 0 3px rgba(68, 68, 68, 0.3),
@@ -4107,43 +4125,17 @@ body {
 }
 
 .mic-refresh-button:hover {
-  background: rgba(68, 68, 68, 0.15); /* Match effect button hover */
+  background: rgba(68, 68, 68, 0.15);
   border-color: #666;
-  transform: translateY(-2px); /* No rotation, just lift like effect buttons */
   box-shadow: 
     0 0 5px rgba(68, 68, 68, 0.4),
     inset 0 0 3px rgba(68, 68, 68, 0.3);
 }
 
 .mic-refresh-button .material-icons {
-  font-size: 11px; /* Match effect button icon size */
-  color: #666; /* Match inactive effect button icon color */
+  font-size: 11px;
+  color: #666;
   transition: all 0.2s ease;
-}
-
-.auto-queue-btn {
-  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-  border: none;
-  border-radius: 8px;
-  padding: 12px 20px;
-  color: white;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 8px rgba(72, 187, 120, 0.3);
-  font-size: 1rem;
-  margin: 5px;
-}
-
-.auto-queue-btn:hover {
-  background: linear-gradient(135deg, #68d391 0%, #48bb78 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(72, 187, 120, 0.4);
-}
-
-.auto-queue-btn.inactive {
-  background: linear-gradient(135deg, #718096 0%, #4a5568 100%);
-  box-shadow: 0 4px 8px rgba(113, 128, 150, 0.3);
 }
 
 @keyframes pulse-red {
@@ -4814,94 +4806,91 @@ body {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* Auto-Queue Controls in label row - korrekte Breadcrumb-Spacing */
+/* Auto-Queue Controls - Vereinfacht ohne Abstände */
 .queue-label-row .auto-queue-controls {
   display: flex;
-  gap: 6px; /* Korrekte Breadcrumb-Gaps wie im Rest der App */
+  gap: 0; /* Keine Abstände zwischen Buttons */
   margin: 0;
   align-items: center;
   height: 30px;
 }
 
+.auto-queue-controls {
+  display: flex;
+  gap: 0; /* Keine Abstände zwischen Buttons */
+  align-items: center;
+}
+
+.auto-queue-btn {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 8px 14px;
+  border: none;
+  border-top: 1px solid #444;
+  border-bottom: 1px solid #444;
+  border-left: 1px solid #444;
+  clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  transition: all 0.2s ease;
+  margin: 0;
+  min-height: 30px;
+  height: 30px;
+  line-height: 1;
+  cursor: pointer;
+  color: #ccc;
+  flex-shrink: 0;
+}
+
+.auto-queue-btn:last-child {
+  border-right: 1px solid #444; /* Letzter Button bekommt rechten Border */
+}
+
+.auto-queue-btn:hover {
+  color: #fff;
+  border-color: #666;
+  background: rgba(255, 255, 255, 0.1);
+  z-index: 1;
+}
+
+.auto-queue-btn.active {
+  color: #64FFDA;
+  border-color: #64FFDA;
+  background: rgba(100, 255, 218, 0.1);
+  z-index: 2;
+}
+
+.auto-queue-btn.active:hover {
+  color: #80ffff;
+  border-color: #80ffff;
+  background: rgba(128, 255, 255, 0.15);
+}
+
+/* Queue Panel */
 .queue-panel {
-  /* Seamlessly connected to label row above */
   background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
   border: 2px solid #444;
-  border-top: none; /* Connect seamlessly to label row */
-  border-radius: 0 0 4px 4px; /* Only bottom corners rounded */
+  border-top: none;
+  border-radius: 0 0 4px 4px;
   box-shadow: 
     0 4px 12px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: calc(100% - 30px); /* Account for label row height */
-  overflow: hidden;
-  margin: 0; /* No margin for seamless connection */
+  max-height: calc(100% - 30px);
+  overflow-y: auto; /* Scroll im Panel, nicht in queue-items */
+  margin: 0;
   transition: all 0.3s ease;
 }
 
-/* Queue Panel Drag Over State */
 .queue-panel.drag-over {
   border-color: #00ff88;
   background: linear-gradient(135deg, #2a4a2a, #3a5a3a);
   box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
-}
-
-/* Auto-Queue Controls */
-.auto-queue-controls {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.auto-queue-btn {
-  /* Korrekte Tilted-Breadcrumb Styling wie auf der ganzen Seite */
-  display: flex;
-  align-items: center;
-  background: rgba(0, 0, 0, 0.8) !important;
-  padding: 8px 14px;
-  border: 1px solid #444 !important;
-  clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%) !important;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  transition: all 0.2s ease;
-  margin-right: 4px; /* Gap zwischen Buttons wie bei Breadcrumbs */
-  min-height: 30px;
-  height: 30px;
-  line-height: 1;
-  cursor: pointer;
-  /* Inactive state - dark */
-  color: #ccc !important;
-  box-shadow: none !important;
-  flex-shrink: 0;
-}
-
-/* Remove the last-child special case - all buttons should be tilted */
-
-.auto-queue-btn:hover {
-  color: #fff !important;
-  border-color: #666 !important;
-  background: rgba(255, 255, 255, 0.1) !important;
-  transform: translateY(-1px);
-  box-shadow: none !important;
-}
-
-.auto-queue-btn.active {
-  /* Active state - blue like Library breadcrumb clickable */
-  color: #64FFDA !important;
-  border-color: #64FFDA !important;
-  background: rgba(100, 255, 218, 0.1) !important;
-  box-shadow: none !important;
-}
-
-.auto-queue-btn.active:hover {
-  color: #80ffff !important;
-  border-color: #80ffff !important;
-  background: rgba(128, 255, 255, 0.15) !important;
-  box-shadow: none !important;
 }
 
 /* Radio Stream Selector */
@@ -5154,6 +5143,50 @@ body {
   border-color: #64FFDA !important;
   background: rgba(100, 255, 218, 0.2) !important;
   box-shadow: none !important;
+}
+
+/* Deck C+D Toggle Button (matching wishbox-btn style) */
+.deck-toggle-selector {
+  position: relative;
+}
+
+.deck-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.8) !important;
+  padding: 8px 12px;
+  border: 1px solid #444 !important;
+  clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%) !important;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  transition: all 0.2s ease;
+  margin-right: 4px;
+  min-height: 30px;
+  height: 30px;
+  line-height: 1;
+  cursor: pointer;
+  color: #fff !important;
+  box-shadow: none !important;
+  flex-shrink: 0;
+}
+
+.deck-toggle-btn:hover {
+  color: #fff !important;
+  border-color: #666 !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  transform: translateY(-1px);
+  box-shadow: none !important;
+}
+
+.deck-toggle-btn .material-icons {
+  font-size: 18px;
+}
+
+.deck-toggle-text {
+  font-size: 11px;
 }
 
 /* Wishbox Dropdown (matching radio-stream-dropdown) */
@@ -5658,71 +5691,46 @@ body {
   font-size: 1rem;
 }
 
-.auto-queue-controls {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-
-.auto-queue-btn {
-  background: linear-gradient(135deg, #00ff88 0%, #00cc66 100%);
-  border: none;
-  border-radius: 4px;
-  padding: 0.4rem 0.8rem;
-  color: #000;
-  font-size: 0.8em;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.auto-queue-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 255, 136, 0.3);
-}
-
-.auto-queue-btn.active {
-  background: linear-gradient(135deg, #ff8800 0%, #cc6600 100%);
-  color: white;
-}
-
-/* Queue Microphone Add Button */
+/* Queue Microphone Add Button - Vereinheitlicht mit Auto-Queue Buttons */
 .queue-mic-add-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 87, 34, 0.2);
-  padding: 0.2rem 0.4rem;
-  border: 2px solid #FF5722;
-  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+  background: rgba(255, 87, 34, 0.15);
+  padding: 8px 10px;
+  border: none;
+  border-top: 1px solid #FF5722;
+  border-bottom: 1px solid #FF5722;
+  border-left: 1px solid #FF5722;
+  border-right: 1px solid #FF5722;
+  clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%);
   color: #FF5722;
   cursor: pointer;
   transition: all 0.2s ease;
-  position: relative;
   outline: none;
   font-family: inherit;
-  font-size: 10px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   letter-spacing: 0.5px;
-  min-width: 28px;
-  height: 24px;
+  min-height: 30px;
+  height: 30px;
+  margin: 0;
+  flex-shrink: 0;
 }
 
 .queue-mic-add-btn:hover {
   border-color: #FF7043;
-  background: rgba(255, 87, 34, 0.3);
+  background: rgba(255, 87, 34, 0.25);
   color: #FF7043;
-  transform: translateY(-1px);
+  z-index: 1;
 }
 
 .queue-mic-add-btn:active {
-  transform: translateY(0px);
-  background: rgba(255, 87, 34, 0.4);
+  background: rgba(255, 87, 34, 0.35);
 }
 
 .queue-mic-add-btn .material-icons {
-  font-size: 14px;
+  font-size: 16px;
   color: inherit;
 }
 
@@ -5777,66 +5785,75 @@ body {
 }
 
 .queue-items {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0.5rem;
+  flex: 0 0 auto; /* Nimmt nur Platz für Inhalt, nicht mehr */
+  overflow-y: visible; /* Kein Scroll hier */
+  padding: 0;
+  margin: 0;
   min-height: 0;
-  max-height: 100%;
 }
 
-/* Queue Item Wrapper - Neues kompaktes Design */
+/* Queue Item Wrapper - Komplett ohne Abstände */
 .queue-item-wrapper {
-  margin: 0.125rem 0;
-  padding: 0;
+  margin: 0 !important; /* Force: Kein Abstand zwischen Buttons */
+  padding: 0 !important;
   transition: all 0.2s ease;
+  display: block;
+  line-height: 0; /* Verhindert zusätzliche Zeilenhöhe */
 }
 
 .queue-item-wrapper:hover {
-  transform: translateY(-1px);
+  z-index: 1;
 }
 
-/* Queue Song Container - Stream-Button Style */
+/* Queue Song Container - Flex für horizontales Layout (Button + Remove) */
 .queue-song-container,
 .queue-mic-container {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  max-width: 100%;
-  overflow: hidden;
+  display: flex; /* Flex für Button + Remove nebeneinander */
+  align-items: stretch; /* Volle Höhe für beide Elemente */
+  margin: 0;
+  padding: 0;
+  line-height: 0;
 }
 
-/* Queue Song Button - Basiert auf stream-live-indicator */
+/* Queue Song Button - Komplett ohne Abstände */
 .queue-song-button {
-  display: flex;
+  display: flex; /* Flex für internes Layout (Icon + Text) */
   align-items: center;
   gap: 0.4rem;
+  flex: 1; /* Nimmt verfügbaren Platz, lässt Remove-Button Platz */
   background: rgba(0, 0, 0, 0.7);
-  padding: 0.3rem 0.6rem;
-  border: 2px solid #444;
-  border-radius: 2px;
-  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+  padding: 0.4rem 0.6rem;
+  border: none;
+  border-top: 1px solid #444;
+  border-radius: 0;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 11px; /* Reset font-size von parent */
   font-weight: 500;
+  line-height: 1.4;
   cursor: grab;
   transition: all 0.2s ease;
   position: relative;
   outline: none;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+}
+
+.queue-item-wrapper:first-child .queue-song-button {
+  border-top: 1px solid #444;
+}
+
+.queue-item-wrapper:last-child .queue-song-button {
+  border-bottom: 1px solid #444;
 }
 
 .queue-song-button:hover {
   border-color: #666;
   background: rgba(0, 0, 0, 0.85);
-  transform: translateY(-1px);
+  z-index: 2;
 }
 
 .queue-song-button:active {
   cursor: grabbing;
-  transform: translateY(0);
 }
 
 .queue-song-button.dragging {
@@ -5886,78 +5903,94 @@ body {
   letter-spacing: 0.4px;
 }
 
-/* Queue Song Remove Button - Stream-Reset-Button Style */
+/* Queue Song Remove Button - Vereinheitlicht */
 .queue-song-remove {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 24px;
+  width: 32px;
+  flex-shrink: 0;
   background: rgba(40, 10, 10, 0.9);
-  padding: 0.2rem 0.3rem;
-  border: 2px solid #664444;
-  border-left: none;
-  clip-path: polygon(0% 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+  padding: 0.4rem 0.3rem;
+  border: none;
+  border-top: 1px solid #664444;
+  border-right: 1px solid #664444;
+  clip-path: polygon(0% 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%);
   color: #cc6666;
   cursor: pointer;
   transition: all 0.2s ease;
-  position: relative;
   outline: none;
   font-family: inherit;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
-  margin-left: -8px;
+  margin: 0;
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+
+.queue-item-wrapper:first-child .queue-song-remove {
+  border-top: 1px solid #664444;
+}
+
+.queue-item-wrapper:last-child .queue-song-remove {
+  border-bottom: 1px solid #664444;
 }
 
 .queue-song-remove:hover {
   border-color: #886666;
   background: rgba(60, 15, 15, 0.95);
   color: #ff4444;
-  transform: translateY(-1px);
+  z-index: 2;
 }
 
 .queue-song-remove:active {
-  transform: translateY(0px);
   background: rgba(30, 8, 8, 0.95);
 }
 
 .queue-song-remove .material-icons {
-  font-size: 12px;
+  font-size: 14px;
   color: inherit;
 }
 
-/* Queue Microphone Button - Special Style */
+/* Queue Microphone Button - Vereinheitlicht mit Queue-Song-Button */
 .queue-mic-button {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  background: rgba(255, 87, 34, 0.2);
-  padding: 0.3rem 0.6rem;
-  border: 2px solid #FF5722;
-  border-radius: 2px;
-  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+  flex: 1; /* Nimmt verfügbaren Platz, lässt Remove-Button Platz */
+  background: rgba(255, 87, 34, 0.15);
+  padding: 0.4rem 0.6rem;
+  border: none;
+  border-top: 1px solid #FF5722;
+  border-radius: 0;
   font-family: inherit;
   font-size: 11px;
   font-weight: 500;
+  line-height: 1.4;
   cursor: grab;
   transition: all 0.2s ease;
   position: relative;
   outline: none;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+}
+
+.queue-item-wrapper:first-child .queue-mic-button {
+  border-top: 1px solid #FF5722;
+}
+
+.queue-item-wrapper:last-child .queue-mic-button {
+  border-bottom: 1px solid #FF5722;
 }
 
 .queue-mic-button:hover {
   border-color: #FF7043;
-  background: rgba(255, 87, 34, 0.3);
-  transform: translateY(-1px);
+  background: rgba(255, 87, 34, 0.25);
+  z-index: 2;
 }
 
 .queue-mic-button:active {
   cursor: grabbing;
-  transform: translateY(0);
 }
 
 .queue-mic-button.dragging {
@@ -6084,14 +6117,14 @@ body {
 
 /* Queue Drag & Drop Reordering Indicators */
 .queue-item-wrapper.drop-before {
-  border-top: 3px solid #ff6b35;
-  margin-top: 3px;
+  border-top: 3px solid #ff6b35 !important;
+  margin-top: 0 !important; /* Kein zusätzlicher Margin */
   box-shadow: 0 -3px 10px rgba(255, 107, 53, 0.4);
 }
 
 .queue-item-wrapper.drop-after {
-  border-bottom: 3px solid #ff6b35;
-  margin-bottom: 3px;
+  border-bottom: 3px solid #ff6b35 !important;
+  margin-bottom: 0 !important; /* Kein zusätzlicher Margin */
   box-shadow: 0 3px 10px rgba(255, 107, 53, 0.4);
 }
 
@@ -6101,6 +6134,44 @@ body {
   transition: all 0.2s ease;
 }
 
+/* Queue Empty / Drop Zone - Füllt restlichen Platz */
+.queue-empty-dropzone {
+  flex: 1; /* Nimmt allen verfügbaren Platz */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  text-align: center;
+  color: #666;
+  padding: 2rem;
+  font-style: italic;
+  min-height: 100px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 2px dashed #444;
+  border-radius: 8px;
+  margin: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.queue-empty-dropzone .material-icons {
+  font-size: 48px;
+  color: #555;
+  opacity: 0.5;
+}
+
+.queue-empty-dropzone p {
+  margin: 0;
+  font-size: 14px;
+  color: #888;
+}
+
+.queue-empty-dropzone:hover {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: #666;
+}
+
+/* Legacy queue-empty (falls noch irgendwo verwendet) */
 .queue-empty {
   text-align: center;
   color: #aaa;
@@ -6461,13 +6532,6 @@ body {
   padding: 2rem;
 }
 
-.queue-panel {
-  background: #2a2a2a;
-  border: 2px solid #4a4a4a;
-  border-radius: 8px;
-  padding: 1rem;
-}
-
 .track-item {
   background: #333;
   border: 1px solid #555;
@@ -6498,13 +6562,6 @@ body {
 .track-item p {
   color: #aaaaaa;
   font-size: 0.8em;
-}
-
-.queue-panel {
-  background: #2a2a2a;
-  border: 2px solid #4a4a4a;
-  border-radius: 8px;
-  padding: 1rem;
 }
 
 .queue-panel h3 {

@@ -402,12 +402,25 @@
                 </div>
               </div>
               
-              <!-- Microphone Section (Left: Volume, Center: Button, Right: Meter) -->
+              <!-- Microphone Section (Left: Effects, Center: Button, Right: Meter) -->
               <div class="microphone-section">
-                <!-- Mic Volume Control -->
-                <div class="mic-volume-control">
-                  <input type="range" min="0" max="100" value="100" id="mic-volume" class="mixer-vertical-slider mic-slider">
-                  <label class="control-label">LEVEL</label>
+                <!-- Mic Effects (vertikal untereinander, kompakt) -->
+                <div class="mic-effects-vertical">
+                  <div class="mic-effect-button active" id="mic-compressor-btn">
+                    <span class="effect-text">COMP</span>
+                  </div>
+                  
+                  <div class="mic-effect-button active" id="mic-eq-btn">
+                    <span class="effect-text">EQ</span>
+                  </div>
+                  
+                  <div class="mic-effect-button active" id="mic-limiter-btn">
+                    <span class="effect-text">LIMIT</span>
+                  </div>
+                  
+                  <div class="mic-effect-button" id="mic-deesser-btn">
+                    <span class="effect-text">DE-ESS</span>
+                  </div>
                 </div>
                 
                 <!-- Main Microphone Button -->
@@ -418,21 +431,58 @@
                   </button>
                 </div>
                 
-                <!-- Mic Volume Meter -->
-                <div class="mic-meter-control">
-                  <div class="volume-meter-compact" id="mic-volume-meter">
-                    <div class="meter-bars-compact">
-                      <div class="meter-bar-compact" data-level="0"></div>
-                      <div class="meter-bar-compact" data-level="1"></div>
-                      <div class="meter-bar-compact" data-level="2"></div>
-                      <div class="meter-bar-compact" data-level="3"></div>
-                      <div class="meter-bar-compact" data-level="4"></div>
-                      <div class="meter-bar-compact" data-level="5"></div>
-                      <div class="meter-bar-compact orange" data-level="6"></div>
-                      <div class="meter-bar-compact red" data-level="7"></div>
+                <!-- Combined Meters Section -->
+                <div class="combined-meters-section">
+                  <!-- Mic Volume Meter -->
+                  <div class="mic-meter-control">
+                    <div class="volume-meter-compact" id="mic-volume-meter">
+                      <div class="meter-bars-compact">
+                        <div class="meter-bar-compact" data-level="0"></div>
+                        <div class="meter-bar-compact" data-level="1"></div>
+                        <div class="meter-bar-compact" data-level="2"></div>
+                        <div class="meter-bar-compact" data-level="3"></div>
+                        <div class="meter-bar-compact" data-level="4"></div>
+                        <div class="meter-bar-compact" data-level="5"></div>
+                        <div class="meter-bar-compact orange" data-level="6"></div>
+                        <div class="meter-bar-compact red" data-level="7"></div>
+                      </div>
                     </div>
+                    <span class="material-icons master-meter-icon">mic</span>
                   </div>
-                  <label class="control-label">METER</label>
+                  
+                  <!-- Deck Master Meter (alle Decks kombiniert) -->
+                  <div class="master-meter-control">
+                    <div class="volume-meter-compact" id="deck-master-meter">
+                      <div class="meter-bars-compact">
+                        <div class="meter-bar-compact" data-level="0"></div>
+                        <div class="meter-bar-compact" data-level="1"></div>
+                        <div class="meter-bar-compact" data-level="2"></div>
+                        <div class="meter-bar-compact" data-level="3"></div>
+                        <div class="meter-bar-compact" data-level="4"></div>
+                        <div class="meter-bar-compact" data-level="5"></div>
+                        <div class="meter-bar-compact orange" data-level="6"></div>
+                        <div class="meter-bar-compact red" data-level="7"></div>
+                      </div>
+                    </div>
+                    <span class="material-icons master-meter-icon">speaker</span>
+                  </div>
+                  
+                  <!-- Stream Output Meter (Decks + Mic zum Stream) -->
+                  <div class="master-meter-control">
+                    <div class="volume-meter-compact" id="stream-output-meter">
+                      <div class="meter-bars-compact">
+                        <div class="meter-bar-compact" data-level="0"></div>
+                        <div class="meter-bar-compact" data-level="1"></div>
+                        <div class="meter-bar-compact" data-level="2"></div>
+                        <div class="meter-bar-compact" data-level="3"></div>
+                        <div class="meter-bar-compact" data-level="4"></div>
+                        <div class="meter-bar-compact" data-level="5"></div>
+                        <div class="meter-bar-compact orange" data-level="6"></div>
+                        <div class="meter-bar-compact red" data-level="7"></div>
+                      </div>
+                    </div>
+                    <span class="material-icons master-meter-icon">cast</span>
+                  </div>
                 </div>
               </div>
               
@@ -444,27 +494,6 @@
                 <button id="mic-refresh-btn" class="mic-refresh-button" title="Refresh microphone list">
                   <span class="material-icons">refresh</span>
                 </button>
-              </div>
-              
-              <!-- Radio Broadcast Processing Section -->
-              <div class="mic-effects-container">
-                <div class="mic-effect-button active" id="mic-compressor-btn">
-                  <span class="material-icons effect-icon">compress</span><span class="effect-text">COMP</span>
-                </div>
-                
-                <!-- Gate button removed - feature was ineffective (just reduced gain instead of true noise gating) -->
-                
-                <div class="mic-effect-button active" id="mic-eq-btn">
-                  <span class="material-icons effect-icon">equalizer</span><span class="effect-text">EQ</span>
-                </div>
-                
-                <div class="mic-effect-button active" id="mic-limiter-btn">
-                  <span class="material-icons effect-icon">trending_flat</span><span class="effect-text">LIMIT</span>
-                </div>
-                
-                <div class="mic-effect-button" id="mic-deesser-btn">
-                  <span class="material-icons effect-icon">volume_down</span><span class="effect-text">DE-ESS</span>
-                </div>
               </div>
 
             </div>
@@ -554,12 +583,24 @@
                   </div>
                 </div>
               </div>
+              <!-- Deck C+D Toggle Button (only visible when four-decks mode is enabled) -->
+              <div class="deck-toggle-selector">
+                <button class="deck-toggle-btn" id="deck-toggle-btn" title="Show/Hide Deck C+D">
+                  <span class="material-icons">visibility</span>
+                  <span class="deck-toggle-text">Hide C+D</span>
+                </button>
+              </div>
             </div>
           </div>
           
           <!-- Queue Container (without header) -->
           <div class="queue-panel">
             <div class="queue-items" id="queue-list"></div>
+            <!-- Permanente Drop-Zone (immer sichtbar, füllt restlichen Platz) -->
+            <div class="queue-empty-dropzone">
+              <span class="material-icons">queue_music</span>
+              <p>Drop songs here to queue them</p>
+            </div>
           </div>
         </div>
       </div>

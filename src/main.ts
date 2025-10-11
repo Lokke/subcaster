@@ -671,6 +671,8 @@ async function initializeAudioMixing() {
           startVolumeMeter('c');
           startVolumeMeter('d');
           startVolumeMeter('mic');
+          startVolumeMeter('deck-master');
+          startVolumeMeter('stream-output');
           console.log('🎵 Volume meters started successfully for all players');
         } else {
           console.warn('🎵 startVolumeMeter function not available yet');
@@ -682,6 +684,8 @@ async function initializeAudioMixing() {
               startVolumeMeter('c');
               startVolumeMeter('d');
               startVolumeMeter('mic');
+              startVolumeMeter('deck-master');
+              startVolumeMeter('stream-output');
               console.log('🎵 Volume meters started on retry for all players');
             }
           }, 2000);
@@ -924,6 +928,66 @@ function createPlayerDeckHTML(side: 'a' | 'b' | 'c' | 'd'): string {
   `;
 }
 
+// Deck Configuration Management
+const deckConfig = {
+  // Get deck configuration from ENV (default: four-decks)
+  getEnvConfig(): 'two-decks' | 'four-decks' {
+    const envConfig = import.meta.env.VITE_DECK_CONFIGURATION;
+    return (envConfig === 'two-decks' || envConfig === 'four-decks') ? envConfig : 'four-decks';
+  },
+  
+  // Get user preference for deck C+D visibility (only if four-decks is enabled)
+  getUserPreference(): boolean {
+    if (this.getEnvConfig() === 'two-decks') {
+      return false; // Always hide if ENV says two-decks
+    }
+    // Check localStorage for user preference
+    const stored = localStorage.getItem('deckCDVisible');
+    return stored === null ? true : stored === 'true'; // Default: visible
+  },
+  
+  // Set user preference
+  setUserPreference(visible: boolean) {
+    localStorage.setItem('deckCDVisible', String(visible));
+    this.applyDeckVisibility();
+  },
+  
+  // Apply deck visibility based on config
+  applyDeckVisibility() {
+    const playerC = document.getElementById('player-c');
+    const playerD = document.getElementById('player-d');
+    const deckToggleBtn = document.getElementById('deck-toggle-btn');
+    
+    const shouldShowCD = this.getUserPreference();
+    
+    // Show/hide Deck C and D
+    if (playerC) {
+      playerC.style.display = shouldShowCD ? '' : 'none';
+    }
+    if (playerD) {
+      playerD.style.display = shouldShowCD ? '' : 'none';
+    }
+    
+    // Update toggle button if it exists
+    if (deckToggleBtn) {
+      const btnText = deckToggleBtn.querySelector('.deck-toggle-text');
+      const btnIcon = deckToggleBtn.querySelector('.material-icons');
+      
+      if (btnText) {
+        btnText.textContent = shouldShowCD ? 'Hide C+D' : 'Show C+D';
+      }
+      if (btnIcon) {
+        btnIcon.textContent = shouldShowCD ? 'visibility_off' : 'visibility';
+      }
+      
+      // Only show toggle button if four-decks is enabled in ENV
+      deckToggleBtn.style.display = this.getEnvConfig() === 'four-decks' ? '' : 'none';
+    }
+    
+    console.log(`🎛️ Deck visibility: C+D ${shouldShowCD ? 'visible' : 'hidden'} (ENV: ${this.getEnvConfig()})`);
+  }
+};
+
 // Initialize Player Decks
 function initializePlayerDecks() {
   // Initialize all 4 player decks
@@ -947,6 +1011,9 @@ function initializePlayerDecks() {
   if (playerD) {
     playerD.innerHTML = createPlayerDeckHTML('d');
   }
+  
+  // Apply deck visibility based on configuration
+  deckConfig.applyDeckVisibility();
   
   // Setup volume controls after HTML is created
   setupVolumeControls();
@@ -2350,6 +2417,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Initialize microphone device list on startup
   populateMicrophoneDevices();
+
+  // Deck C+D Toggle Button Event Handler
+  const deckToggleBtn = document.getElementById('deck-toggle-btn') as HTMLButtonElement;
+  if (deckToggleBtn) {
+    deckToggleBtn.addEventListener('click', () => {
+      const currentlyVisible = deckConfig.getUserPreference();
+      deckConfig.setUserPreference(!currentlyVisible);
+      console.log(`🎛️ Deck C+D toggled: ${!currentlyVisible ? 'visible' : 'hidden'}`);
+    });
+  }
 
   // Radio Broadcast Processing Button Event Handlers
   const micCompressorBtn = document.getElementById('mic-compressor-btn');
@@ -4736,19 +4813,10 @@ function updateQueueDisplay() {
   const queueContainers = document.querySelectorAll('.queue-items');
   
   queueContainers.forEach(queueContainer => {
-    if (queue.length === 0) {
-      queueContainer.innerHTML = `
-        <div class="queue-empty">
-          <span class="material-icons">queue_music</span>
-          <p>Drop songs here to queue them</p>
-        </div>
-      `;
-      return;
-    }
-    
-    // Clear container and add unified song elements
+    // Clear container
     queueContainer.innerHTML = '';
     
+    // Add queue items if any exist
     queue.forEach((queueItem, index) => {
       // Add queue-specific wrapper
       const queueWrapper = document.createElement('div');
@@ -8754,13 +8822,23 @@ async function loadRatingAsync(songId: string) {
 // Audio Level Monitoring für Volume Meter
 let volumeMeterIntervals: { [key: string]: NodeJS.Timeout } = {};
 
-function startVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic') {
+function startVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic' | 'deck-master' | 'stream-output') {
   // Stoppe vorherige Intervalle
   if (volumeMeterIntervals[side]) {
     clearInterval(volumeMeterIntervals[side]);
   }
   
-  const meterId = side === 'mic' ? 'mic-volume-meter' : `volume-meter-${side}`;
+  let meterId: string;
+  if (side === 'mic') {
+    meterId = 'mic-volume-meter';
+  } else if (side === 'deck-master') {
+    meterId = 'deck-master-meter';
+  } else if (side === 'stream-output') {
+    meterId = 'stream-output-meter';
+  } else {
+    meterId = `volume-meter-${side}`;
+  }
+  
   const meterElement = document.getElementById(meterId);
   
   if (!meterElement) {
@@ -8809,6 +8887,114 @@ function startVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic') {
     }, 30); // Faster update rate: ~33 FPS for quicker response
     
     console.log(`🎤 Volume meter started for microphone`);
+    return;
+  }
+  
+  // Deck Master Meter - Combined output of all 4 decks
+  if (side === 'deck-master') {
+    if (!masterGainNode) {
+      console.warn('🔊 Master gain node not available yet');
+      return;
+    }
+    
+    if (!audioContext) {
+      console.warn('🔊 AudioContext not available for deck master meter');
+      return;
+    }
+    
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.3;
+    
+    masterGainNode.connect(analyser);
+    
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    volumeMeterIntervals[side] = setInterval(() => {
+      try {
+        if (!dataArray || bufferLength <= 0) {
+          return;
+        }
+        
+        analyser.getByteFrequencyData(dataArray);
+        
+        let sum = 0;
+        for (let i = 0; i < Math.min(bufferLength, dataArray.length); i++) {
+          const value = dataArray[i];
+          if (typeof value === 'number' && !isNaN(value)) {
+            sum += value * value;
+          }
+        }
+        const rms = Math.sqrt(sum / bufferLength);
+        const normalizedLevel = Math.floor((rms / 255) * 12);
+        const clampedLevel = Math.max(0, Math.min(8, normalizedLevel));
+        
+        updateVolumeMeter(meterId, clampedLevel);
+      } catch (error) {
+        console.warn(`⚠️ Error in deck master volume meter:`, error);
+        if (volumeMeterIntervals[side]) {
+          clearInterval(volumeMeterIntervals[side]);
+          delete volumeMeterIntervals[side];
+        }
+      }
+    }, 30);
+    
+    console.log(`🔊 Volume meter started for deck master`);
+    return;
+  }
+  
+  // Stream Output Meter - Combined output to stream (decks + mic)
+  if (side === 'stream-output') {
+    if (!streamGainNode) {
+      console.warn('📡 Stream gain node not available yet');
+      return;
+    }
+    
+    if (!audioContext) {
+      console.warn('📡 AudioContext not available for stream output meter');
+      return;
+    }
+    
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.3;
+    
+    streamGainNode.connect(analyser);
+    
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    volumeMeterIntervals[side] = setInterval(() => {
+      try {
+        if (!dataArray || bufferLength <= 0) {
+          return;
+        }
+        
+        analyser.getByteFrequencyData(dataArray);
+        
+        let sum = 0;
+        for (let i = 0; i < Math.min(bufferLength, dataArray.length); i++) {
+          const value = dataArray[i];
+          if (typeof value === 'number' && !isNaN(value)) {
+            sum += value * value;
+          }
+        }
+        const rms = Math.sqrt(sum / bufferLength);
+        const normalizedLevel = Math.floor((rms / 255) * 12);
+        const clampedLevel = Math.max(0, Math.min(8, normalizedLevel));
+        
+        updateVolumeMeter(meterId, clampedLevel);
+      } catch (error) {
+        console.warn(`⚠️ Error in stream output volume meter:`, error);
+        if (volumeMeterIntervals[side]) {
+          clearInterval(volumeMeterIntervals[side]);
+          delete volumeMeterIntervals[side];
+        }
+      }
+    }, 30);
+    
+    console.log(`📡 Volume meter started for stream output`);
     return;
   }
   
@@ -9013,7 +9199,7 @@ function updateVolumeMeter(meterId: string, level: number) {
   }
 }
 
-function stopVolumeMeter(side: 'a' | 'b' | 'mic') {
+function stopVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic' | 'deck-master' | 'stream-output') {
   if (volumeMeterIntervals[side]) {
     clearInterval(volumeMeterIntervals[side]);
     delete volumeMeterIntervals[side];

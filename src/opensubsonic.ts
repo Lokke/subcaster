@@ -50,6 +50,8 @@ interface OpenSubsonicAlbum {
   genre?: string;
   coverArt?: string;
   created?: string;  // Creation date for newest albums
+  artists?: OpenSubsonicArtistRef[];  // Multi-artist support
+  albumArtists?: OpenSubsonicArtistRef[];  // Multi-album-artist support
 }
 
 interface OpenSubsonicArtist {
@@ -1010,4 +1012,4 @@ class SubsonicApiClient {
 }
 
 // Exportiere für Verwendung in main.ts
-export { SubsonicApiClient, type OpenSubsonicSong, type OpenSubsonicAlbum, type OpenSubsonicArtist, type OpenSubsonicSearchResult, type OpenSubsonicPlaylist };
+export { SubsonicApiClient, type OpenSubsonicSong, type OpenSubsonicAlbum, type OpenSubsonicArtist, type OpenSubsonicSearchResult, type OpenSubsonicPlaylist, type OpenSubsonicArtistRef };

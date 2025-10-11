@@ -5135,7 +5135,7 @@ body {
   height: 30px;
   line-height: 1;
   cursor: pointer;
-  color: #7289DA !important; /* Discord blurple */
+  color: #64FFDA !important; /* Turquoise like radio stream */
   box-shadow: none !important;
   flex-shrink: 0;
   min-width: 44px;
@@ -5143,16 +5143,16 @@ body {
 
 .wishbox-btn:hover {
   color: #99AAB5 !important;
-  border-color: #7289DA !important;
-  background: rgba(114, 137, 218, 0.1) !important;
+  border-color: #64FFDA !important;
+  background: rgba(100, 255, 218, 0.1) !important;
   transform: translateY(-1px);
   box-shadow: none !important;
 }
 
 .wishbox-btn.active {
-  color: #7289DA !important;
-  border-color: #7289DA !important;
-  background: rgba(114, 137, 218, 0.2) !important;
+  color: #64FFDA !important;
+  border-color: #64FFDA !important;
+  background: rgba(100, 255, 218, 0.2) !important;
   box-shadow: none !important;
 }
 
@@ -5166,8 +5166,8 @@ body {
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
   z-index: 1000;
-  min-width: 350px;
-  max-width: 500px;
+  min-width: 500px;
+  max-width: 700px;
   max-height: 500px;
   overflow: hidden;
   display: none;
@@ -5185,9 +5185,9 @@ body {
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  background: rgba(114, 137, 218, 0.1);
+  background: rgba(100, 255, 218, 0.1);
   border-bottom: 1px solid #444;
-  color: #7289DA;
+  color: #64FFDA;
   font-weight: 600;
   font-size: 13px;
   text-transform: uppercase;
@@ -5219,7 +5219,7 @@ body {
 
 .wishbox-sort-btn:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: #7289DA;
+  color: #64FFDA;
 }
 
 .wishbox-sort-btn .material-icons {
@@ -5258,7 +5258,7 @@ body {
 .wishbox-status {
   padding: 16px;
   text-align: center;
-  color: #7289DA;
+  color: #64FFDA;
   font-size: 13px;
   display: flex;
   align-items: center;
@@ -5323,8 +5323,8 @@ body {
 
 .discord-message.dragging {
   opacity: 0.5;
-  background: rgba(114, 137, 218, 0.2);
-  border: 1px solid #7289DA;
+  background: rgba(100, 255, 218, 0.2);
+  border: 1px solid #64FFDA;
 }
 
 @keyframes messageSlideIn {
@@ -5343,8 +5343,8 @@ body {
 }
 
 .discord-message.draggable:hover {
-  background: rgba(114, 137, 218, 0.1);
-  border-left: 3px solid #7289DA;
+  background: rgba(100, 255, 218, 0.1);
+  border-left: 3px solid #64FFDA;
 }
 
 .discord-message:last-child {
@@ -5469,6 +5469,90 @@ body {
   width: 100%;
 }
 
+/* Discord Request Info - Structured Format */
+.discord-request-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.discord-request-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #64FFDA;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.discord-request-name .material-icons {
+  font-size: 16px;
+  color: #64FFDA;
+}
+
+.discord-request-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.95); /* Match mic-effect-button black background */
+  border: 2px solid #444; /* Match mic-effect-button inactive border */
+  border-radius: 0; /* Straight edges like mic buttons */
+  padding: 8px 12px;
+  color: #dcddde;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  width: 100%;
+  box-shadow: 
+    0 0 3px rgba(68, 68, 68, 0.3),
+    inset 0 0 2px rgba(68, 68, 68, 0.2);
+}
+
+.discord-request-btn:hover {
+  background: rgba(76, 175, 80, 0.15); /* Match mic-effect-button active green glow */
+  border-color: #4CAF50; /* Green border on hover */
+  transform: translateY(-2px); /* Lift effect like mic buttons */
+  box-shadow: 
+    0 0 5px rgba(76, 175, 80, 0.6),
+    inset 0 0 3px rgba(76, 175, 80, 0.4);
+}
+
+.discord-request-btn .material-icons {
+  font-size: 18px;
+  color: #7289DA;
+  flex-shrink: 0;
+}
+
+.discord-request-btn .request-label {
+  font-size: 13px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.discord-request-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: #b9bbbe;
+  font-size: 12px;
+  font-style: italic;
+  padding: 6px 0;
+  line-height: 1.4;
+}
+
+.discord-request-message .material-icons {
+  font-size: 16px;
+  color: #72767d;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+
 /* Discord Audio Attachments */
 .discord-message-audio {
   margin-top: 8px;
@@ -5484,7 +5568,7 @@ body {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
-  color: #7289DA;
+  color: #64FFDA;
   font-size: 13px;
 }
 
@@ -7907,6 +7991,27 @@ body {
   margin: 0.25rem 0;
 }
 
+/* Albums section in artist detail view */
+.artist-detail .albums-section {
+  margin-top: 3rem;
+}
+
+.artist-detail .albums-section h3 {
+  color: #fff;
+  font-size: 1.5rem;
+  margin: 0 0 1.5rem 0;
+  font-weight: 600;
+}
+
+.artist-detail .albums-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1.5rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
 .track-list, .album-grid {
   margin-top: 2rem;
 }
@@ -8385,6 +8490,25 @@ body {
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* Multi-Artist Breadcrumb Styling */
+.tilted-breadcrumb-item .breadcrumb-artist {
+  color: inherit;
+  font-weight: inherit;
+  transition: color 0.2s ease;
+  cursor: pointer;
+}
+
+.tilted-breadcrumb-item .breadcrumb-artist:hover {
+  color: #80ffff;
+  text-decoration: underline;
+}
+
+.tilted-breadcrumb-item .artist-separator {
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0 6px;
+  font-weight: 400;
+}
+
 /* Tilted Search Container - Player Button Style */
 .tilted-search-container {
   display: flex;
@@ -8656,6 +8780,24 @@ body {
   white-space: nowrap;
   padding: 0 8px; /* Etwas Innenabstand für bessere Lesbarkeit */
   text-align: center; /* Zentriert für einheitliches Layout */
+}
+
+/* Multi-Artist support in album details */
+.album-artist .artist-separator {
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0 6px;
+  font-weight: 400;
+}
+
+.album-artist .clickable-artist {
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.album-artist .clickable-artist:hover {
+  color: #64FFDA;
+  text-decoration: underline;
 }
 
 /* Artist Cards */

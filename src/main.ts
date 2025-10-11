@@ -1,5 +1,5 @@
 import "./style.css";
-import { SubsonicApiClient, type OpenSubsonicSong, type OpenSubsonicAlbum, type OpenSubsonicArtist, type OpenSubsonicPlaylist } from "./opensubsonic";
+import { SubsonicApiClient, type OpenSubsonicSong, type OpenSubsonicAlbum, type OpenSubsonicArtist, type OpenSubsonicPlaylist, type OpenSubsonicArtistRef } from "./opensubsonic";
 import { AzuraCastWebcaster, createAzuraCastConfig, fetchAzuraCastStations, fetchAllAzuraCastStations, type AzuraCastMetadata, type AzuraCastStation, type AzuraCastNowPlayingResponse } from "./azuracast";
 import { azuraCastWebSocket, type AzuraCastNowPlayingData } from "./azuracast-websocket";
 import { SetupWizard } from "./setup-wizard";
@@ -5501,14 +5501,20 @@ async function prepareDecksOnActivation(deckPair: ('a' | 'b' | 'c' | 'd')[]) {
     }
   }
   
-  // Check if any deck has a loaded track
+  // Check if any deck has a loaded track (but not a radio stream)
   let hasLoadedDeck = false;
   for (const deck of deckPair) {
     const audio = document.getElementById(`audio-${deck}`) as HTMLAudioElement;
+    const isRadioStream = audio && audio.getAttribute('data-stream-type') === 'live';
+    
     if (audio && audio.src && audio.readyState >= 1) {
-      console.log(`🎵 Deck ${deck.toUpperCase()} has a track loaded`);
-      hasLoadedDeck = true;
-      break;
+      if (isRadioStream) {
+        console.log(`📻 Deck ${deck.toUpperCase()} has a radio stream loaded (excluding from auto-queue)`);
+      } else {
+        console.log(`🎵 Deck ${deck.toUpperCase()} has a track loaded`);
+        hasLoadedDeck = true;
+        break;
+      }
     }
   }
   
@@ -5579,70 +5585,10 @@ function updateRadioStreamDisplay(deck: string, station: any) {
     nowPlaying: station.now_playing?.song
   });
   
-  // Update waveform info overlay (visible metadata display)
-  const waveformInfo = document.getElementById(`waveform-info-${deck}`);
-  
-  console.log(`📻 Found waveform-info for deck ${deck}:`, !!waveformInfo);
-  
-  if (!waveformInfo) {
-    console.error(`❌ waveform-info-${deck} not found`);
-    return;
-  }
-  
-  // Get child elements within waveform info
-  const titleElement = waveformInfo.querySelector('.track-title') as HTMLElement;
-  const artistElement = waveformInfo.querySelector('.track-artist') as HTMLElement;
-  const albumElement = waveformInfo.querySelector('.track-album') as HTMLElement;
-  
-  console.log(`📻 Found elements for deck ${deck}:`, {
-    titleElement: !!titleElement,
-    artistElement: !!artistElement,
-    albumElement: !!albumElement
-  });
-  
-  // Get live and now playing info
-  const isLive = station.live?.is_live;
-  const streamerName = station.live?.streamer_name;
-  const nowPlaying = station.now_playing?.song;
-  
-  // Update waveform title field with current track or station name
-  if (titleElement) {
-    if (nowPlaying?.title) {
-      titleElement.textContent = nowPlaying.title;
-    } else {
-      titleElement.textContent = `📻 ${station.name}`;
-    }
-  }
-  
-  // Update waveform artist field with artist or streamer info
-  if (artistElement) {
-    if (nowPlaying?.artist) {
-      artistElement.textContent = nowPlaying.artist;
-    } else if (isLive && streamerName) {
-      artistElement.textContent = `🔴 Live: ${streamerName}`;
-    } else {
-      artistElement.textContent = `${station.name} - Live Radio`;
-    }
-  }
-  
-  // Update album field with station description or genre
-  if (albumElement) {
-    albumElement.textContent = station.description || station.genre || 'Live Radio';
-  }
-  
-  // Also update hidden metadata elements (for compatibility)
-  const hiddenTitle = document.getElementById(`track-title-${deck}`);
-  const hiddenArtist = document.getElementById(`track-artist-${deck}`);
-  if (hiddenTitle) {
-    hiddenTitle.textContent = nowPlaying?.title || `📻 ${station.name}`;
-  }
-  if (hiddenArtist) {
-    hiddenArtist.textContent = nowPlaying?.artist || `${station.name} - Live Radio`;
-  }
-  
   // Update waveform album cover with current track art
   const albumCoverElement = document.getElementById(`album-cover-${deck}`) as HTMLElement;
   if (albumCoverElement) {
+    const nowPlaying = station.now_playing?.song;
     if (nowPlaying?.art) {
       albumCoverElement.innerHTML = `<img src="${nowPlaying.art}" alt="Album Cover" style="width: 100%; height: 100%; object-fit: cover;">`;
     } else {
@@ -5660,11 +5606,16 @@ function updateRadioStreamDisplay(deck: string, station: any) {
 function updateRadioStreamFromWebSocket(deck: string, station: any, data: AzuraCastNowPlayingData) {
   console.log(`📻 WebSocket update for deck ${deck.toUpperCase()}:`, data);
   
+  // Ensure deck is lowercase for element IDs
+  const deckLower = deck.toLowerCase();
+  
   // Update waveform info overlay (visible metadata display)
-  const waveformInfo = document.getElementById(`waveform-info-${deck}`);
+  const waveformInfo = document.getElementById(`waveform-info-${deckLower}`);
+  
+  console.log(`📻 Looking for element: waveform-info-${deckLower}, found:`, !!waveformInfo);
   
   if (!waveformInfo) {
-    console.error(`❌ waveform-info-${deck} not found`);
+    console.error(`❌ waveform-info-${deckLower} not found`);
     return;
   }
   
@@ -5679,34 +5630,60 @@ function updateRadioStreamFromWebSocket(deck: string, station: any, data: AzuraC
     albumElement: !!albumElement
   });
   
+  // Extract short radio name (before " - ") and description (after " - ")
+  const fullName = station.name || '';
+  const nameParts = fullName.split(' - ');
+  const shortRadioName = nameParts[0] || fullName;
+  const radioDescription = station.description || nameParts[1] || '';
+  
   // Update waveform title with real-time track info
   if (titleElement) {
-    const newTitle = data.now_playing?.song?.title || `📻 ${station.name}`;
+    const newTitle = data.now_playing?.song?.title || station.name;
     console.log(`📻 Setting title for deck ${deck}: "${newTitle}"`);
     titleElement.textContent = newTitle;
   } else {
     console.error(`❌ Title element not found in waveform-info-${deck}`);
   }
   
-  // Update waveform artist with real-time artist or streamer info
+  // Update waveform artist with current song artist (or fallback to "Live Radio")
   if (artistElement) {
-    let newArtist = '';
-    if (data.now_playing?.song?.artist) {
-      newArtist = data.now_playing.song.artist;
-    } else if (data.live?.is_live && data.live?.streamer_name) {
-      newArtist = `🔴 Live: ${data.live.streamer_name}`;
-    } else {
-      newArtist = `${station.name} - Live Radio`;
-    }
-    console.log(`📻 Setting artist for deck ${deck}: "${newArtist}"`);
-    artistElement.textContent = newArtist;
+    const songArtist = data.now_playing?.song?.artist || 'Live Radio';
+    artistElement.textContent = songArtist;
   } else {
-    console.error(`❌ Artist element not found in waveform-info-${deck}`);
+    console.error(`Artist element not found`);
   }
   
-  // Update album field with station info
+  // Update album field with short radio name
   if (albumElement) {
-    albumElement.textContent = station.description || station.genre || 'Live Radio';
+    albumElement.textContent = shortRadioName;
+  }
+  
+  // Update LIVE badge/duration element with streamer info (only if live)
+  const durationLineElement = waveformInfo.querySelector('.track-duration-line') as HTMLElement;
+  if (data.live?.is_live) {
+    // If there's already a duration line element, update it
+    if (durationLineElement) {
+      const liveBadge = data.live?.streamer_name ? `🔴 LIVE: ${data.live.streamer_name}` : '🔴 LIVE';
+      durationLineElement.textContent = liveBadge;
+      durationLineElement.style.color = '#ff4444';
+    } else {
+      // If no duration line element exists, create it (should not happen with new HTML structure)
+      const bottomLeft = waveformInfo.querySelector('.track-details-bottom-left');
+      if (bottomLeft) {
+        const liveBadge = data.live?.streamer_name ? `🔴 LIVE: ${data.live.streamer_name}` : '🔴 LIVE';
+        const newDurationLine = document.createElement('div');
+        newDurationLine.className = 'track-duration-line';
+        newDurationLine.style.color = '#ff4444';
+        newDurationLine.style.marginTop = '4px';
+        newDurationLine.textContent = liveBadge;
+        bottomLeft.appendChild(newDurationLine);
+      }
+    }
+  } else {
+    // If not live, remove the duration line element
+    if (durationLineElement) {
+      durationLineElement.remove();
+    }
   }
   
   // Also update hidden metadata elements (for compatibility)
@@ -5757,6 +5734,14 @@ function updateRadioStreamFromWebSocket(deck: string, station: any, data: AzuraC
     radioTrack.title = data.now_playing.song.title;
     radioTrack.artist = data.now_playing.song.artist;
     radioTrack.coverArt = data.now_playing.song.art;
+    
+    // Also update deckSongs for drag & drop
+    const deckType = deck as 'a' | 'b' | 'c' | 'd';
+    if (deckSongs[deckType]) {
+      deckSongs[deckType].title = data.now_playing.song.title;
+      deckSongs[deckType].artist = data.now_playing.song.artist;
+      deckSongs[deckType].coverArt = data.now_playing.song.art;
+    }
   }
 }
 
@@ -6092,8 +6077,11 @@ function setupRadioStreamSelector() {
               serverUrl: station.serverUrl
             };
             
-            // Store radio track info for this deck
+            // Store radio track info for this deck (for WebSocket updates)
             (window as any)[`radioTrack_${deck}`] = radioTrack;
+            
+            // Store radio track in deckSongs for drag & drop support
+            deckSongs[deck as 'a' | 'b' | 'c' | 'd'] = radioTrack as any;
             
             // Configure audio element to prevent caching
             audio.preload = 'none'; // Don't preload anything
@@ -6183,8 +6171,9 @@ function setupRadioStreamSelector() {
       // Update initial display
       updateRadioStreamDisplay(deck, station);
       
-      // Update waveform info overlay for radio stream
-      updateWaveformInfoForRadio(deckType, station);
+      // Update waveform info overlay for radio stream with initial station data
+      // Pass station.now_playing as third parameter to show initial metadata
+      updateWaveformInfoForRadio(deckType, station, station);
       
       // For radio streams, create a simple live waveform visualization
       createLiveWaveformForRadio(deckType, audio);
@@ -6192,8 +6181,8 @@ function setupRadioStreamSelector() {
       // Subscribe to WebSocket updates for this station
       azuraCastWebSocket.subscribe(station.serverUrl, station.shortcode, (data: AzuraCastNowPlayingData) => {
         updateRadioStreamFromWebSocket(deck, station, data);
-        // Update waveform info with now playing data
-        updateWaveformInfoForRadio(deckType, station, data);
+        // Note: updateRadioStreamFromWebSocket already updates all metadata
+        // No need to call updateWaveformInfoForRadio again as it would overwrite the changes
       });
       
       // Setup audio event listeners for radio streams
@@ -6225,6 +6214,9 @@ function setupRadioStreamSelector() {
       console.error(`❌ Error loading radio stream to deck ${deck}:`, error);
     }
   };
+  
+  // Make loadRadioStreamToDeck globally available for drag & drop
+  (window as any).loadRadioStreamToDeck = loadRadioStreamToDeck;
   
   // Event listeners
   radioBtn.addEventListener('click', toggleDropdown);
@@ -6756,6 +6748,11 @@ function initializeOpenSubsonicLogin() {
             
             updateUserStatus('opensubsonic', envUnifiedUsername, true);
             
+            // Show wishbox button after successful auto-login
+            if (wishboxBtn) {
+              wishboxBtn.style.display = '';
+            }
+            
             // Configure streaming with unified credentials
             if (envAzuraCastServers) {
               streamConfig.username = envUnifiedUsername;
@@ -6865,6 +6862,11 @@ function initializeOpenSubsonicLogin() {
         
         // Update OpenSubsonic user status
         updateUserStatus('opensubsonic', username, true);
+        
+        // Show wishbox button after successful login
+        if (wishboxBtn) {
+          wishboxBtn.style.display = '';
+        }
         
         // Configure streaming with unified or individual credentials
         if (useUnifiedLogin && envAzuraCastServers) {
@@ -8048,13 +8050,52 @@ function updateWaveformInfoForLocalFile(deck: 'a' | 'b' | 'c' | 'd', track: any)
 function updateWaveformInfoForRadio(deck: 'a' | 'b' | 'c' | 'd', station: any, nowPlaying?: any): void {
   const waveformInfo = document.getElementById(`waveform-info-${deck}`);
   if (waveformInfo) {
-    const currentSong = nowPlaying?.song;
+    // Handle both station data and WebSocket data formats
+    // When called initially: nowPlaying = station (with station.now_playing.song)
+    // When called from WebSocket: nowPlaying = data (with data.now_playing.song)
+    const currentSong = nowPlaying?.now_playing?.song || nowPlaying?.song;
+    const isLive = nowPlaying?.live?.is_live || station.live?.is_live;
+    const streamerName = nowPlaying?.live?.streamer_name || station.live?.streamer_name;
+    
+    console.log(`📻 updateWaveformInfoForRadio for deck ${deck}:`, {
+      currentSong,
+      isLive,
+      streamerName,
+      nowPlayingData: nowPlaying
+    });
+    
+    // Determine LIVE badge text (only show if actually live)
+    let liveBadgeHtml = '';
+    if (isLive) {
+      const liveBadge = streamerName ? `🔴 LIVE: ${streamerName}` : '🔴 LIVE';
+      liveBadgeHtml = `
+        <div class="track-duration-line" style="color: #ff4444; margin-top: 4px;">
+          ${liveBadge}
+        </div>`;
+    }
+    
+    // Extract short radio name (before " - ") and description (after " - ")
+    const fullName = station.name || '';
+    const nameParts = fullName.split(' - ');
+    const shortRadioName = nameParts[0] || fullName;
+    const radioDescription = station.description || nameParts[1] || '';
+    
+    // Use same structure as OpenSubsonic songs
     waveformInfo.innerHTML = `
-      <div class="track-title">${currentSong?.title || station.name}</div>
-      <div class="track-artist">${currentSong?.artist || 'Live Radio Stream'}</div>
-      <div class="track-album">${station.description || 'Radio Station'}</div>
-      <div class="track-duration">🔴 LIVE</div>
-      <div class="radio-badge">📻 ${station.name}</div>
+      <!-- Large centered title -->
+      <div class="track-title-large">
+        <span class="track-title">${currentSong?.title || station.name}</span>
+      </div>
+      <!-- Bottom left: artist and album stacked -->
+      <div class="track-details-bottom-left">
+        <div class="track-artist-line">
+          <span class="track-artist">${currentSong?.artist || 'Live Radio'}</span>
+        </div>
+        <div class="track-album-line">
+          <span class="track-album">${shortRadioName}</span>
+        </div>
+        ${liveBadgeHtml}
+      </div>
     `;
   }
 }
@@ -8379,31 +8420,74 @@ function initializePlayerDropZone(side: 'a' | 'b' | 'c' | 'd') {
           console.log(`🎵 Detected deck-song drop: from ${sourceDeck} to ${side}, song:`, song);
           
           if (song) {
-            console.log(`🎵 Moving deck song from ${sourceDeck?.toUpperCase()} to ${side.toUpperCase()}: "${song.title}"`);
+            // Check if this is a radio stream
+            const isRadio = (song as any).isRadio === true;
             
-            // Load track to target deck
-            if (song && songId) {
-              console.log(`⬇️ Moving song ${songId} from Player ${sourceDeck?.toUpperCase()} to Player ${side.toUpperCase()}`);
+            if (isRadio) {
+              console.log(`📻 Moving radio stream from ${sourceDeck?.toUpperCase()} to ${side.toUpperCase()}: "${song.title}"`);
               
-              // Load track to target deck WITHOUT auto-play
-              loadTrackToPlayer(side, song, false);
-              console.log(`✅ Track "${song.title}" moved to Player ${side.toUpperCase()}`);
+              // For radio streams, we need to load the station again
+              const stationId = (song as any).stationId;
+              const shortcode = (song as any).shortcode;
+              const serverUrl = (song as any).serverUrl;
               
-              // Clear the source deck (move operation)
-              if (sourceDeck && sourceDeck !== side) {
-                console.log(`🗑️ About to clear source deck ${sourceDeck.toUpperCase()}`);
-                try {
-                  clearPlayerDeck(sourceDeck as 'a' | 'b' | 'c' | 'd');
-                  console.log(`✅ Source deck ${sourceDeck.toUpperCase()} cleared successfully`);
-                } catch (error) {
-                  console.error(`❌ Error clearing source deck ${sourceDeck.toUpperCase()}:`, error);
+              if (stationId && shortcode && serverUrl) {
+                // Reconstruct station object for loading
+                const station = {
+                  id: stationId,
+                  shortcode: shortcode,
+                  serverUrl: serverUrl,
+                  name: song.title,
+                  description: song.album,
+                  genre: song.genre
+                };
+                
+                // Load radio stream to target deck
+                const loadRadioStreamToDeckFunc = (window as any).loadRadioStreamToDeck;
+                if (loadRadioStreamToDeckFunc) {
+                  await loadRadioStreamToDeckFunc(side, station);
+                  console.log(`✅ Radio stream moved to Player ${side.toUpperCase()}`);
+                  
+                  // Clear the source deck
+                  if (sourceDeck && sourceDeck !== side) {
+                    console.log(`🗑️ Clearing source deck ${sourceDeck.toUpperCase()}`);
+                    clearPlayerDeck(sourceDeck as 'a' | 'b' | 'c' | 'd');
+                  }
+                } else {
+                  console.error(`❌ loadRadioStreamToDeck function not found`);
                 }
               } else {
-                console.log(`ℹ️ Not clearing source deck (same as target or invalid): source=${sourceDeck}, target=${side}`);
+                console.error(`❌ Missing radio station data for move operation`);
               }
-              return; // Exit early since we handled the move
+              return; // Exit early since we handled the radio move
             } else {
-              console.error(`❌ Missing song or songId for move operation`);
+              // Regular OpenSubsonic song
+              console.log(`🎵 Moving deck song from ${sourceDeck?.toUpperCase()} to ${side.toUpperCase()}: "${song.title}"`);
+              
+              // Load track to target deck
+              if (song && songId) {
+                console.log(`⬇️ Moving song ${songId} from Player ${sourceDeck?.toUpperCase()} to Player ${side.toUpperCase()}`);
+                
+                // Load track to target deck WITHOUT auto-play
+                loadTrackToPlayer(side, song, false);
+                console.log(`✅ Track "${song.title}" moved to Player ${side.toUpperCase()}`);
+                
+                // Clear the source deck (move operation)
+                if (sourceDeck && sourceDeck !== side) {
+                  console.log(`🗑️ About to clear source deck ${sourceDeck.toUpperCase()}`);
+                  try {
+                    clearPlayerDeck(sourceDeck as 'a' | 'b' | 'c' | 'd');
+                    console.log(`✅ Source deck ${sourceDeck.toUpperCase()} cleared successfully`);
+                  } catch (error) {
+                    console.error(`❌ Error clearing source deck ${sourceDeck.toUpperCase()}:`, error);
+                  }
+                } else {
+                  console.log(`ℹ️ Not clearing source deck (same as target or invalid): source=${sourceDeck}, target=${side}`);
+                }
+                return; // Exit early since we handled the move
+              } else {
+                console.error(`❌ Missing song or songId for move operation`);
+              }
             }
           } else {
             console.error(`❌ No song data in deck-song drop`);
@@ -10394,10 +10478,10 @@ function showArtistDetailView(artist: OpenSubsonicArtist, albums: OpenSubsonicAl
           ${artist.albumCount ? `<p>${artist.albumCount} albums</p>` : ''}
         </div>
       </div>
-      <div class="album-grid">
-        <h4>Albums</h4>
-        <div class="albums" id="artist-albums">
-          <!-- Albums will be loaded via MediaContainer -->
+      <div class="albums-section">
+        <h3>Albums</h3>
+        <div class="albums-grid" id="artist-albums">
+          <!-- Albums will be rendered here -->
         </div>
       </div>
     </div>
@@ -10405,28 +10489,24 @@ function showArtistDetailView(artist: OpenSubsonicArtist, albums: OpenSubsonicAl
 
   browseContent.appendChild(detailView);
   
-  // Load albums using MediaContainer
-  const mediaItems: MediaItem[] = albums.map((album: OpenSubsonicAlbum) => ({
-    id: album.id,
-    name: album.name,
-    type: 'album' as const,
-    coverArt: album.coverArt,
-    artist: album.artist,
-    year: album.year
-  }));
-
-  const container = new MediaContainer({
-    containerId: 'artist-albums',
-    items: mediaItems,
-    displayMode: 'grid',
-    itemType: 'album',
-    onItemClick: (item) => {
-      const album = albums.find((a: OpenSubsonicAlbum) => a.id === item.id);
-      if (album) loadAlbumTracks(album);
-    }
-  });
-
-  container.render();
+  // Render albums using the same modern card style as homepage
+  const albumsGrid = document.getElementById('artist-albums');
+  if (albumsGrid) {
+    albums.forEach((album: OpenSubsonicAlbum) => {
+      const albumHTML = createAlbumHTML(album);
+      albumsGrid.insertAdjacentHTML('beforeend', albumHTML);
+    });
+    
+    // Add click listeners to album cards
+    const albumCards = albumsGrid.querySelectorAll('.album-item-modern');
+    albumCards.forEach((card) => {
+      card.addEventListener('click', () => {
+        const albumId = card.getAttribute('data-album-id');
+        const album = albums.find((a: OpenSubsonicAlbum) => a.id === albumId);
+        if (album) loadAlbumTracks(album);
+      });
+    });
+  }
 }
 
 // Unified Library Browser System
@@ -10441,6 +10521,7 @@ interface BreadcrumbItem {
   type: 'home' | 'artist' | 'album' | 'wizard' | 'playlist';
   id?: string;
   action: () => void;
+  multipleArtists?: OpenSubsonicArtistRef[];  // For multi-artist albums
 }
 
 class LibraryBrowser {
@@ -10507,10 +10588,26 @@ class LibraryBrowser {
     breadcrumbContainer.innerHTML = this.currentContext.breadcrumbs
       .map((item, index) => {
         const isLast = index === this.currentContext.breadcrumbs.length - 1;
-        return `<div class="tilted-breadcrumb-item ${isLast ? 'active' : 'clickable'}" 
-                      ${!isLast ? `onclick="libraryBrowser.navigateToBreadcrumb(${index})"` : ''}>
-                  ${item.label}
-                </div>`;
+        
+        // Check if this breadcrumb has multiple artists
+        const multipleArtists = (item as any).multipleArtists as OpenSubsonicArtistRef[] | undefined;
+        
+        if (multipleArtists && multipleArtists.length > 1) {
+          // Render multiple clickable artists separated by bullet
+          const artistsHtml = multipleArtists.map((artist, artistIndex) => {
+            return `<span class="breadcrumb-artist clickable" onclick="libraryBrowser.navigateToArtistById('${artist.id}', '${escapeHtml(artist.name).replace(/'/g, '\\\'')}')">${escapeHtml(artist.name)}</span>`;
+          }).join(' <span class="artist-separator">•</span> ');
+          
+          return `<div class="tilted-breadcrumb-item ${isLast ? 'active' : 'clickable'}">
+                    ${artistsHtml}
+                  </div>`;
+        } else {
+          // Single breadcrumb item
+          return `<div class="tilted-breadcrumb-item ${isLast ? 'active' : 'clickable'}" 
+                        ${!isLast ? `onclick="libraryBrowser.navigateToBreadcrumb(${index})"` : ''}>
+                    ${item.label}
+                  </div>`;
+        }
       })
       .join('');
   }
@@ -10518,6 +10615,10 @@ class LibraryBrowser {
   navigateToBreadcrumb(index: number) {
     const breadcrumb = this.currentContext.breadcrumbs[index];
     breadcrumb.action();
+  }
+
+  navigateToArtistById(artistId: string, artistName: string) {
+    this.showArtist({ id: artistId, name: artistName } as OpenSubsonicArtist);
   }
 
   private async loadHausaufgabenContent(playlist: OpenSubsonicPlaylist) {
@@ -10599,14 +10700,49 @@ class LibraryBrowser {
     // Create album display name with year if available
     const albumDisplayName = album.year ? `${album.name} (${album.year})` : album.name;
     
+    // Build breadcrumbs with multi-artist support
+    const breadcrumbs: BreadcrumbItem[] = [
+      { label: 'Library', type: 'home', action: () => this.showHome() }
+    ];
+    
+    // Check if album has multiple artists (albumArtists or artists array)
+    const artistsArray = album.albumArtists || album.artists;
+    if (artistsArray && artistsArray.length > 1) {
+      // Multiple artists - create a combined breadcrumb with clickable artists
+      breadcrumbs.push({
+        label: '', // Will be rendered differently in updateBreadcrumbs
+        type: 'artist',
+        action: () => {}, // No action for combined breadcrumb
+        multipleArtists: artistsArray // Store artists array for rendering
+      } as any);
+    } else if (artistsArray && artistsArray.length === 1) {
+      // Single artist from array
+      breadcrumbs.push({
+        label: artistsArray[0].name,
+        type: 'artist',
+        id: artistsArray[0].id,
+        action: () => this.showArtist({ id: artistsArray[0].id, name: artistsArray[0].name } as OpenSubsonicArtist)
+      });
+    } else {
+      // Fallback to single artist string
+      breadcrumbs.push({
+        label: album.artist,
+        type: 'artist',
+        action: () => this.showArtist({ id: album.artistId, name: album.artist } as OpenSubsonicArtist)
+      });
+    }
+    
+    breadcrumbs.push({
+      label: albumDisplayName,
+      type: 'album',
+      id: album.id,
+      action: () => this.showAlbum(album)
+    });
+    
     this.currentContext = {
       type: 'album',
       data: album,
-      breadcrumbs: [
-        { label: 'Library', type: 'home', action: () => this.showHome() },
-        { label: album.artist, type: 'artist', action: () => this.showArtist({id: album.artistId, name: album.artist} as OpenSubsonicArtist) },
-        { label: albumDisplayName, type: 'album', id: album.id, action: () => this.showAlbum(album) }
-      ]
+      breadcrumbs
     };
     
     this.updateBreadcrumbs();
@@ -10787,6 +10923,24 @@ class LibraryBrowser {
 
   private async loadAlbumContent(album: OpenSubsonicAlbum) {
     const content = document.getElementById('library-content')!;
+    
+    // Generate artist HTML with multi-artist support
+    let artistHtml = '';
+    const artistsArray = album.albumArtists || album.artists;
+    
+    if (artistsArray && artistsArray.length > 1) {
+      // Multiple artists - render as clickable links separated by bullet
+      artistHtml = artistsArray.map((artist, index) => {
+        return `<span class="clickable-artist" data-artist-id="${artist.id}" data-artist-name="${escapeHtml(artist.name)}">${escapeHtml(artist.name)}</span>`;
+      }).join(' <span class="artist-separator">•</span> ');
+    } else if (artistsArray && artistsArray.length === 1) {
+      // Single artist from array
+      artistHtml = `<span class="clickable-artist" data-artist-id="${artistsArray[0].id}" data-artist-name="${escapeHtml(artistsArray[0].name)}">${escapeHtml(artistsArray[0].name)}</span>`;
+    } else {
+      // Fallback to single artist string
+      artistHtml = `<span class="clickable-artist" data-artist-id="${album.artistId}" data-artist-name="${escapeHtml(album.artist)}">${escapeHtml(album.artist)}</span>`;
+    }
+    
     content.innerHTML = `
       <div class="album-header">
         <div class="album-info">
@@ -10795,7 +10949,7 @@ class LibraryBrowser {
           </div>
           <div class="album-details">
             <h1 class="album-name">${escapeHtml(album.name)}</h1>
-            <p class="album-artist clickable-artist" data-artist-id="${album.artistId}" data-artist-name="${escapeHtml(album.artist)}">${escapeHtml(album.artist)}</p>
+            <p class="album-artist">${artistHtml}</p>
             <p class="album-year">${album.year || 'Unknown Year'}</p>
           </div>
         </div>
@@ -12449,6 +12603,11 @@ const wishboxCloseBtn = document.getElementById('wishbox-close-btn') as HTMLButt
 const wishboxStatus = document.getElementById('wishbox-status') as HTMLDivElement;
 const wishboxContent = document.getElementById('wishbox-content') as HTMLDivElement;
 
+// Hide wishbox button initially (only show after login)
+if (wishboxBtn) {
+  wishboxBtn.style.display = 'none';
+}
+
 // Sort order state (load from localStorage)
 let wishboxSortOrder: 'newest' | 'oldest' = (localStorage.getItem('wishboxSortOrder') as 'newest' | 'oldest') || 'newest';
 
@@ -12544,6 +12703,9 @@ function renderDiscordMessage(message: any): HTMLElement {
     attachments: message.attachments
   });
   
+  // Parse structured request format
+  const parsedRequest = parseDiscordRequest(message.content);
+  
   // Build attachments HTML (audio files)
   let attachmentsHtml = '';
   let hasAudioAttachment = false;
@@ -12580,6 +12742,27 @@ function renderDiscordMessage(message: any): HTMLElement {
     }
   }
   
+  // Build request buttons HTML
+  let requestButtonsHtml = '';
+  if (parsedRequest) {
+    if (parsedRequest.request1) {
+      requestButtonsHtml += `
+        <button class="discord-request-btn" data-search="${escapeHtml(parsedRequest.request1)}" title="In Suche einfügen">
+          <span class="material-icons">search</span>
+          <span class="request-label">Request 1: ${escapeHtml(parsedRequest.request1)}</span>
+        </button>
+      `;
+    }
+    if (parsedRequest.request2) {
+      requestButtonsHtml += `
+        <button class="discord-request-btn" data-search="${escapeHtml(parsedRequest.request2)}" title="In Suche einfügen">
+          <span class="material-icons">search</span>
+          <span class="request-label">Request 2: ${escapeHtml(parsedRequest.request2)}</span>
+        </button>
+      `;
+    }
+  }
+  
   messageEl.innerHTML = `
     <div class="discord-message-header">
       <div class="discord-message-avatar">
@@ -12593,9 +12776,40 @@ function renderDiscordMessage(message: any): HTMLElement {
     <button class="discord-message-delete" data-message-id="${message.id}" title="Nachricht löschen">
       <span class="material-icons">delete</span>
     </button>
-    ${message.content ? `<div class="discord-message-content">${escapeHtml(message.content)}</div>` : ''}
+    ${parsedRequest ? `
+      <div class="discord-request-info">
+        ${parsedRequest.name ? `<div class="discord-request-name"><span class="material-icons">person</span> ${escapeHtml(parsedRequest.name)}</div>` : ''}
+        ${requestButtonsHtml}
+        ${parsedRequest.message ? `<div class="discord-request-message"><span class="material-icons">chat</span> ${escapeHtml(parsedRequest.message)}</div>` : ''}
+      </div>
+    ` : `
+      ${message.content ? `<div class="discord-message-content">${escapeHtml(message.content)}</div>` : ''}
+    `}
     ${attachmentsHtml}
   `;
+  
+  // Add click handlers for request buttons
+  const requestBtns = messageEl.querySelectorAll('.discord-request-btn');
+  requestBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const searchQuery = (btn as HTMLElement).dataset.search || '';
+      if (searchQuery) {
+        // Insert into search field
+        const searchInput = document.getElementById('search-input') as HTMLInputElement;
+        const searchBtn = document.getElementById('search-btn') as HTMLButtonElement;
+        
+        if (searchInput && searchBtn) {
+          searchInput.value = searchQuery;
+          searchInput.focus();
+          
+          // Trigger search by clicking the search button
+          searchBtn.click();
+          
+          console.log(`🔍 Search triggered: ${searchQuery}`);
+        }
+      }
+    });
+  });
   
   // Make message draggable if it has audio attachment
   if (hasAudioAttachment) {
@@ -12655,6 +12869,60 @@ function renderDiscordMessage(message: any): HTMLElement {
   deleteBtn?.addEventListener('click', () => deleteDiscordMessage(message.id, message.channel_id));
   
   return messageEl;
+}
+
+/**
+ * Parse structured Discord request message
+ * Format:
+ * Name: <name>
+ * Request 1: <request1>
+ * Request 2: <request2>
+ * Message: <message>
+ */
+function parseDiscordRequest(content: string): { name?: string, request1?: string, request2?: string, message?: string } | null {
+  if (!content) return null;
+  
+  const lines = content.split('\n');
+  const result: any = {};
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    // Match "Name: <value>"
+    const nameMatch = trimmed.match(/^Name:\s*(.+)$/i);
+    if (nameMatch) {
+      result.name = nameMatch[1].trim();
+      continue;
+    }
+    
+    // Match "Request 1: <value>"
+    const request1Match = trimmed.match(/^Request\s*1:\s*(.+)$/i);
+    if (request1Match) {
+      result.request1 = request1Match[1].trim();
+      continue;
+    }
+    
+    // Match "Request 2: <value>"
+    const request2Match = trimmed.match(/^Request\s*2:\s*(.+)$/i);
+    if (request2Match) {
+      result.request2 = request2Match[1].trim();
+      continue;
+    }
+    
+    // Match "Message: <value>"
+    const messageMatch = trimmed.match(/^Message:\s*(.+)$/i);
+    if (messageMatch) {
+      result.message = messageMatch[1].trim();
+      continue;
+    }
+  }
+  
+  // Only return if at least one field was found
+  if (Object.keys(result).length > 0) {
+    return result;
+  }
+  
+  return null;
 }
 
 /**
@@ -12834,14 +13102,8 @@ wishboxSortBtn?.addEventListener('click', (e) => {
   console.log(`🔄 Sort order changed to: ${wishboxSortOrder}`);
 });
 
-// Close wishbox when clicking outside
-document.addEventListener('click', (e) => {
-  if (!wishboxDropdown.contains(e.target as Node) && 
-      !wishboxBtn.contains(e.target as Node) &&
-      wishboxDropdown.classList.contains('show')) {
-    closeWishbox();
-  }
-});
+// Wishbox can only be closed by clicking the X button or wishbox icon
+// (No click-outside to close)
 
 // Initialize Discord Gateway connection and load existing messages
 const discordClient = initializeDiscord();
@@ -12851,6 +13113,32 @@ if (discordClient) {
   
   // Subscribe to new messages
   discordClient.onNewMessage(handleNewDiscordMessage);
+  
+  // Subscribe to message deletions
+  discordClient.onMessageDelete((messageId: string, channelId: string) => {
+    console.log(`🗑️ Message deleted: ${messageId} in channel ${channelId}`);
+    
+    // Remove from local storage
+    const index = discordMessages.findIndex(m => m.id === messageId);
+    if (index !== -1) {
+      console.log(`✅ Removing message from local storage: ${discordMessages[index].content}`);
+      discordMessages.splice(index, 1);
+      
+      // Remove from UI with animation
+      const messageEl = document.querySelector(`[data-message-id="${messageId}"]`);
+      if (messageEl) {
+        messageEl.classList.add('deleting');
+        setTimeout(() => {
+          messageEl.remove();
+          
+          // Update UI if no messages left
+          if (discordMessages.length === 0) {
+            updateWishboxContent();
+          }
+        }, 300);
+      }
+    }
+  });
   
   // Load existing messages from channel
   (async () => {
@@ -12922,3 +13210,4 @@ if (discordClient) {
 }
 
 (window as any).githubCat = githubCat;
+

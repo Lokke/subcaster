@@ -57,6 +57,7 @@ const INTENTS = {
 };
 
 type MessageHandler = (message: DiscordMessage) => void;
+type MessageDeleteHandler = (messageId: string, channelId: string) => void;
 
 export class DiscordGatewayClient {
   private ws: WebSocket | null = null;
@@ -70,6 +71,7 @@ export class DiscordGatewayClient {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private messageHandlers: MessageHandler[] = [];
+  private messageDeleteHandlers: MessageDeleteHandler[] = [];
   private isConnecting = false;
   private heartbeatAckReceived = true;
 
@@ -128,6 +130,13 @@ export class DiscordGatewayClient {
    */
   public onNewMessage(handler: MessageHandler): void {
     this.messageHandlers.push(handler);
+  }
+
+  /**
+   * Subscribe to message delete events
+   */
+  public onMessageDelete(handler: MessageDeleteHandler): void {
+    this.messageDeleteHandlers.push(handler);
   }
 
   /**
@@ -370,6 +379,14 @@ export class DiscordGatewayClient {
           this.handleNewMessage(data);
         }
         break;
+
+      case 'MESSAGE_DELETE':
+        // Only process deletions from the target channel
+        if (data.channel_id === this.channelId) {
+          console.log('🗑️ Discord: Message deleted from target channel:', data.id);
+          this.handleMessageDelete(data.id, data.channel_id);
+        }
+        break;
     }
   }
 
@@ -383,6 +400,20 @@ export class DiscordGatewayClient {
         handler(data);
       } catch (error) {
         console.error('❌ Discord: Error in message handler:', error);
+      }
+    });
+  }
+
+  /**
+   * Handle message deletion
+   */
+  private handleMessageDelete(messageId: string, channelId: string): void {
+    // Notify all delete handlers
+    this.messageDeleteHandlers.forEach((handler) => {
+      try {
+        handler(messageId, channelId);
+      } catch (error) {
+        console.error('❌ Discord: Error in message delete handler:', error);
       }
     });
   }

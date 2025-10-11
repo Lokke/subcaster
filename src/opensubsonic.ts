@@ -536,39 +536,31 @@ class SubsonicApiClient {
       
       const songs = searchResponse.searchResult3?.song || [];
       
-      // Sammle alle Album-Namen aus Songs wo der Künstler beteiligt ist
-      const albumNames = new Set<string>();
+      // Sammle Album-IDs wo der Künstler als Track-Artist beteiligt ist
+      const relevantAlbumIds = new Set<string>();
       
       songs.forEach((song: OpenSubsonicSong) => {
         // Prüfe ob der Künstler in Artist-Field vorkommt (exakter Match oder Teil)
         if (song.artist && song.artist.toLowerCase().includes(artistName.toLowerCase())) {
-          if (song.album) {
-            albumNames.add(song.album);
+          if (song.albumId) {
+            relevantAlbumIds.add(song.albumId);
           }
         }
       });
       
-      // Jetzt suche nach jedem Album-Namen um die Album-Details zu bekommen
+      // Jetzt hole die Album-Details für diese Album-IDs
       const albums: OpenSubsonicAlbum[] = [];
       const albumSet = new Set<string>(); // Duplikate vermeiden
       
-      for (const albumName of albumNames) {
+      for (const albumId of relevantAlbumIds) {
         try {
-          const albumSearchResponse = await this.makeRequest('search3', { 
-            query: albumName,
-            albumCount: 50
-          });
-          
-          const foundAlbums = albumSearchResponse.searchResult3?.album || [];
-          foundAlbums.forEach((album: OpenSubsonicAlbum) => {
-            // Nur hinzufügen wenn exakter Album-Name Match
-            if (album.name.toLowerCase() === albumName.toLowerCase() && !albumSet.has(album.id)) {
-              albums.push(album);
-              albumSet.add(album.id);
-            }
-          });
+          const albumInfo = await this.getAlbumInfo(albumId);
+          if (albumInfo && !albumSet.has(albumInfo.id)) {
+            albums.push(albumInfo);
+            albumSet.add(albumInfo.id);
+          }
         } catch (error) {
-          console.warn(`Failed to search for album ${albumName}:`, error);
+          console.warn(`Failed to get album info for ${albumId}:`, error);
         }
       }
       

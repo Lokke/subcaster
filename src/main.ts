@@ -10695,6 +10695,25 @@ function showArtistDetailView(artist: OpenSubsonicArtist, albums: OpenSubsonicAl
   }
 }
 
+// Helper function to generate clickable multi-artist HTML for albums
+function getAlbumArtistHtml(album: OpenSubsonicAlbum): string {
+  // Check for albumArtists or artists array (multi-artist support)
+  const artistsArray = album.albumArtists || album.artists;
+  
+  if (artistsArray && artistsArray.length > 1) {
+    // Multiple artists - render as clickable links separated by bullet
+    return artistsArray.map(artist => 
+      `<span class="clickable-artist" data-artist-id="${artist.id}" data-artist-name="${escapeHtml(artist.name)}">${escapeHtml(artist.name)}</span>`
+    ).join(' <span class="artist-separator">•</span> ');
+  } else if (artistsArray && artistsArray.length === 1) {
+    // Single artist from array
+    return `<span class="clickable-artist" data-artist-id="${artistsArray[0].id}" data-artist-name="${escapeHtml(artistsArray[0].name)}">${escapeHtml(artistsArray[0].name)}</span>`;
+  } else {
+    // Fallback to single artist string
+    return `<span class="clickable-artist" data-artist-id="${album.artistId || ''}" data-artist-name="${escapeHtml(album.artist)}">${escapeHtml(album.artist)}</span>`;
+  }
+}
+
 // Unified Library Browser System
 interface BrowseContext {
   type: 'home' | 'artist' | 'album' | 'search' | 'wizard' | 'playlist';
@@ -11031,9 +11050,33 @@ class LibraryBrowser {
       </div>
 
       <div class="media-section">
-        <h3 class="section-title">Albums</h3>
+        <div class="section-header">
+          <h3 class="section-title">Albums</h3>
+          <button id="album-sort-toggle" class="sort-toggle-button" title="Toggle sort by date/name">
+            <span class="material-icons">calendar_month</span>
+          </button>
+        </div>
         <div class="horizontal-scroll" id="artist-albums">
           <div class="loading-placeholder">Loading albums...</div>
+        </div>
+      </div>
+
+      <div class="media-section" id="singles-section" style="display: none;">
+        <div class="section-header">
+          <h3 class="section-title">Singles</h3>
+          <button id="singles-sort-toggle" class="sort-toggle-button" title="Toggle sort by date/name">
+            <span class="material-icons">calendar_month</span>
+          </button>
+        </div>
+        <div class="horizontal-scroll" id="artist-singles">
+          <div class="loading-placeholder">Loading singles...</div>
+        </div>
+      </div>
+
+      <div class="media-section" id="appears-on-section" style="display: none;">
+        <h3 class="section-title">Appears On</h3>
+        <div class="horizontal-scroll" id="appears-on-albums">
+          <div class="loading-placeholder">Loading appearances...</div>
         </div>
       </div>
 
@@ -11047,45 +11090,161 @@ class LibraryBrowser {
 
     // Load artist data
     try {
-      const [albums, songs] = await Promise.all([
+      const [albums, songs, appearsOnAlbums] = await Promise.all([
         openSubsonicClient.getArtistAlbums(artist.id),
-        openSubsonicClient.getArtistSongs(artist.id)
+        openSubsonicClient.getArtistSongs(artist.id),
+        openSubsonicClient.getAllAlbumsWithArtist(artist.name)
       ]);
 
-      // Load albums
-      const albumsContainer = document.getElementById('artist-albums')!;
-      if (albums.length > 0) {
-        const albumsHtml = albums.map(album => `
+      // Filter appears-on albums (exclude albums where artist is album artist)
+      const albumArtistIds = new Set(albums.map(a => a.id));
+      const appearsOn = appearsOnAlbums.filter(album => !albumArtistIds.has(album.id));
+
+      // Separate singles (1 track) from albums (2+ tracks)
+      const actualAlbums = albums.filter(album => album.songCount > 1);
+      const singles = albums.filter(album => album.songCount === 1);
+
+      // Store albums and singles for sorting
+      let currentAlbums = [...actualAlbums];
+      let currentSingles = [...singles];
+      let currentAlbumsSortByDate = true; // Start with date sorting (newest first)
+      let currentSinglesSortByDate = true; // Start with date sorting (newest first)
+
+      // Function to render albums
+      const renderAlbums = (albumsToRender: OpenSubsonicAlbum[], containerId: string) => {
+        const albumsContainer = document.getElementById(containerId)!;
+        if (albumsToRender.length > 0) {
+          const albumsHtml = albumsToRender.map(album => `
+            <div class="album-card clickable" data-album-id="${album.id}">
+              <div class="album-image">
+                <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${escapeHtml(album.name)}" draggable="false" onerror="this.src='data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22180%22 height=%22180%22 fill=%22%23333%22%3E%3Crect width=%22180%22 height=%22180%22 fill=%22%23f0f0f0%22/%3E%3Ctext x=%2290%22 y=%2290%22 text-anchor=%22middle%22 dy=%220.3em%22 font-family=%22Arial%22 font-size=%2224%22 fill=%22%23666%22%3E♪%3C/text%3E%3C/svg%3E'">
+              </div>
+              <h4 class="album-title">${escapeHtml(album.name)}</h4>
+              <p class="album-year">${album.year || 'Unknown Year'}</p>
+            </div>
+          `).join('');
+          
+          albumsContainer.className = 'horizontal-scroll';
+          albumsContainer.innerHTML = albumsHtml;
+          
+          // Add drag scrolling to container
+          this.addDragScrolling(albumsContainer as HTMLElement);
+          
+          // Add event listeners for album cards
+          albumsContainer.querySelectorAll('[data-album-id]').forEach(card => {
+            card.addEventListener('click', (e) => {
+              // Nur klicken wenn nicht gedraggt wird
+              if (!albumsContainer.classList.contains('dragging')) {
+                const albumId = card.getAttribute('data-album-id');
+                const album = albumsToRender.find(a => a.id === albumId);
+                if (album) {
+                  libraryBrowser.showAlbum(album);
+                }
+              }
+            });
+          });
+        } else {
+          albumsContainer.innerHTML = '<p class="no-items">No albums found</p>';
+        }
+      };
+
+      // Function to sort items (albums or singles)
+      const sortItems = (items: OpenSubsonicAlbum[], sortByDate: boolean): OpenSubsonicAlbum[] => {
+        const sorted = [...items];
+        
+        if (sortByDate) {
+          // Sort by year, newest first
+          sorted.sort((a, b) => {
+            const yearA = a.year || 9999; // Unknown years at the end
+            const yearB = b.year || 9999;
+            return yearB - yearA; // Newest first
+          });
+        } else {
+          // Sort alphabetically by name
+          sorted.sort((a, b) => a.name.localeCompare(b.name));
+        }
+        
+        return sorted;
+      };
+
+      // Initial render with date sorting (newest first)
+      renderAlbums(sortItems(currentAlbums, true), 'artist-albums');
+
+      // Add sort toggle button listener for albums
+      const albumSortToggle = document.getElementById('album-sort-toggle') as HTMLButtonElement;
+      if (albumSortToggle) {
+        albumSortToggle.addEventListener('click', () => {
+          currentAlbumsSortByDate = !currentAlbumsSortByDate;
+          
+          // Update icon
+          const icon = albumSortToggle.querySelector('.material-icons')!;
+          icon.textContent = currentAlbumsSortByDate ? 'calendar_month' : 'sort_by_alpha';
+          albumSortToggle.title = currentAlbumsSortByDate ? 'Sort by name' : 'Sort by date';
+          
+          // Re-render with new sort
+          renderAlbums(sortItems(currentAlbums, currentAlbumsSortByDate), 'artist-albums');
+        });
+      }
+
+      // Render and setup singles section if there are any
+      if (singles.length > 0) {
+        const singlesSection = document.getElementById('singles-section')!;
+        singlesSection.style.display = 'block';
+        
+        // Initial render with date sorting (newest first)
+        renderAlbums(sortItems(currentSingles, true), 'artist-singles');
+        
+        // Add sort toggle button listener for singles
+        const singlesSortToggle = document.getElementById('singles-sort-toggle') as HTMLButtonElement;
+        if (singlesSortToggle) {
+          singlesSortToggle.addEventListener('click', () => {
+            currentSinglesSortByDate = !currentSinglesSortByDate;
+            
+            // Update icon
+            const icon = singlesSortToggle.querySelector('.material-icons')!;
+            icon.textContent = currentSinglesSortByDate ? 'calendar_month' : 'sort_by_alpha';
+            singlesSortToggle.title = currentSinglesSortByDate ? 'Sort by name' : 'Sort by date';
+            
+            // Re-render with new sort
+            renderAlbums(sortItems(currentSingles, currentSinglesSortByDate), 'artist-singles');
+          });
+        }
+      }
+
+      // Render appears-on albums if any
+      if (appearsOn.length > 0) {
+        const appearsOnSection = document.getElementById('appears-on-section')!;
+        appearsOnSection.style.display = 'block';
+        
+        const appearsOnContainer = document.getElementById('appears-on-albums')!;
+        const appearsOnHtml = appearsOn.map(album => `
           <div class="album-card clickable" data-album-id="${album.id}">
             <div class="album-image">
-              <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${escapeHtml(album.name)}" onerror="this.src='data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22180%22 height=%22180%22 fill=%22%23333%22%3E%3Crect width=%22180%22 height=%22180%22 fill=%22%23f0f0f0%22/%3E%3Ctext x=%2290%22 y=%2290%22 text-anchor=%22middle%22 dy=%220.3em%22 font-family=%22Arial%22 font-size=%2224%22 fill=%22%23666%22%3E♪%3C/text%3E%3C/svg%3E'">
+              <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${escapeHtml(album.name)}" draggable="false" onerror="this.src='data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22180%22 height=%22180%22 fill=%22%23333%22%3E%3Crect width=%22180%22 height=%22180%22 fill=%22%23f0f0f0%22/%3E%3Ctext x=%2290%22 y=%2290%22 text-anchor=%22middle%22 dy=%220.3em%22 font-family=%22Arial%22 font-size=%2224%22 fill=%22%23666%22%3E♪%3C/text%3E%3C/svg%3E'">
             </div>
             <h4 class="album-title">${escapeHtml(album.name)}</h4>
             <p class="album-year">${album.year || 'Unknown Year'}</p>
           </div>
         `).join('');
         
-        albumsContainer.className = 'horizontal-scroll';
-        albumsContainer.innerHTML = albumsHtml;
+        appearsOnContainer.className = 'horizontal-scroll';
+        appearsOnContainer.innerHTML = appearsOnHtml;
         
-        // Add drag scrolling to container
-        this.addDragScrolling(albumsContainer as HTMLElement);
+        // Add drag scrolling
+        this.addDragScrolling(appearsOnContainer as HTMLElement);
         
-        // Add event listeners for album cards
-        albumsContainer.querySelectorAll('[data-album-id]').forEach(card => {
+        // Add click listeners
+        appearsOnContainer.querySelectorAll('[data-album-id]').forEach(card => {
           card.addEventListener('click', (e) => {
-            // Nur klicken wenn nicht gedraggt wird
-            if (!albumsContainer.classList.contains('dragging')) {
+            if (!appearsOnContainer.classList.contains('dragging')) {
               const albumId = card.getAttribute('data-album-id');
-              const album = albums.find(a => a.id === albumId);
+              const album = appearsOn.find(a => a.id === albumId);
               if (album) {
                 libraryBrowser.showAlbum(album);
               }
             }
           });
         });
-      } else {
-        albumsContainer.innerHTML = '<p class="no-items">No albums found</p>';
       }
 
       // Load songs
@@ -11131,7 +11290,7 @@ class LibraryBrowser {
       <div class="album-header">
         <div class="album-info">
           <div class="album-cover-large">
-            <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${album.name}">
+            <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${album.name}" onerror="this.src='data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22300%22%3E%3Crect width=%22300%22 height=%22300%22 fill=%22%23f0f0f0%22/%3E%3Ctext x=%22150%22 y=%22150%22 text-anchor=%22middle%22 dy=%220.3em%22 font-family=%22Arial%22 font-size=%2240%22 fill=%22%23666%22%3E♪%3C/text%3E%3C/svg%3E'">
           </div>
           <div class="album-details">
             <h1 class="album-name">${escapeHtml(album.name)}</h1>
@@ -11256,14 +11415,12 @@ class LibraryBrowser {
         albumSection.innerHTML = '<h3 class="section-title">Albums</h3>';
         
         const albumsHtml = results.album.map(album => `
-          <div class="album-item clickable" data-album-id="${album.id}">
-            <div class="library-album-cover">
-              <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${escapeHtml(album.name)}" onerror="this.src='data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22 fill=%22%23666%22%3E%3Crect width=%22200%22 height=%22200%22 fill=%22%23f0f0f0%22/%3E%3Ctext x=%22100%22 y=%22100%22 text-anchor=%22middle%22 dy=%220.3em%22 font-family=%22Arial%22 font-size=%2224%22 fill=%22%23666%22%3E♪%3C/text%3E%3C/svg%3E'">
+          <div class="album-card clickable" data-album-id="${album.id}">
+            <div class="album-image">
+              <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${escapeHtml(album.name)}" draggable="false" onerror="this.src='data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22180%22 height=%22180%22 fill=%22%23333%22%3E%3Crect width=%22180%22 height=%22180%22 fill=%22%23f0f0f0%22/%3E%3Ctext x=%2290%22 y=%2290%22 text-anchor=%22middle%22 dy=%220.3em%22 font-family=%22Arial%22 font-size=%2224%22 fill=%22%23666%22%3E♪%3C/text%3E%3C/svg%3E'">
             </div>
-            <div class="album-info">
-              <h4 class="album-title">${escapeHtml(album.name)}</h4>
-              <p class="album-artist">${escapeHtml(album.artist)}</p>
-            </div>
+            <h4 class="album-title">${escapeHtml(album.name)}</h4>
+            <p class="album-artist">${getAlbumArtistHtml(album)}</p>
           </div>
         `).join('');
         
@@ -11287,6 +11444,10 @@ class LibraryBrowser {
             }
           });
         });
+        
+        // Add artist click listeners
+        addArtistClickListeners(albumContainer);
+        addArtistClickListeners(albumContainer);
         
         albumSection.appendChild(albumContainer);
         content.appendChild(albumSection);
@@ -11353,10 +11514,10 @@ class LibraryBrowser {
         const albumsHtml = recentAlbums.map(album => `
           <div class="album-card clickable" data-album-id="${album.id}">
             <div class="album-cover">
-              <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${escapeHtml(album.name)}" loading="lazy">
+              <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${escapeHtml(album.name)}" loading="lazy" onerror="this.src='data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22300%22%3E%3Crect width=%22300%22 height=%22300%22 fill=%22%23f0f0f0%22/%3E%3Ctext x=%22150%22 y=%22150%22 text-anchor=%22middle%22 dy=%220.3em%22 font-family=%22Arial%22 font-size=%2240%22 fill=%22%23666%22%3E♪%3C/text%3E%3C/svg%3E'">
             </div>
             <h4 class="album-title">${escapeHtml(album.name)}</h4>
-            <p class="album-artist clickable-artist" data-artist-name="${escapeHtml(album.artist)}" data-artist-id="${album.artistId || ''}">${escapeHtml(album.artist)}</p>
+            <p class="album-artist">${getAlbumArtistHtml(album)}</p>
           </div>
         `).join('');
         
@@ -11391,6 +11552,9 @@ class LibraryBrowser {
             }
           });
         });
+        
+        // Add artist click listeners
+        addArtistClickListeners(recentContainer);
       }
 
       // Most Played Albums - Now with caching! 🚀
@@ -11399,10 +11563,10 @@ class LibraryBrowser {
         const albumsHtml = mostPlayedAlbums.map(album => `
           <div class="album-card clickable" data-album-id="${album.id}">
             <div class="album-cover">
-              <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${escapeHtml(album.name)}" loading="lazy">
+              <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${escapeHtml(album.name)}" loading="lazy" onerror="this.src='data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22300%22%3E%3Crect width=%22300%22 height=%22300%22 fill=%22%23f0f0f0%22/%3E%3Ctext x=%22150%22 y=%22150%22 text-anchor=%22middle%22 dy=%220.3em%22 font-family=%22Arial%22 font-size=%2240%22 fill=%22%23666%22%3E♪%3C/text%3E%3C/svg%3E'">
             </div>
             <h4 class="album-title">${escapeHtml(album.name)}</h4>
-            <p class="album-artist clickable-artist" data-artist-name="${escapeHtml(album.artist)}" data-artist-id="${album.artistId || ''}">${escapeHtml(album.artist)}</p>
+            <p class="album-artist">${getAlbumArtistHtml(album)}</p>
           </div>
         `).join('');
         
@@ -11427,6 +11591,9 @@ class LibraryBrowser {
             }
           });
         });
+        
+        // Add artist click listeners
+        addArtistClickListeners(mostPlayedContainer);
       }
 
       // Random Albums - Now with caching! 🚀
@@ -11435,10 +11602,10 @@ class LibraryBrowser {
         const albumsHtml = randomAlbums.map(album => `
           <div class="album-card clickable" data-album-id="${album.id}">
             <div class="album-cover">
-              <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${escapeHtml(album.name)}" loading="lazy">
+              <img src="${openSubsonicClient.getCoverArtUrl(album.coverArt || '', 300)}" alt="${escapeHtml(album.name)}" loading="lazy" onerror="this.src='data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22300%22%3E%3Crect width=%22300%22 height=%22300%22 fill=%22%23f0f0f0%22/%3E%3Ctext x=%22150%22 y=%22150%22 text-anchor=%22middle%22 dy=%220.3em%22 font-family=%22Arial%22 font-size=%2240%22 fill=%22%23666%22%3E♪%3C/text%3E%3C/svg%3E'">
             </div>
             <h4 class="album-title">${escapeHtml(album.name)}</h4>
-            <p class="album-artist clickable-artist" data-artist-name="${escapeHtml(album.artist)}" data-artist-id="${album.artistId || ''}">${escapeHtml(album.artist)}</p>
+            <p class="album-artist">${getAlbumArtistHtml(album)}</p>
           </div>
         `).join('');
         
@@ -11463,6 +11630,9 @@ class LibraryBrowser {
             }
           });
         });
+        
+        // Add artist click listeners
+        addArtistClickListeners(randomContainer);
       }
 
       // Random Artists - Now with caching! 🚀

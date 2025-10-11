@@ -66,7 +66,9 @@ app.get('/api/opensubsonic-stream', async (req, res) => {
         console.log(`📤 Forwarding headers:`, requestHeaders);
         
         const response = await fetch(targetUrl, {
-            headers: requestHeaders
+            headers: requestHeaders,
+            // Timeout hinzufügen
+            timeout: 30000
         });
         
         console.log(`📥 OpenSubsonic response: ${response.status} ${response.statusText}`);
@@ -102,13 +104,40 @@ app.get('/api/opensubsonic-stream', async (req, res) => {
         // Status Code weiterleiten
         res.status(response.status);
         
+        // Error-Handler für Response
+        res.on('error', (err) => {
+            console.error('❌ Audio response stream error:', err.message);
+            if (response.body) {
+                response.body.destroy();
+            }
+        });
+        
+        // Error-Handler für incoming stream
+        response.body.on('error', (err) => {
+            console.error('❌ Audio source stream error:', err.message);
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'Stream Error' });
+            } else {
+                res.end();
+            }
+        });
+        
+        // Check if client disconnected
+        req.on('close', () => {
+            if (response.body) {
+                response.body.destroy();
+            }
+        });
+        
         // Stream weiterleiten
         response.body.pipe(res);
         console.log(`✅ Audio-Stream proxied: ${response.status}`);
         
     } catch (error) {
         console.error(`❌ Audio-Proxy Error:`, error.message);
-        res.status(500).json({ error: 'Proxy Error', details: error.message });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Proxy Error', details: error.message });
+        }
     }
 });
 
@@ -135,8 +164,35 @@ app.get('/api/opensubsonic-cover', async (req, res) => {
         }
         
         const response = await fetch(targetUrl, {
-            headers: requestHeaders
+            headers: requestHeaders,
+            // Timeout hinzufügen um hängende Verbindungen zu vermeiden
+            timeout: 10000
         });
+        
+        // Check for XML error responses from Subsonic/Navidrome
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('xml') || contentType.includes('text/xml')) {
+            // Read the body to check for error
+            const text = await response.text();
+            
+            // Check if it's an error response
+            if (text.includes('status="failed"') || text.includes('<error')) {
+                console.log(`❌ Cover Art XML Error: ${targetUrl}`);
+                // Return 404 so onerror handler triggers
+                return res.status(404).send('Cover art not found');
+            }
+            
+            // If it's valid XML but not an error, something is weird
+            // But let's send it anyway
+            res.set({
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+                'Content-Type': contentType
+            });
+            res.status(response.status);
+            return res.send(text);
+        }
         
         // Nur Fehlermeldungen loggen, keine 200 OK Spam
         if (response.status >= 400) {
@@ -163,12 +219,40 @@ app.get('/api/opensubsonic-cover', async (req, res) => {
         // Status Code weiterleiten
         res.status(response.status);
         
+        // Error-Handler für Response
+        res.on('error', (err) => {
+            console.error('❌ Response stream error:', err.message);
+            // Stream cleanup
+            if (response.body) {
+                response.body.destroy();
+            }
+        });
+        
+        // Error-Handler für incoming stream
+        response.body.on('error', (err) => {
+            console.error('❌ Source stream error:', err.message);
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'Stream Error' });
+            } else {
+                res.end();
+            }
+        });
+        
+        // Check if client disconnected
+        req.on('close', () => {
+            if (response.body) {
+                response.body.destroy();
+            }
+        });
+        
         // Stream weiterleiten
         response.body.pipe(res);
         
     } catch (error) {
         console.error(`❌ Cover Art Proxy Error:`, error.message);
-        res.status(500).json({ error: 'Proxy Error', details: error.message });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Proxy Error', details: error.message });
+        }
     }
 });
 

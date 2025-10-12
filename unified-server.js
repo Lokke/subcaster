@@ -487,38 +487,6 @@ app.get('/api/opensubsonic-cover', async (req, res) => {
     }
 });
 
-// Discord Gateway Proxy (CORS umgehen)
-app.get('/api/discord/gateway', async (req, res) => {
-    console.log('🔗 Discord Gateway Request');
-    
-    try {
-        const fetch = (await import('node-fetch')).default;
-        
-        const response = await fetch('https://discord.com/api/v10/gateway', {
-            headers: {
-                'User-Agent': 'WebDJ-Discord-Bot'
-            }
-        });
-        
-        const data = await response.json();
-        
-        console.log(`✅ Discord Gateway response:`, data);
-        
-        // CORS-Headers hinzufügen
-        res.set({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-        });
-        
-        res.json(data);
-        
-    } catch (error) {
-        console.error(`❌ Discord Gateway Proxy Error:`, error.message);
-        res.status(500).json({ error: 'Proxy Error', details: error.message });
-    }
-});
-
 // Discord API Proxy für DELETE requests (Message löschen)
 app.delete('/api/discord/channels/:channelId/messages/:messageId', async (req, res) => {
     const { channelId, messageId } = req.params;

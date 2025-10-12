@@ -75,6 +75,10 @@ COPY --from=builder /app/unified-server.js ./
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
+# docker-data Verzeichnis erstellen und Ownership setzen
+RUN mkdir -p /app/docker-data && \
+    chown -R nodejs:nodejs /app/docker-data
+
 # Ownership ändern
 RUN chown -R nodejs:nodejs /app
 USER nodejs

@@ -8013,35 +8013,51 @@ function initializeOpenSubsonicLogin() {
     if (unifiedLoginSection) unifiedLoginSection.style.display = 'block';
     if (individualLoginSections) individualLoginSections.style.display = 'none';
     
-    // Check for auto-login with unified credentials
-    const envUnifiedUsername = getConfigValue('VITE_UNIFIED_USERNAME');
-    const envUnifiedPassword = getConfigValue('VITE_UNIFIED_PASSWORD');
+    // Check server-side if unified credentials are configured for auto-login
+    console.log('🔑 Checking unified login configuration on server...');
     
-    console.log('🔑 Unified Auto-Login Check:', {
-      hasUrl: !!envOpenSubsonicUrl,
-      hasUsername: !!envUnifiedUsername,
-      hasPassword: !!envUnifiedPassword,
-      username: envUnifiedUsername ? `${envUnifiedUsername.substring(0, 3)}***` : null
-    });
-    
-    // Auto-login if all credentials are available
-    if (envOpenSubsonicUrl && envUnifiedUsername && envUnifiedPassword) {
-      console.log('🚀 Unified Auto-Login: All credentials available, attempting auto-login...');
-      
-      // Hide login form immediately and show DJ controls
-      if (loginForm) loginForm.style.display = 'none';
-      if (djControls) djControls.style.display = 'flex';
-      
-      // Perform auto-login
-      setTimeout(async () => {
-        autoLoginInProgress = true;
+    (async () => {
+      try {
+        const response = await fetch('/api/unified-login/check');
+        const loginConfig = response.ok ? await response.json() : { canAutoLogin: false };
         
-        try {
-          openSubsonicClient = new SubsonicApiClient({
-            serverUrl: envOpenSubsonicUrl,
-            username: envUnifiedUsername,
-            password: envUnifiedPassword
-          });
+        console.log('🔑 Unified Auto-Login Check:', {
+          enabled: loginConfig.enabled,
+          configured: loginConfig.configured,
+          canAutoLogin: loginConfig.canAutoLogin,
+          hasUrl: !!envOpenSubsonicUrl
+        });
+        
+        // Auto-login if credentials are configured server-side and URL is available
+        if (loginConfig.canAutoLogin && envOpenSubsonicUrl) {
+          console.log('🚀 Unified Auto-Login: Server-side credentials configured, attempting auto-login...');
+          
+          // Hide login form immediately and show DJ controls
+          if (loginForm) loginForm.style.display = 'none';
+          if (djControls) djControls.style.display = 'flex';
+          
+          // Perform auto-login - fetch credentials from server
+          setTimeout(async () => {
+            autoLoginInProgress = true;
+            
+            try {
+              // Fetch credentials from server-side
+              const authResponse = await fetch('/api/opensubsonic/auth', { method: 'POST' });
+              if (!authResponse.ok) {
+                throw new Error('Failed to fetch server-side credentials');
+              }
+              
+              const authData = await authResponse.json();
+              
+              openSubsonicClient = new SubsonicApiClient({
+                serverUrl: authData.serverUrl,
+                username: authData.username,
+                password: '' // Not needed, we have token+salt from server
+              });
+              
+              // Set pre-generated token and salt from server
+              (openSubsonicClient as any).token = authData.token;
+              (openSubsonicClient as any).salt = authData.salt;
           
           const authenticated = await openSubsonicClient.authenticate();
           
@@ -8051,7 +8067,7 @@ function initializeOpenSubsonicLogin() {
             isOpenSubsonicLoggedIn = true;
             autoLoginInProgress = false;
             
-            updateUserStatus('opensubsonic', envUnifiedUsername, true);
+            updateUserStatus('opensubsonic', authData.username, true);
             
             // Reveal only the mixer-area wishbox (frame) if decks C+D are visible
             try {
@@ -8062,9 +8078,9 @@ function initializeOpenSubsonicLogin() {
             
             // Configure streaming with unified credentials
             if (envAzuraCastServers) {
-              streamConfig.username = envUnifiedUsername;
-              streamConfig.password = envUnifiedPassword;
-              updateUserStatus('stream', envUnifiedUsername, true);
+              streamConfig.username = authData.username;
+              streamConfig.password = authData.password || '';
+              updateUserStatus('stream', authData.username, true);
             }
             // Mark body as logged-in so CSS can reveal auth-only UI
             try { document.body.classList.add('logged-in'); } catch (e) {}
@@ -8107,18 +8123,15 @@ function initializeOpenSubsonicLogin() {
           if (djControls) djControls.style.display = 'none';
         }
       }, 100);
-      
-    } else {
-      console.log('ℹ️ Unified Auto-Login skipped - missing credentials');
-      
-      // Pre-fill unified login form with environment credentials (if available)
-      if (unifiedUsernameInput && envUnifiedUsername) {
-        unifiedUsernameInput.value = envUnifiedUsername;
+        
+      } else {
+        console.log('ℹ️ Unified Auto-Login skipped - credentials not configured server-side');
       }
-      if (unifiedPasswordInput && envUnifiedPassword) {
-        unifiedPasswordInput.value = envUnifiedPassword;
+      
+      } catch (error) {
+        console.error('❌ Failed to check unified login configuration:', error);
       }
-    }
+    })(); // End of async IIFE
     
     console.log('✅ Unified login interface activated');
   } else {
@@ -11501,17 +11514,19 @@ function initializeMediaLibrary() {
   
   // Unified Login Configuration
   const useUnifiedLogin = getConfigValue('VITE_USE_UNIFIED_LOGIN') === 'true';
-  const unifiedUsername = getConfigValue('VITE_UNIFIED_USERNAME');
-  const unifiedPassword = getConfigValue('VITE_UNIFIED_PASSWORD');
   
-  // Determine final credentials
-  const finalUsername = useUnifiedLogin ? unifiedUsername : envUsername;
-  const finalPassword = useUnifiedLogin ? unifiedPassword : envPassword;
+  // Note: Unified credentials are stored server-side only (UNIFIED_USERNAME/UNIFIED_PASSWORD)
+  // They are never exposed to frontend for security
+  
+  // Determine final credentials based on login type
+  const finalUsername = envUsername; // Direct login uses VITE_OPENSUBSONIC_USERNAME
+  const finalPassword = envPassword; // Direct login uses VITE_OPENSUBSONIC_PASSWORD
   
   console.log("🎵 LIBRARY DEBUG: Final credentials:", {
     finalUsername: !!finalUsername,
     finalPassword: !!finalPassword,
-    useUnifiedLogin
+    useUnifiedLogin,
+    note: useUnifiedLogin ? 'Unified credentials stored server-side only' : 'Using direct credentials'
   });
   
   // Check if we have all required credentials for login
@@ -11520,8 +11535,7 @@ function initializeMediaLibrary() {
   console.log("🔒 UNIFIED LOGIN DEBUG:", {
     envUrl: !!envUrl,
     useUnifiedLogin,
-    unifiedUsername: !!unifiedUsername,
-    unifiedPassword: !!unifiedPassword,
+    note: 'Unified credentials are server-side only (UNIFIED_USERNAME/UNIFIED_PASSWORD)',
     envUsername: !!envUsername,
     envPassword: !!envPassword,
     finalUsername: !!finalUsername,

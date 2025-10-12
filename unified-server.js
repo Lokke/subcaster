@@ -93,6 +93,20 @@ app.get('/api/config', (req, res) => {
   res.json(config);
 });
 
+// Check if unified login credentials are configured (server-side only)
+app.get('/api/unified-login/check', (req, res) => {
+  console.log('🔐 Checking unified login configuration');
+  
+  const enabled = process.env.VITE_USE_UNIFIED_LOGIN === 'true';
+  const hasCredentials = !!(process.env.UNIFIED_USERNAME && process.env.UNIFIED_PASSWORD);
+  
+  res.json({
+    enabled: enabled,
+    configured: hasCredentials,
+    canAutoLogin: enabled && hasCredentials
+  });
+});
+
 // ============================================================================
 // DISCORD API PROXY - Bot token stays server-side!
 // ============================================================================
@@ -159,8 +173,14 @@ app.get('/api/discord/channels/:channelId/messages', async (req, res) => {
 // OpenSubsonic authentication
 app.post('/api/opensubsonic/auth', async (req, res) => {
   const serverUrl = process.env.VITE_OPENSUBSONIC_URL;
-  const username = process.env.OPENSUBSONIC_USERNAME;
-  const password = process.env.OPENSUBSONIC_PASSWORD;
+  
+  // Use unified credentials if enabled, otherwise use OpenSubsonic-specific credentials
+  const username = process.env.VITE_USE_UNIFIED_LOGIN === 'true'
+    ? process.env.UNIFIED_USERNAME
+    : process.env.OPENSUBSONIC_USERNAME;
+  const password = process.env.VITE_USE_UNIFIED_LOGIN === 'true'
+    ? process.env.UNIFIED_PASSWORD
+    : process.env.OPENSUBSONIC_PASSWORD;
   
   if (!serverUrl || !username || !password) {
     return res.status(500).json({ error: 'OpenSubsonic not configured' });
@@ -182,8 +202,14 @@ app.post('/api/opensubsonic/auth', async (req, res) => {
 // OpenSubsonic proxy for any API call
 app.get('/api/opensubsonic/:endpoint', async (req, res) => {
   const serverUrl = process.env.VITE_OPENSUBSONIC_URL;
-  const username = process.env.OPENSUBSONIC_USERNAME;
-  const password = process.env.OPENSUBSONIC_PASSWORD;
+  
+  // Use unified credentials if enabled, otherwise use OpenSubsonic-specific credentials
+  const username = process.env.VITE_USE_UNIFIED_LOGIN === 'true'
+    ? process.env.UNIFIED_USERNAME
+    : process.env.OPENSUBSONIC_USERNAME;
+  const password = process.env.VITE_USE_UNIFIED_LOGIN === 'true'
+    ? process.env.UNIFIED_PASSWORD
+    : process.env.OPENSUBSONIC_PASSWORD;
   const { endpoint } = req.params;
   
   if (!serverUrl || !username || !password) {

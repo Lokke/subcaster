@@ -950,6 +950,23 @@ app.post('/api/save-config', async (req, res) => {
         
     } catch (error) {
         console.error('❌ Error saving configuration:', error);
+        
+        // Spezielle Behandlung für Permission-Fehler
+        if (error.code === 'EACCES') {
+            const fixCommand = isDocker 
+                ? 'chmod 777 docker-data && chmod 666 docker-data/.env'
+                : 'chmod 666 .env';
+            
+            return res.status(500).json({ 
+                error: 'Permission denied', 
+                details: `Cannot write to ${envPath}. Run: ${fixCommand}`,
+                code: 'EACCES',
+                suggestion: isDocker 
+                    ? 'Run the docker-start.sh script which automatically fixes permissions'
+                    : 'Ensure the .env file has write permissions'
+            });
+        }
+        
         res.status(500).json({ 
             error: 'Failed to save configuration', 
             details: error.message 

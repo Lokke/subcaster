@@ -1003,7 +1003,19 @@ class SetupWizard {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData.code === 'EACCES') {
+          // Permission denied error with helpful suggestion
+          errorMessage = `${errorData.error}: ${errorData.details}\n\n${errorData.suggestion}`;
+        } else {
+          errorMessage = errorData.details || errorData.error || errorMessage;
+        }
+      } catch {
+        errorMessage += `: ${await response.text()}`;
+      }
+      throw new Error(errorMessage);
     }
   }
 

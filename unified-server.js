@@ -571,53 +571,6 @@ app.delete('/api/discord/channels/:channelId/messages/:messageId', async (req, r
     }
 });
 
-// Discord Get Messages Proxy (GET /api/discord/channels/:channelId/messages)
-app.get('/api/discord/channels/:channelId/messages', async (req, res) => {
-    const { channelId } = req.params;
-    const { limit = 50 } = req.query;
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader) {
-        return res.status(401).json({ error: 'Missing Authorization header' });
-    }
-    
-    try {
-        console.log(`📥 Discord Get Messages Proxy: GET /channels/${channelId}/messages?limit=${limit}`);
-        
-        const response = await fetch(
-            `https://discord.com/api/v10/channels/${channelId}/messages?limit=${limit}`,
-            {
-                method: 'GET',
-                headers: {
-                    'Authorization': authHeader,
-                    'User-Agent': 'WebDJ-Discord-Bot'
-                }
-            }
-        );
-        
-        console.log(`📥 Discord Get Messages response: ${response.status}`);
-        
-        // CORS-Headers hinzufügen
-        res.set({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
-            'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-        });
-        
-        if (response.ok) {
-            const messages = await response.json();
-            res.json(messages);
-        } else {
-            const errorData = await response.text();
-            res.status(response.status).send(errorData);
-        }
-        
-    } catch (error) {
-        console.error(`❌ Discord Get Messages Proxy Error:`, error.message);
-        res.status(500).json({ error: 'Proxy Error', details: error.message });
-    }
-});
-
 // Discord Audio Proxy (GET /api/discord-audio)
 // Proxies Discord CDN audio files to avoid CORS issues
 app.get('/api/discord-audio', async (req, res) => {

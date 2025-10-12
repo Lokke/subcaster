@@ -13016,8 +13016,6 @@ const wishboxContent = document.getElementById('wishbox-content') as HTMLDivElem
 
 // Wishbox Frame elements (Between Decks C+D)
 const wishboxFrame = document.getElementById('wishbox-frame') as HTMLDivElement;
-const wishboxFrameSortBtn = document.getElementById('wishbox-frame-sort-btn') as HTMLButtonElement;
-const wishboxFrameStatus = document.getElementById('wishbox-frame-status') as HTMLDivElement;
 const wishboxFrameContent = document.getElementById('wishbox-frame-content') as HTMLDivElement;
 
 // Hide wishbox button initially (only show after login)
@@ -13630,42 +13628,21 @@ function initializeDiscordClient() {
   console.log('🔧 Initializing Discord Gateway...');
   discordClient = initializeDiscord();
 
-  // Setup sort button event listeners for both dropdown and frame
+  // Setup sort button event listener for dropdown only
   if (wishboxSortBtn) {
     wishboxSortBtn.addEventListener('click', () => {
       // Toggle sort order
       wishboxSortOrder = wishboxSortOrder === 'newest' ? 'oldest' : 'newest';
       localStorage.setItem('wishboxSortOrder', wishboxSortOrder);
       
-      // Update both UI elements
+      // Update UI
       updateSortButtonIcon();
-      if (wishboxFrameSortBtn) {
-        wishboxFrameSortBtn.classList.toggle('asc', wishboxSortOrder === 'oldest');
-      }
       
       // Re-render both displays
       updateWishboxContent();
       updateWishboxFrameContent();
       
       console.log(`📊 Sort order changed to: ${wishboxSortOrder}`);
-    });
-  }
-  
-  if (wishboxFrameSortBtn) {
-    wishboxFrameSortBtn.addEventListener('click', () => {
-      // Toggle sort order
-      wishboxSortOrder = wishboxSortOrder === 'newest' ? 'oldest' : 'newest';
-      localStorage.setItem('wishboxSortOrder', wishboxSortOrder);
-      
-      // Update both UI elements
-      updateSortButtonIcon();
-      wishboxFrameSortBtn.classList.toggle('asc', wishboxSortOrder === 'oldest');
-      
-      // Re-render both displays
-      updateWishboxContent();
-      updateWishboxFrameContent();
-      
-      console.log(`📊 Sort order changed to: ${wishboxSortOrder} (from frame)`);
     });
   }
 
@@ -13697,13 +13674,6 @@ function initializeDiscordClient() {
             Verbunden - ${discordMessages.length} Nachrichten
           `;
         }
-        
-        if (wishboxFrameStatus) {
-          wishboxFrameStatus.innerHTML = `
-            <span class="material-icons" style="color: #43b581;">check_circle</span>
-            Verbunden - ${discordMessages.length} Nachrichten
-          `;
-        }
       }
     });
     
@@ -13713,13 +13683,6 @@ function initializeDiscordClient() {
         const wishboxStatus = document.getElementById('wishbox-status');
         if (wishboxStatus) {
           wishboxStatus.innerHTML = `
-            <span class="material-icons rotating">sync</span>
-            Lade Nachrichten...
-          `;
-        }
-        
-        if (wishboxFrameStatus) {
-          wishboxFrameStatus.innerHTML = `
             <span class="material-icons rotating">sync</span>
             Lade Nachrichten...
           `;
@@ -13753,17 +13716,6 @@ function initializeDiscordClient() {
               Verbunden - ${discordMessages.length} Nachrichten
             `;
           }
-          
-          if (wishboxFrameStatus) {
-            wishboxFrameStatus.innerHTML = `
-              <span class="material-icons" style="color: #43b581;">check_circle</span>
-              ${discordMessages.length} Nachrichten
-            `;
-            // Hide status after a few seconds
-            setTimeout(() => {
-              if (wishboxFrameStatus) wishboxFrameStatus.style.display = 'none';
-            }, 3000);
-          }
         }, 1000);
         
       } catch (error) {
@@ -13793,13 +13745,6 @@ function initializeDiscordClient() {
     // Show error in status
     if (wishboxStatus) {
       wishboxStatus.innerHTML = `
-        <span class="material-icons" style="color: #f04747;">error</span>
-        Discord nicht konfiguriert
-      `;
-    }
-    
-    if (wishboxFrameStatus) {
-      wishboxFrameStatus.innerHTML = `
         <span class="material-icons" style="color: #f04747;">error</span>
         Discord nicht konfiguriert
       `;

@@ -35,18 +35,21 @@ Browser                      Backend (unified-server.js)               .env File
 **Was es macht:** Lädt alle öffentlichen Settings vom Backend
 
 **Was NICHT exposed wird:**
+
 - ❌ Discord Bot Token
 - ❌ OpenSubsonic Passwort
 - ❌ AzuraCast DJ Credentials
 - ❌ Unified Login Passwort
 
 **Was exposed wird:**
+
 - ✅ Server URLs (OpenSubsonic, AzuraCast)
 - ✅ Usernames (öffentlich sichtbar)
 - ✅ Discord Channel/Guild IDs (öffentlich)
 - ✅ Stream Settings (Bitrate, Sample Rate)
 
 **Beispiel:**
+
 ```javascript
 const response = await fetch('/api/config');
 const config = await response.json();
@@ -61,6 +64,7 @@ console.log(config.discord.token); // ❌ Existiert nicht im Response!
 **Was es macht:** Holt die Discord Gateway URL mit **Bot Token auf Server-Seite**
 
 **Vorher:**
+
 ```javascript
 // ❌ Token im Frontend sichtbar!
 const response = await fetch('https://discord.com/api/v10/gateway/bot', {
@@ -69,6 +73,7 @@ const response = await fetch('https://discord.com/api/v10/gateway/bot', {
 ```
 
 **Jetzt:**
+
 ```javascript
 // ✅ Token bleibt auf Server!
 const response = await fetch('/api/discord/gateway');
@@ -82,6 +87,7 @@ const { url } = await response.json();
 **Was es macht:** Fetcht Messages mit **Bot Token auf Server-Seite**
 
 **Vorher:**
+
 ```javascript
 // ❌ Token im Frontend!
 fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
@@ -90,6 +96,7 @@ fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
 ```
 
 **Jetzt:**
+
 ```javascript
 // ✅ Token bleibt auf Server!
 fetch(`/api/discord/channels/${channelId}/messages?limit=50`);
@@ -102,6 +109,7 @@ fetch(`/api/discord/channels/${channelId}/messages?limit=50`);
 **Was es macht:** Generiert MD5-Token mit **Passwort auf Server-Seite**
 
 **Vorher:**
+
 ```javascript
 // ❌ Passwort im Frontend!
 const salt = Math.random().toString(36);
@@ -109,6 +117,7 @@ const token = md5(password + salt);
 ```
 
 **Jetzt:**
+
 ```javascript
 // ✅ Passwort bleibt auf Server!
 const response = await fetch('/api/opensubsonic/auth', { method: 'POST' });
@@ -122,6 +131,7 @@ const { token, salt } = await response.json();
 **Was es macht:** Proxyt alle OpenSubsonic API-Calls mit **Credentials auf Server-Seite**
 
 **Beispiel:**
+
 ```javascript
 // ✅ Keine Credentials im Frontend!
 const response = await fetch('/api/opensubsonic/search3?query=test&songCount=20');
@@ -135,6 +145,7 @@ const data = await response.json();
 **Was es macht:** Sendet Liquidsoap-Commands mit **DJ Credentials auf Server-Seite**
 
 **Vorher:**
+
 ```javascript
 // ❌ DJ Password im Frontend!
 fetch(`${serverUrl}/api/station/${stationId}/backend/liquidsoap/command`, {
@@ -145,6 +156,7 @@ fetch(`${serverUrl}/api/station/${stationId}/backend/liquidsoap/command`, {
 ```
 
 **Jetzt:**
+
 ```javascript
 // ✅ DJ Credentials bleiben auf Server!
 fetch('/api/azuracast/liquidsoap', {
@@ -163,12 +175,14 @@ fetch('/api/azuracast/liquidsoap', {
 ## Frontend Config Loader
 
 ### Alte Methode (❌ Insecure):
+
 ```typescript
 // Build-time - Token fest im Code!
 const token = import.meta.env.VITE_DISCORD_BOT_TOKEN;
 ```
 
 ### Neue Methode (✅ Secure):
+
 ```typescript
 import { loadConfig, getConfigValue } from './js/config-loader';
 
@@ -184,16 +198,19 @@ const channelId = getConfigValue('VITE_DISCORD_CHANNEL_ID');
 ## Vorteile
 
 ### 🔐 Sicherheit
+
 - **Keine Tokens im JavaScript-Bundle**
 - **Keine Passwörter im Browser sichtbar**
 - **Kein DevTools-Hacking möglich**
 
 ### 🚀 Development
+
 - **.env ändern** → Docker Container neu starten → **Fertig!**
 - **Kein `npm run build`** mehr nötig
 - **Schnellere Iteration** bei Config-Änderungen
 
 ### 🐳 Docker
+
 ```bash
 # Config ändern:
 nano docker-data/.env
@@ -211,6 +228,7 @@ docker-compose restart subcaster
 ### Alte Code-Muster ersetzen:
 
 #### ❌ Vorher:
+
 ```typescript
 const token = import.meta.env.VITE_DISCORD_BOT_TOKEN;
 const url = import.meta.env.VITE_OPENSUBSONIC_URL;
@@ -218,6 +236,7 @@ const password = import.meta.env.VITE_OPENSUBSONIC_PASSWORD;
 ```
 
 #### ✅ Nachher:
+
 ```typescript
 // App-Start (main.ts):
 await initializeConfig();
@@ -235,18 +254,21 @@ const { token, salt } = await auth.json();
 ## Testing
 
 ### 1. Config laden:
+
 ```javascript
 const response = await fetch('/api/config');
 console.log(await response.json());
 ```
 
 ### 2. Discord Gateway:
+
 ```javascript
 const response = await fetch('/api/discord/gateway');
 console.log(await response.json());
 ```
 
 ### 3. OpenSubsonic Auth:
+
 ```javascript
 const response = await fetch('/api/opensubsonic/auth', { method: 'POST' });
 console.log(await response.json());
@@ -257,6 +279,7 @@ console.log(await response.json());
 ## Security Checklist
 
 ### ✅ Was ist jetzt sicher:
+
 - [x] Discord Bot Token bleibt auf Server
 - [x] OpenSubsonic Passwort bleibt auf Server
 - [x] AzuraCast DJ Credentials bleiben auf Server
@@ -265,6 +288,7 @@ console.log(await response.json());
 - [x] Keine Secrets in Browser DevTools sichtbar
 
 ### ⚠️ Was ist noch public:
+
 - Server URLs (OpenSubsonic, AzuraCast) → **OK, sind sowieso öffentlich**
 - Usernames → **OK, kein Sicherheitsrisiko**
 - Discord Channel/Guild IDs → **OK, sind öffentlich sichtbar**
@@ -274,6 +298,7 @@ console.log(await response.json());
 ## Troubleshooting
 
 ### Frontend zeigt "Config not loaded"
+
 ```bash
 # Server-Logs prüfen:
 docker-compose logs subcaster | grep "api/config"
@@ -283,6 +308,7 @@ cat docker-data/.env
 ```
 
 ### "Discord bot token not configured"
+
 ```bash
 # .env prüfen:
 grep VITE_DISCORD_BOT_TOKEN docker-data/.env
@@ -292,6 +318,7 @@ docker-compose restart subcaster
 ```
 
 ### "OpenSubsonic not configured"
+
 ```bash
 # Alle OpenSubsonic Variablen prüfen:
 grep VITE_OPENSUBSONIC docker-data/.env

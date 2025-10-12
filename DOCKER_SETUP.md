@@ -33,6 +33,7 @@ cp .env docker-data/.env
 ```
 
 **WICHTIG:** 
+
 - Die `.env` im **Root** wird für den **Build** benötigt (VITE_ Variablen werden eingebettet!)
 - Die `.env` in `docker-data/` wird für die **Runtime** gemountet (Server-Variablen)
 
@@ -49,6 +50,7 @@ docker-compose logs -f
 ```
 
 Du solltest sehen:
+
 ```
 Discord Bot Token: ✅ Set
 Discord Channel ID: ✅ Set
@@ -76,11 +78,13 @@ docker-compose up --build -d
 ## Konfiguration ändern
 
 1. **Editiere die .env im docker-data Verzeichnis:**
+
 ```bash
 nano docker-data/.env
 ```
 
 2. **Container neu starten:**
+
 ```bash
 docker-compose restart
 ```
@@ -90,6 +94,7 @@ docker-compose restart
 Die folgenden Variablen müssen in `docker-data/.env` gesetzt werden:
 
 ### Discord Wishbox (Wunschbox)
+
 ```env
 VITE_DISCORD_BOT_TOKEN=dein_discord_bot_token
 VITE_DISCORD_CHANNEL_ID=dein_channel_id
@@ -97,6 +102,7 @@ VITE_DISCORD_GUILD_ID=deine_server_id
 ```
 
 ### OpenSubsonic (Musikbibliothek)
+
 ```env
 VITE_OPENSUBSONIC_URL=https://dein-server.de
 VITE_OPENSUBSONIC_USERNAME=dein_username
@@ -104,6 +110,7 @@ VITE_OPENSUBSONIC_PASSWORD=dein_passwort
 ```
 
 ### AzuraCast (Streaming)
+
 ```env
 VITE_AZURACAST_SERVERS=https://dein-azuracast-server.de
 VITE_AZURACAST_STATION_ID=1
@@ -112,6 +119,7 @@ VITE_AZURACAST_DJ_PASSWORD=dein_dj_passwort
 ```
 
 ### Streaming Server
+
 ```env
 STREAM_SERVER=dein-streaming-server.de
 STREAM_PORT=8000
@@ -124,6 +132,7 @@ STREAM_PASSWORD=dein_stream_passwort
 ### Wunschbox funktioniert nicht
 
 1. **Prüfe ob die .env-Datei im Container geladen wird:**
+
 ```bash
 docker-compose logs | grep "Discord Bot Token"
 ```
@@ -131,11 +140,13 @@ docker-compose logs | grep "Discord Bot Token"
 Du solltest sehen: `Discord Bot Token: ✅ Set`
 
 2. **Prüfe ob die .env-Datei existiert:**
+
 ```bash
 ls -la docker-data/.env
 ```
 
 3. **Prüfe die .env im Container:**
+
 ```bash
 docker exec -it subcaster cat /app/docker-data/.env
 ```
@@ -157,6 +168,7 @@ docker-compose up -d
 ### Port bereits belegt
 
 Ändere den Port in `docker-compose.yml`:
+
 ```yaml
 ports:
   - "3003:3001"  # Ändere 3002 zu einem freien Port
@@ -178,6 +190,7 @@ subcaster/
 ## Sicherheit
 
 ⚠️ **WICHTIG:** 
+
 - Das `docker-data/` Verzeichnis ist in `.gitignore` und wird nicht committet
 - Committe NIEMALS deine `.env`-Datei mit Tokens und Passwörtern
 - Nutze `.env.example` als Vorlage für neue Installationen

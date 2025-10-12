@@ -2314,6 +2314,10 @@ function initializeFullApp() {
     autoStartVolumeMeters();
   }, 1000);
   
+  // 8. Initialize Discord Gateway after config is loaded
+  console.log('🔧 Setting up Discord Gateway...');
+  initializeDiscordClient();
+  
   console.log("✅ Main initialization complete!");
 }
 
@@ -13499,107 +13503,123 @@ wishboxSortBtn?.addEventListener('click', (e) => {
 // Wishbox can only be closed by clicking the X button or wishbox icon
 // (No click-outside to close)
 
-// Initialize Discord Gateway connection and load existing messages
-const discordClient = initializeDiscord();
+// Discord client will be initialized after config is loaded
+let discordClient: any = null;
 
-if (discordClient) {
-  console.log('🔗 Discord Gateway client initialized');
-  
-  // Subscribe to new messages
-  discordClient.onNewMessage(handleNewDiscordMessage);
-  
-  // Subscribe to message deletions
-  discordClient.onMessageDelete((messageId: string, channelId: string) => {
-    console.log(`🗑️ Message deleted: ${messageId} in channel ${channelId}`);
+// Function to initialize Discord after config is ready
+function initializeDiscordClient() {
+  console.log('🔧 Initializing Discord Gateway...');
+  discordClient = initializeDiscord();
+
+  if (discordClient) {
+    console.log('🔗 Discord Gateway client initialized');
     
-    // Remove from local storage
-    const index = discordMessages.findIndex(m => m.id === messageId);
-    if (index !== -1) {
-      console.log(`✅ Removing message from local storage: ${discordMessages[index].content}`);
-      discordMessages.splice(index, 1);
+    // Subscribe to new messages
+    discordClient.onNewMessage(handleNewDiscordMessage);
+    
+    // Subscribe to message deletions
+    discordClient.onMessageDelete((messageId: string, channelId: string) => {
+      console.log(`🗑️ Message deleted: ${messageId} in channel ${channelId}`);
       
-      // Remove from UI with animation
-      const messageEl = document.querySelector(`[data-message-id="${messageId}"]`);
-      if (messageEl) {
-        messageEl.classList.add('deleting');
-        setTimeout(() => {
-          messageEl.remove();
-          
-          // Update UI if no messages left
-          if (discordMessages.length === 0) {
-            updateWishboxContent();
-          }
-        }, 300);
-      }
-    }
-  });
-  
-  // Load existing messages from channel
-  (async () => {
-    try {
-      wishboxStatus.innerHTML = `
-        <span class="material-icons spinning">sync</span>
-        Lade vorhandene Nachrichten...
-      `;
-      
-      const { fetchChannelMessages } = await import('./discordGateway');
-      const existingMessages = await fetchChannelMessages(50);
-      
-      console.log(`📥 Loaded ${existingMessages.length} existing messages`);
-      
-      // Add messages to storage and UI
-      existingMessages.forEach((message: any) => {
-        // Check if message already exists (avoid duplicates)
-        const exists = discordMessages.some(m => m.id === message.id);
-        if (!exists) {
-          // Store complete message including attachments
-          discordMessages.push(message);
+      // Remove from local storage
+      const index = discordMessages.findIndex(m => m.id === messageId);
+      if (index !== -1) {
+        console.log(`✅ Removing message from local storage: ${discordMessages[index].content}`);
+        discordMessages.splice(index, 1);
+        
+        // Update UI
+        updateWishboxContent();
+        
+        // Update status to show new message count
+        const wishboxStatus = document.getElementById('wishbox-status');
+        if (wishboxStatus) {
+          wishboxStatus.innerHTML = `
+            <span class="material-icons" style="color: #43b581;">check_circle</span>
+            Verbunden - ${discordMessages.length} Nachrichten
+          `;
         }
-      });
-      
-      // Update UI
-      updateWishboxContent();
-      
-      // Update status when connected
-      setTimeout(() => {
+      }
+    });
+    
+    // After a delay, fetch existing messages via REST API (fallback to REST)
+    (async () => {
+      try {
+        const wishboxStatus = document.getElementById('wishbox-status');
+        if (wishboxStatus) {
+          wishboxStatus.innerHTML = `
+            <span class="material-icons rotating">sync</span>
+            Lade Nachrichten...
+          `;
+        }
+        
+        console.log('📥 Loading existing Discord messages via REST API...');
+        const { fetchChannelMessages } = await import('./discordGateway');
+        const existingMessages = await fetchChannelMessages(50);
+        
+        console.log(`📥 Loaded ${existingMessages.length} existing messages`);
+        
+        // Add messages to storage and UI
+        existingMessages.forEach((message: any) => {
+          // Check if message already exists (avoid duplicates)
+          const exists = discordMessages.some(m => m.id === message.id);
+          if (!exists) {
+            // Store complete message including attachments
+            discordMessages.push(message);
+          }
+        });
+        
+        // Update UI
+        updateWishboxContent();
+        
+        // Update status when connected
+        setTimeout(() => {
+          if (wishboxStatus) {
+            wishboxStatus.innerHTML = `
+              <span class="material-icons" style="color: #43b581;">check_circle</span>
+              Verbunden - ${discordMessages.length} Nachrichten
+            `;
+          }
+        }, 1000);
+        
+      } catch (error) {
+        console.error('❌ Failed to load existing messages:', error);
+      }
+    })();
+    
+    // Old status update (fallback)
+    setTimeout(() => {
+      const wishboxStatus = document.getElementById('wishbox-status');
+      if (wishboxStatus && wishboxStatus.innerHTML.includes('Verbinde')) {
         wishboxStatus.innerHTML = `
           <span class="material-icons" style="color: #43b581;">check_circle</span>
-          Verbunden - ${discordMessages.length} Nachrichten
+          Verbunden mit Discord
         `;
-      }, 1000);
-      
-    } catch (error) {
-      console.error('❌ Failed to load existing messages:', error);
-    }
-  })();
-  
-  // Old status update (fallback)
-  setTimeout(() => {
-    if (wishboxStatus.innerHTML.includes('Verbinde')) {
+        setTimeout(() => {
+          wishboxStatus.classList.add('hidden');
+        }, 3000);
+      }
+    }, 2000);
+  } else {
+    console.warn('⚠️ Discord Gateway not initialized (missing env variables)');
+    
+    const wishboxStatus = document.getElementById('wishbox-status');
+    const wishboxBtn = document.getElementById('wishbox-btn') as HTMLButtonElement;
+    
+    // Show error in status
+    if (wishboxStatus) {
       wishboxStatus.innerHTML = `
-        <span class="material-icons" style="color: #43b581;">check_circle</span>
-        Verbunden mit Discord
+        <span class="material-icons" style="color: #f04747;">error</span>
+        Discord nicht konfiguriert
       `;
-      setTimeout(() => {
-        wishboxStatus.classList.add('hidden');
-      }, 3000);
     }
-  }, 2000);
-} else {
-  console.warn('⚠️ Discord Gateway not initialized (missing env variables)');
-  
-  // Show error in status
-  wishboxStatus.innerHTML = `
-    <span class="material-icons" style="color: #f04747;">error</span>
-    Discord nicht konfiguriert
-  `;
-  
-  // Disable wishbox button
-  if (wishboxBtn) {
-    wishboxBtn.disabled = true;
-    wishboxBtn.style.opacity = '0.5';
-    wishboxBtn.style.cursor = 'not-allowed';
-    wishboxBtn.title = 'Discord nicht konfiguriert (env Variablen fehlen)';
+    
+    // Disable wishbox button
+    if (wishboxBtn) {
+      wishboxBtn.disabled = true;
+      wishboxBtn.style.opacity = '0.5';
+      wishboxBtn.style.cursor = 'not-allowed';
+      wishboxBtn.title = 'Discord nicht konfiguriert (env Variablen fehlen)';
+    }
   }
 }
 

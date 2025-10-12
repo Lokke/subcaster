@@ -998,6 +998,7 @@ const deckConfig = {
   applyDeckVisibility() {
     const playerC = document.getElementById('player-c');
     const playerD = document.getElementById('player-d');
+    const wishboxFrame = document.getElementById('wishbox-frame');
     const deckToggleBtn = document.getElementById('deck-toggle-btn');
     
     const shouldShowCD = this.getUserPreference();
@@ -1008,6 +1009,11 @@ const deckConfig = {
     }
     if (playerD) {
       playerD.style.display = shouldShowCD ? '' : 'none';
+    }
+    
+    // Show/hide Wishbox Frame (follows Deck C+D visibility)
+    if (wishboxFrame) {
+      wishboxFrame.style.display = shouldShowCD ? '' : 'none';
     }
     
     // Update toggle button if it exists
@@ -13000,13 +13006,19 @@ const githubCat = new GitHubCat();
 
 import { initializeDiscord, getDiscordClient, type DiscordGatewayClient } from './discordGateway';
 
-// Wishbox UI elements
+// Wishbox UI elements (Dropdown)
 const wishboxBtn = document.getElementById('wishbox-btn') as HTMLButtonElement;
 const wishboxDropdown = document.getElementById('wishbox-dropdown') as HTMLDivElement;
 const wishboxSortBtn = document.getElementById('wishbox-sort-btn') as HTMLButtonElement;
 const wishboxCloseBtn = document.getElementById('wishbox-close-btn') as HTMLButtonElement;
 const wishboxStatus = document.getElementById('wishbox-status') as HTMLDivElement;
 const wishboxContent = document.getElementById('wishbox-content') as HTMLDivElement;
+
+// Wishbox Frame elements (Between Decks C+D)
+const wishboxFrame = document.getElementById('wishbox-frame') as HTMLDivElement;
+const wishboxFrameSortBtn = document.getElementById('wishbox-frame-sort-btn') as HTMLButtonElement;
+const wishboxFrameStatus = document.getElementById('wishbox-frame-status') as HTMLDivElement;
+const wishboxFrameContent = document.getElementById('wishbox-frame-content') as HTMLDivElement;
 
 // Hide wishbox button initially (only show after login)
 if (wishboxBtn) {
@@ -13419,6 +13431,110 @@ function updateWishboxContent() {
 }
 
 /**
+ * Update wishbox FRAME content (between Decks C+D)
+ */
+function updateWishboxFrameContent() {
+  if (!wishboxFrameContent) return;
+  
+  wishboxFrameContent.innerHTML = '';
+  
+  if (discordMessages.length === 0) {
+    wishboxFrameContent.innerHTML = `
+      <div class="wishbox-empty" style="padding: 2rem; text-align: center; color: #888;">
+        <span class="material-icons" style="font-size: 3rem; opacity: 0.5;">chat_bubble_outline</span>
+        <p>Noch keine Wünsche vorhanden.<br>Warte auf neue Nachrichten...</p>
+      </div>
+    `;
+    return;
+  }
+  
+  // Sort messages based on current sort order
+  let sortedMessages = [...discordMessages];
+  
+  if (wishboxSortOrder === 'newest') {
+    // Newest first (reverse chronological)
+    sortedMessages.reverse();
+  }
+  // If 'oldest', keep original order (chronological)
+  
+  // Render messages as compact wishbox items
+  sortedMessages.forEach(message => {
+    const messageEl = renderWishboxFrameItem(message);
+    wishboxFrameContent.appendChild(messageEl);
+  });
+  
+  // Scroll behavior based on sort order
+  if (wishboxSortOrder === 'newest') {
+    wishboxFrameContent.scrollTop = 0; // Scroll to top for newest
+  } else {
+    wishboxFrameContent.scrollTop = wishboxFrameContent.scrollHeight; // Scroll to bottom for oldest
+  }
+}
+
+/**
+ * Render a compact wishbox item for the frame
+ */
+function renderWishboxFrameItem(message: any): HTMLElement {
+  const itemEl = document.createElement('div');
+  itemEl.className = 'wishbox-item';
+  itemEl.dataset.messageId = message.id;
+  
+  const avatarUrl = getDiscordAvatar(message.author);
+  
+  itemEl.innerHTML = `
+    <div class="wishbox-item-header">
+      <div class="wishbox-item-user">
+        ${avatarUrl ? `<img src="${avatarUrl}" alt="${message.author.username}" class="wishbox-item-avatar">` : ''}
+        <span>${escapeHtml(message.author.username)}</span>
+      </div>
+      <div class="wishbox-item-time">${formatDiscordTimestamp(message.timestamp)}</div>
+    </div>
+    <div class="wishbox-item-content">${escapeHtml(message.content)}</div>
+    <div class="wishbox-item-actions">
+      <button class="wishbox-item-action-btn search" data-search="${escapeHtml(message.content)}" title="In Suche einfügen">
+        <span class="material-icons">search</span>
+        Suchen
+      </button>
+      <button class="wishbox-item-action-btn delete" data-message-id="${message.id}" title="Nachricht löschen">
+        <span class="material-icons">delete</span>
+        Löschen
+      </button>
+    </div>
+  `;
+  
+  // Add click handler for search button
+  const searchBtn = itemEl.querySelector('.search') as HTMLButtonElement;
+  searchBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const searchQuery = searchBtn.dataset.search || '';
+    if (searchQuery) {
+      const searchInput = document.getElementById('search-input') as HTMLInputElement;
+      const searchBtnMain = document.getElementById('search-btn') as HTMLButtonElement;
+      
+      if (searchInput && searchBtnMain) {
+        searchInput.value = searchQuery;
+        searchInput.focus();
+        searchBtnMain.click();
+        console.log(`🔍 Search triggered from frame: ${searchQuery}`);
+      }
+    }
+  });
+  
+  // Add click handler for delete button
+  const deleteBtn = itemEl.querySelector('.delete') as HTMLButtonElement;
+  deleteBtn?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const messageId = deleteBtn.dataset.messageId || '';
+    if (messageId) {
+      const channelId = getConfigValue('VITE_DISCORD_CHANNEL_ID') || '';
+      await deleteDiscordMessage(messageId, channelId);
+    }
+  });
+  
+  return itemEl;
+}
+
+/**
  * Handle new Discord message
  */
 function handleNewDiscordMessage(message: any) {
@@ -13432,10 +13548,13 @@ function handleNewDiscordMessage(message: any) {
     discordMessages.shift();
   }
   
-  // Update UI if wishbox is open
+  // Update dropdown UI if wishbox is open
   if (wishboxDropdown.classList.contains('show')) {
     updateWishboxContent();
   }
+  
+  // Always update the frame (visible between Decks C+D)
+  updateWishboxFrameContent();
   
   // Show notification badge (optional)
   wishboxBtn.classList.add('active');
@@ -13511,6 +13630,45 @@ function initializeDiscordClient() {
   console.log('🔧 Initializing Discord Gateway...');
   discordClient = initializeDiscord();
 
+  // Setup sort button event listeners for both dropdown and frame
+  if (wishboxSortBtn) {
+    wishboxSortBtn.addEventListener('click', () => {
+      // Toggle sort order
+      wishboxSortOrder = wishboxSortOrder === 'newest' ? 'oldest' : 'newest';
+      localStorage.setItem('wishboxSortOrder', wishboxSortOrder);
+      
+      // Update both UI elements
+      updateSortButtonIcon();
+      if (wishboxFrameSortBtn) {
+        wishboxFrameSortBtn.classList.toggle('asc', wishboxSortOrder === 'oldest');
+      }
+      
+      // Re-render both displays
+      updateWishboxContent();
+      updateWishboxFrameContent();
+      
+      console.log(`📊 Sort order changed to: ${wishboxSortOrder}`);
+    });
+  }
+  
+  if (wishboxFrameSortBtn) {
+    wishboxFrameSortBtn.addEventListener('click', () => {
+      // Toggle sort order
+      wishboxSortOrder = wishboxSortOrder === 'newest' ? 'oldest' : 'newest';
+      localStorage.setItem('wishboxSortOrder', wishboxSortOrder);
+      
+      // Update both UI elements
+      updateSortButtonIcon();
+      wishboxFrameSortBtn.classList.toggle('asc', wishboxSortOrder === 'oldest');
+      
+      // Re-render both displays
+      updateWishboxContent();
+      updateWishboxFrameContent();
+      
+      console.log(`📊 Sort order changed to: ${wishboxSortOrder} (from frame)`);
+    });
+  }
+
   if (discordClient) {
     console.log('🔗 Discord Gateway client initialized');
     
@@ -13527,13 +13685,21 @@ function initializeDiscordClient() {
         console.log(`✅ Removing message from local storage: ${discordMessages[index].content}`);
         discordMessages.splice(index, 1);
         
-        // Update UI
+        // Update both UIs
         updateWishboxContent();
+        updateWishboxFrameContent();
         
         // Update status to show new message count
         const wishboxStatus = document.getElementById('wishbox-status');
         if (wishboxStatus) {
           wishboxStatus.innerHTML = `
+            <span class="material-icons" style="color: #43b581;">check_circle</span>
+            Verbunden - ${discordMessages.length} Nachrichten
+          `;
+        }
+        
+        if (wishboxFrameStatus) {
+          wishboxFrameStatus.innerHTML = `
             <span class="material-icons" style="color: #43b581;">check_circle</span>
             Verbunden - ${discordMessages.length} Nachrichten
           `;
@@ -13547,6 +13713,13 @@ function initializeDiscordClient() {
         const wishboxStatus = document.getElementById('wishbox-status');
         if (wishboxStatus) {
           wishboxStatus.innerHTML = `
+            <span class="material-icons rotating">sync</span>
+            Lade Nachrichten...
+          `;
+        }
+        
+        if (wishboxFrameStatus) {
+          wishboxFrameStatus.innerHTML = `
             <span class="material-icons rotating">sync</span>
             Lade Nachrichten...
           `;
@@ -13568,8 +13741,9 @@ function initializeDiscordClient() {
           }
         });
         
-        // Update UI
+        // Update both UIs
         updateWishboxContent();
+        updateWishboxFrameContent();
         
         // Update status when connected
         setTimeout(() => {
@@ -13578,6 +13752,17 @@ function initializeDiscordClient() {
               <span class="material-icons" style="color: #43b581;">check_circle</span>
               Verbunden - ${discordMessages.length} Nachrichten
             `;
+          }
+          
+          if (wishboxFrameStatus) {
+            wishboxFrameStatus.innerHTML = `
+              <span class="material-icons" style="color: #43b581;">check_circle</span>
+              ${discordMessages.length} Nachrichten
+            `;
+            // Hide status after a few seconds
+            setTimeout(() => {
+              if (wishboxFrameStatus) wishboxFrameStatus.style.display = 'none';
+            }, 3000);
           }
         }, 1000);
         
@@ -13608,6 +13793,13 @@ function initializeDiscordClient() {
     // Show error in status
     if (wishboxStatus) {
       wishboxStatus.innerHTML = `
+        <span class="material-icons" style="color: #f04747;">error</span>
+        Discord nicht konfiguriert
+      `;
+    }
+    
+    if (wishboxFrameStatus) {
+      wishboxFrameStatus.innerHTML = `
         <span class="material-icons" style="color: #f04747;">error</span>
         Discord nicht konfiguriert
       `;

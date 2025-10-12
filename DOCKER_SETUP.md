@@ -8,32 +8,50 @@
 ## Erste Installation
 
 1. **Repository klonen:**
+
 ```bash
 git clone https://github.com/Lokke/subcaster.git
 cd subcaster
 ```
 
 2. **Docker-Data Verzeichnis erstellen:**
+
 ```bash
-mkdir docker-data
+mkdir -p docker-data
 ```
 
-3. **.env Datei für Docker vorbereiten:**
+3. **.env Datei vorbereiten:**
+
 ```bash
-# Kopiere deine .env in das docker-data Verzeichnis
+# Erstelle .env im Projektverzeichnis mit deinen Credentials
+nano .env
+# ODER kopiere eine existierende .env
+# cp /path/to/your/.env .env
+
+# Kopiere auch nach docker-data/ für Runtime
 cp .env docker-data/.env
 ```
 
-**WICHTIG:** Die `.env`-Datei im `docker-data/` Verzeichnis wird in den Container gemountet und persistiert Updates!
+**WICHTIG:** 
+- Die `.env` im **Root** wird für den **Build** benötigt (VITE_ Variablen werden eingebettet!)
+- Die `.env` in `docker-data/` wird für die **Runtime** gemountet (Server-Variablen)
 
-4. **Container starten:**
+4. **Container bauen und starten:**
+
 ```bash
 docker-compose up --build -d
 ```
 
 5. **Logs überprüfen:**
+
 ```bash
 docker-compose logs -f
+```
+
+Du solltest sehen:
+```
+Discord Bot Token: ✅ Set
+Discord Channel ID: ✅ Set
 ```
 
 ## Updates durchführen
@@ -44,6 +62,10 @@ docker-compose down
 
 # Neuesten Code pullen
 git pull
+
+# .env MUSS vorhanden sein für Build-Args!
+# Prüfe ob .env existiert:
+ls -la .env docker-data/.env
 
 # Container neu bauen und starten
 docker-compose up --build -d

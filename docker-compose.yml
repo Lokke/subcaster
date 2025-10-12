@@ -1,5 +1,9 @@
 version: '3.8'
 
+# Load environment variables from docker-data/.env (if exists) or .env (fallback)
+# Docker Compose automatically loads .env from project root
+# For docker-data/.env, we rely on the build args below
+
 services:
   subcaster:
     build:
@@ -7,6 +11,25 @@ services:
       dockerfile: Dockerfile.production
       args:
         NODE_VERSION: "24.8.0"
+        # Pass environment variables from .env file to build
+        VITE_DISCORD_BOT_TOKEN: ${VITE_DISCORD_BOT_TOKEN}
+        VITE_DISCORD_CHANNEL_ID: ${VITE_DISCORD_CHANNEL_ID}
+        VITE_DISCORD_GUILD_ID: ${VITE_DISCORD_GUILD_ID}
+        VITE_OPENSUBSONIC_URL: ${VITE_OPENSUBSONIC_URL}
+        VITE_OPENSUBSONIC_USERNAME: ${VITE_OPENSUBSONIC_USERNAME}
+        VITE_OPENSUBSONIC_PASSWORD: ${VITE_OPENSUBSONIC_PASSWORD}
+        VITE_AZURACAST_SERVERS: ${VITE_AZURACAST_SERVERS}
+        VITE_AZURACAST_STATION_ID: ${VITE_AZURACAST_STATION_ID}
+        VITE_AZURACAST_DJ_USERNAME: ${VITE_AZURACAST_DJ_USERNAME}
+        VITE_AZURACAST_DJ_PASSWORD: ${VITE_AZURACAST_DJ_PASSWORD}
+        VITE_STREAM_BITRATE: ${VITE_STREAM_BITRATE}
+        VITE_STREAM_SAMPLE_RATE: ${VITE_STREAM_SAMPLE_RATE}
+        VITE_DECK_CONFIGURATION: ${VITE_DECK_CONFIGURATION}
+        VITE_USE_UNIFIED_LOGIN: ${VITE_USE_UNIFIED_LOGIN}
+        VITE_UNIFIED_USERNAME: ${VITE_UNIFIED_USERNAME}
+        VITE_UNIFIED_PASSWORD: ${VITE_UNIFIED_PASSWORD}
+    env_file:
+      - docker-data/.env  # Load from docker-data/.env for runtime
     container_name: subcaster
     ports:
       - "3002:3001"

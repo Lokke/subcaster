@@ -57,25 +57,42 @@ else
     fi
 fi
 
+# Erstelle Symlink oder Kopie für Docker Compose Build
+# Docker Compose Build benötigt .env im Root für ${VARIABLE} Substitution
 echo ""
-echo "🔍 Prüfe wichtige Umgebungsvariablen in docker-data/.env..."
+echo "� Erstelle .env für Docker Compose Build..."
+if [ ! -f ".env" ]; then
+    # Wenn keine .env im Root existiert, kopiere von docker-data
+    if [ -f "docker-data/.env" ]; then
+        cp docker-data/.env .env
+        echo "✅ .env aus docker-data/ kopiert (für Build-Args)"
+    else
+        echo "❌ Keine .env-Datei gefunden!"
+        exit 1
+    fi
+else
+    echo "✅ .env im Root existiert bereits"
+fi
+
+echo ""
+echo "�🔍 Prüfe wichtige Umgebungsvariablen in .env..."
 
 # Prüfe Discord Token
-if grep -q "VITE_DISCORD_BOT_TOKEN=" docker-data/.env && ! grep -q "VITE_DISCORD_BOT_TOKEN=$" docker-data/.env; then
+if grep -q "VITE_DISCORD_BOT_TOKEN=" .env && ! grep -q "VITE_DISCORD_BOT_TOKEN=$" .env; then
     echo "✅ Discord Bot Token gesetzt"
 else
     echo "⚠️  Discord Bot Token fehlt oder ist leer"
 fi
 
 # Prüfe Discord Channel ID
-if grep -q "VITE_DISCORD_CHANNEL_ID=" docker-data/.env && ! grep -q "VITE_DISCORD_CHANNEL_ID=$" docker-data/.env; then
+if grep -q "VITE_DISCORD_CHANNEL_ID=" .env && ! grep -q "VITE_DISCORD_CHANNEL_ID=$" .env; then
     echo "✅ Discord Channel ID gesetzt"
 else
     echo "⚠️  Discord Channel ID fehlt oder ist leer"
 fi
 
 # Prüfe OpenSubsonic URL
-if grep -q "VITE_OPENSUBSONIC_URL=" docker-data/.env && ! grep -q "VITE_OPENSUBSONIC_URL=$" docker-data/.env; then
+if grep -q "VITE_OPENSUBSONIC_URL=" .env && ! grep -q "VITE_OPENSUBSONIC_URL=$" .env; then
     echo "✅ OpenSubsonic URL gesetzt"
 else
     echo "⚠️  OpenSubsonic URL fehlt oder ist leer"

@@ -36,3 +36,6 @@ azuracast/
 
 # Compare directory
 compare/
+
+# Docker persistent data (contains sensitive .env)
+docker-data/

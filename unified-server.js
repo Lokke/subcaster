@@ -5,9 +5,20 @@ import net from 'net';
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load .env file (wichtig für Docker und lokale Entwicklung)
+// In Docker: Lädt aus /app/docker-data/.env (gemountet)
+// Lokal: Lädt aus .env im Projektverzeichnis
+const envPath = process.env.DOCKER_ENV 
+  ? path.join(__dirname, 'docker-data', '.env')
+  : path.join(__dirname, '.env');
+
+console.log(`📄 Loading .env from: ${envPath}`);
+dotenv.config({ path: envPath });
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -17,6 +28,8 @@ console.log('🔍 Environment Debug:');
 console.log(`   NODE_ENV: ${process.env.NODE_ENV}`);
 console.log(`   DOCKER_ENV: ${process.env.DOCKER_ENV}`);
 console.log(`   __dirname: ${__dirname}`);
+console.log(`   Discord Bot Token: ${process.env.VITE_DISCORD_BOT_TOKEN ? '✅ Set' : '❌ Missing'}`);
+console.log(`   Discord Channel ID: ${process.env.VITE_DISCORD_CHANNEL_ID ? '✅ Set' : '❌ Missing'}`);
 
 // CORS für alle Requests aktivieren
 app.use(cors({

@@ -28,6 +28,8 @@ console.log('🔍 Environment Debug:');
 console.log(`   NODE_ENV: ${process.env.NODE_ENV}`);
 console.log(`   DOCKER_ENV: ${process.env.DOCKER_ENV}`);
 console.log(`   __dirname: ${__dirname}`);
+console.log(`   DISCORD_BOT_TOKEN: ${process.env.DISCORD_BOT_TOKEN ? '***configured***' : '❌ NOT SET'}`);
+console.log(`   VITE_DISCORD_CHANNEL_ID: ${process.env.VITE_DISCORD_CHANNEL_ID}`);
 console.log(`   Discord Bot Token: ${process.env.DISCORD_BOT_TOKEN ? '✅ Set' : '❌ Missing'}`);
 console.log(`   Discord Channel ID: ${process.env.VITE_DISCORD_CHANNEL_ID ? '✅ Set' : '❌ Missing'}`);
 

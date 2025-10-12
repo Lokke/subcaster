@@ -36,6 +36,7 @@
             <div class="setup-step" data-step="2">2</div>
             <div class="setup-step" data-step="3">3</div>
             <div class="setup-step" data-step="4">4</div>
+            <div class="setup-step" data-step="5">5</div>
           </div>
         </div>
 
@@ -210,8 +211,69 @@
             </div>
           </div>
 
-          <!-- Step 4: Summary & Save -->
+          <!-- Step 4: Discord Wishbox (Optional) -->
           <div class="setup-step-content" data-step="4">
+            <h3>💬 Discord Wishbox (Optional)</h3>
+            <p>Enable song requests from Discord users:</p>
+            
+            <div class="setup-optional setup-discord-enable">
+              <input type="checkbox" id="setup-enable-discord" />
+              <label for="setup-enable-discord">Enable Discord Wishbox feature</label>
+              <small>Allow listeners to request songs via Discord</small>
+            </div>
+
+            <div class="setup-discord-config" id="setup-discord-config" style="display: none;">
+              <div class="setup-info-box">
+                <h4>🔐 Security Notice</h4>
+                <p>Your Discord bot token will be stored securely on the server and <strong>never exposed to the browser</strong>.</p>
+                <p>To get your Discord credentials:</p>
+                <ol>
+                  <li>Go to <a href="https://discord.com/developers/applications" target="_blank">Discord Developer Portal</a></li>
+                  <li>Create or select your application</li>
+                  <li>Go to "Bot" → Click "Reset Token" to get your bot token</li>
+                  <li>Enable Developer Mode in Discord (Settings → Advanced)</li>
+                  <li>Right-click your channel → "Copy ID" for Channel ID</li>
+                  <li>Right-click your server icon → "Copy Server ID" for Guild ID</li>
+                </ol>
+              </div>
+
+              <div class="setup-form-group">
+                <label for="setup-discord-token">🔑 Discord Bot Token: *</label>
+                <input type="password" 
+                       id="setup-discord-token" 
+                       name="discord-token"
+                       placeholder="MTQyNjAwMjg0ODE0NzE4MTYzOA.GXkUTk.xqdO..."
+                       autocomplete="off"
+                       spellcheck="false" />
+                <small>Your Discord bot token (kept secure on server)</small>
+              </div>
+              
+              <div class="setup-form-group">
+                <label for="setup-discord-channel-id">📺 Discord Channel ID: *</label>
+                <input type="text" 
+                       id="setup-discord-channel-id" 
+                       name="discord-channel-id"
+                       placeholder="927495125888794634"
+                       autocomplete="off"
+                       spellcheck="false" />
+                <small>The channel where song requests will be received</small>
+              </div>
+              
+              <div class="setup-form-group">
+                <label for="setup-discord-guild-id">🏰 Discord Guild/Server ID (optional):</label>
+                <input type="text" 
+                       id="setup-discord-guild-id" 
+                       name="discord-guild-id"
+                       placeholder="785932996406280192"
+                       autocomplete="off"
+                       spellcheck="false" />
+                <small>Your Discord server ID (optional but recommended)</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 5: Summary & Save -->
+          <div class="setup-step-content" data-step="5">
             <h3>✅ Configuration Summary</h3>
             <p>Review your settings before saving:</p>
             

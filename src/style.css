@@ -10686,6 +10686,67 @@ body {
   font-weight: normal;
 }
 
+/* Discord Wishbox Styling */
+.setup-discord-enable {
+  background: rgba(88, 101, 242, 0.1);
+  border: 1px solid rgba(88, 101, 242, 0.3);
+  border-radius: 10px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+.setup-discord-enable label {
+  display: inline;
+  color: #5865F2;
+  font-weight: 600;
+  font-size: 1.1em;
+}
+
+.setup-discord-config {
+  margin-top: 20px;
+}
+
+.setup-info-box {
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 25px;
+}
+
+.setup-info-box h4 {
+  margin: 0 0 10px 0;
+  color: #00d4ff;
+  font-size: 1.2em;
+}
+
+.setup-info-box p {
+  margin: 0 0 10px 0;
+  color: #ccc;
+  font-size: 0.95em;
+  line-height: 1.5;
+}
+
+.setup-info-box ol {
+  margin: 10px 0 0 20px;
+  padding: 0;
+  color: #ccc;
+  font-size: 0.95em;
+}
+
+.setup-info-box li {
+  margin-bottom: 5px;
+}
+
+.setup-info-box a {
+  color: #00d4ff;
+  text-decoration: none;
+}
+
+.setup-info-box a:hover {
+  text-decoration: underline;
+}
+
 .setup-summary {
   background: #2a2a2a;
   border: 1px solid #444;

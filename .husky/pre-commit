@@ -1,0 +1,43 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# 🔒 Sicherheits-Check: Verhindert versehentliches Committen von Credentials
+echo "🔍 Checking for accidental credential commits..."
+
+# Liste gefährlicher Patterns
+DANGEROUS_PATTERNS=(
+  "DISCORD_BOT_TOKEN="
+  "OPENSUBSONIC_PASSWORD="
+  "AZURACAST_DJ_PASSWORD="
+  "UNIFIED_PASSWORD="
+  "_PASSWORD="
+  "_TOKEN="
+  "_SECRET="
+)
+
+# Prüfe staged Dateien
+STAGED_FILES=$(git diff --cached --name-only)
+
+for FILE in $STAGED_FILES; do
+  # Überspringe gelöschte Dateien
+  if [ ! -f "$FILE" ]; then
+    continue
+  fi
+  
+  # Prüfe jede Datei auf gefährliche Patterns
+  for PATTERN in "${DANGEROUS_PATTERNS[@]}"; do
+    if grep -q "$PATTERN[a-zA-Z0-9]" "$FILE"; then
+      echo ""
+      echo "❌ COMMIT BLOCKED!"
+      echo "🚨 File '$FILE' contains potential credentials: $PATTERN"
+      echo ""
+      echo "If this is intentional (e.g., .env.example), please:"
+      echo "  1. Make sure it's a template without real values"
+      echo "  2. Run: git commit --no-verify"
+      echo ""
+      exit 1
+    fi
+  done
+done
+
+echo "✅ No credentials detected in staged files"

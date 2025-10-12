@@ -26,6 +26,14 @@ interface SetupConfig {
     password: string;
   };
   
+  // Discord Wishbox Configuration (Optional)
+  discord?: {
+    enabled: boolean;
+    token: string;
+    channelId: string;
+    guildId: string;
+  };
+  
   // Streaming Configuration
   streaming: {
     bitrate: number;
@@ -39,7 +47,7 @@ interface SetupConfig {
 
 class SetupWizard {
   private currentStep = 1;
-  private maxSteps = 4;
+  private maxSteps = 5;
   private isDemo = false;
   private config: SetupConfig = { streaming: { bitrate: 128, sampleRate: 44100, server: '', port: 8000, username: '', password: '' } };
   
@@ -242,6 +250,9 @@ class SetupWizard {
 
     // Auto-fill validation listeners
     this.addValidationListeners();
+    
+    // Discord Wishbox handlers
+    this.addDiscordHandlers();
   }
 
   private addValidationListeners(): void {
@@ -309,6 +320,22 @@ class SetupWizard {
         }
       });
     }
+  }
+
+  private addDiscordHandlers(): void {
+    const enableDiscordCheckbox = document.getElementById('setup-enable-discord') as HTMLInputElement;
+    const discordConfig = document.getElementById('setup-discord-config') as HTMLElement;
+
+    if (!enableDiscordCheckbox) return;
+
+    enableDiscordCheckbox.addEventListener('change', () => {
+      const isEnabled = enableDiscordCheckbox.checked;
+      
+      // Show/hide Discord config section
+      if (discordConfig) {
+        discordConfig.style.display = isEnabled ? 'block' : 'none';
+      }
+    });
   }
 
   private clearCredentialFields(isUnified: boolean): void {
@@ -434,7 +461,8 @@ class SetupWizard {
       case 1: return this.validateStep1();
       case 2: return this.validateStep2();
       case 3: return this.validateStep3();
-      case 4: return true; // Summary step
+      case 4: return this.validateStep4();
+      case 5: return true; // Summary step
       default: return true;
     }
   }
@@ -529,6 +557,45 @@ class SetupWizard {
     return true;
   }
 
+  private validateStep4(): boolean {
+    const enableDiscord = (document.getElementById('setup-enable-discord') as HTMLInputElement)?.checked;
+    
+    // Discord is completely optional
+    if (!enableDiscord) {
+      return true;
+    }
+
+    // If enabled, token and channel ID are required
+    const token = (document.getElementById('setup-discord-token') as HTMLInputElement)?.value?.trim();
+    const channelId = (document.getElementById('setup-discord-channel-id') as HTMLInputElement)?.value?.trim();
+    
+    if (!token || !channelId) {
+      alert('Wenn Discord Wishbox aktiviert ist, sind Bot Token und Channel ID erforderlich.');
+      return false;
+    }
+
+    // Validate token format (basic check)
+    if (!token.includes('.')) {
+      alert('Der Discord Bot Token hat ein ungültiges Format. Er sollte drei Teile haben, getrennt durch Punkte (z.B. MTQy...GXkUTk.xqdO...)');
+      return false;
+    }
+
+    // Validate channel ID format (should be numeric)
+    if (!/^\d+$/.test(channelId)) {
+      alert('Die Discord Channel ID sollte nur aus Zahlen bestehen.');
+      return false;
+    }
+
+    // Guild ID is optional, but if provided, validate it
+    const guildId = (document.getElementById('setup-discord-guild-id') as HTMLInputElement)?.value?.trim();
+    if (guildId && !/^\d+$/.test(guildId)) {
+      alert('Die Discord Guild ID sollte nur aus Zahlen bestehen (oder leer lassen).');
+      return false;
+    }
+
+    return true;
+  }
+
   private collectCurrentStepData(): void {
     switch (this.currentStep) {
       case 1:
@@ -539,6 +606,9 @@ class SetupWizard {
         break;
       case 3:
         this.collectStreamingData();
+        break;
+      case 4:
+        this.collectDiscordData();
         break;
     }
   }
@@ -642,6 +712,30 @@ class SetupWizard {
       username: username || '', 
       password: password || '' 
     };
+  }
+
+  private collectDiscordData(): void {
+    const enabled = (document.getElementById('setup-enable-discord') as HTMLInputElement)?.checked || false;
+    const token = (document.getElementById('setup-discord-token') as HTMLInputElement)?.value?.trim() || '';
+    const channelId = (document.getElementById('setup-discord-channel-id') as HTMLInputElement)?.value?.trim() || '';
+    const guildId = (document.getElementById('setup-discord-guild-id') as HTMLInputElement)?.value?.trim() || '';
+
+    // Only save Discord config if enabled
+    if (enabled && token && channelId) {
+      this.config.discord = {
+        enabled: true,
+        token,
+        channelId,
+        guildId
+      };
+    } else {
+      this.config.discord = {
+        enabled: false,
+        token: '',
+        channelId: '',
+        guildId: ''
+      };
+    }
   }
 
   private generateSummary(): void {
@@ -756,6 +850,43 @@ class SetupWizard {
         </div>
       </div>
     `;
+
+    // Discord Wishbox Summary
+    if (this.config.discord && this.config.discord.enabled) {
+      summaryHTML += `
+        <div class="setup-summary-section">
+          <h4>💬 Discord Wishbox</h4>
+          <div class="setup-summary-item">
+            <span>Status:</span>
+            <strong style="color: #5865F2;">✅ Aktiviert</strong>
+          </div>
+          <div class="setup-summary-item">
+            <span>Bot Token:</span>
+            <strong>${this.config.discord.token.substring(0, 20)}...${this.config.discord.token.slice(-8)}</strong>
+          </div>
+          <div class="setup-summary-item">
+            <span>Channel ID:</span>
+            <strong>${this.config.discord.channelId}</strong>
+          </div>
+          ${this.config.discord.guildId ? `
+          <div class="setup-summary-item">
+            <span>Guild ID:</span>
+            <strong>${this.config.discord.guildId}</strong>
+          </div>
+          ` : ''}
+          <small style="color: #5865F2;">🔐 Token wird sicher auf dem Server gespeichert</small>
+        </div>
+      `;
+    } else {
+      summaryHTML += `
+        <div class="setup-summary-section">
+          <h4>💬 Discord Wishbox</h4>
+          <div class="setup-summary-item">
+            <span style="color: #666;">Nicht aktiviert</span>
+          </div>
+        </div>
+      `;
+    }
 
     this.summaryContainer.innerHTML = summaryHTML;
   }
@@ -884,13 +1015,13 @@ class SetupWizard {
       env += '# Unified Login Option (optional)\n';
       env += '# If enabled, the same credentials are used for OpenSubsonic and AzuraCast\n';
       env += `VITE_USE_UNIFIED_LOGIN=true\n`;
-      env += `VITE_UNIFIED_USERNAME=${this.config.unifiedLogin.username}\n`;
-      env += `VITE_UNIFIED_PASSWORD=${this.config.unifiedLogin.password}\n\n`;
+      env += `UNIFIED_USERNAME=${this.config.unifiedLogin.username}\n`;
+      env += `UNIFIED_PASSWORD=${this.config.unifiedLogin.password}\n\n`;
     } else {
       env += '# Unified Login Option (disabled)\n';
       env += `VITE_USE_UNIFIED_LOGIN=false\n`;
-      env += `VITE_UNIFIED_USERNAME=\n`;
-      env += `VITE_UNIFIED_PASSWORD=\n\n`;
+      env += `UNIFIED_USERNAME=\n`;
+      env += `UNIFIED_PASSWORD=\n\n`;
     }
 
     if (this.config.opensubsonic) {
@@ -899,11 +1030,11 @@ class SetupWizard {
       
       // Only include individual credentials if unified login is disabled
       if (!this.config.unifiedLogin?.enabled) {
-        env += `VITE_OPENSUBSONIC_USERNAME=${this.config.opensubsonic.username}\n`;
-        env += `VITE_OPENSUBSONIC_PASSWORD=${this.config.opensubsonic.password}\n`;
+        env += `OPENSUBSONIC_USERNAME=${this.config.opensubsonic.username}\n`;
+        env += `OPENSUBSONIC_PASSWORD=${this.config.opensubsonic.password}\n`;
       } else {
-        env += `VITE_OPENSUBSONIC_USERNAME=\n`;
-        env += `VITE_OPENSUBSONIC_PASSWORD=\n`;
+        env += `OPENSUBSONIC_USERNAME=\n`;
+        env += `OPENSUBSONIC_PASSWORD=\n`;
       }
       env += '\n';
     }
@@ -918,13 +1049,30 @@ class SetupWizard {
       
       // Only include individual credentials if unified login is disabled
       if (!this.config.unifiedLogin?.enabled) {
-        env += `VITE_AZURACAST_DJ_USERNAME=${this.config.azuracast.username}\n`;
-        env += `VITE_AZURACAST_DJ_PASSWORD=${this.config.azuracast.password}\n`;
+        env += `AZURACAST_DJ_USERNAME=${this.config.azuracast.username}\n`;
+        env += `AZURACAST_DJ_PASSWORD=${this.config.azuracast.password}\n`;
       } else {
-        env += `VITE_AZURACAST_DJ_USERNAME=\n`;
-        env += `VITE_AZURACAST_DJ_PASSWORD=\n`;
+        env += `AZURACAST_DJ_USERNAME=\n`;
+        env += `AZURACAST_DJ_PASSWORD=\n`;
       }
       env += '\n';
+    }
+
+    // Discord Wishbox Configuration (Optional)
+    env += '# ============================================\n';
+    env += '# Discord Wishbox (Optional)\n';
+    env += '# ============================================\n';
+    if (this.config.discord?.enabled) {
+      env += `# ❌ Discord Bot Token OHNE VITE_ prefix (bleibt auf Server!)\n`;
+      env += `DISCORD_BOT_TOKEN=${this.config.discord.token}\n\n`;
+      env += `# ✅ Discord IDs MIT VITE_ prefix (öffentlich)\n`;
+      env += `VITE_DISCORD_CHANNEL_ID=${this.config.discord.channelId}\n`;
+      env += `VITE_DISCORD_GUILD_ID=${this.config.discord.guildId}\n\n`;
+    } else {
+      env += `# Discord Wishbox deaktiviert\n`;
+      env += `DISCORD_BOT_TOKEN=\n`;
+      env += `VITE_DISCORD_CHANNEL_ID=\n`;
+      env += `VITE_DISCORD_GUILD_ID=\n\n`;
     }
 
     env += '# Live Streaming Configuration\n';

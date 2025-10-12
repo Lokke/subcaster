@@ -3,17 +3,59 @@ import { SubsonicApiClient, type OpenSubsonicSong, type OpenSubsonicAlbum, type 
 import { AzuraCastWebcaster, createAzuraCastConfig, fetchAzuraCastStations, fetchAllAzuraCastStations, type AzuraCastMetadata, type AzuraCastStation, type AzuraCastNowPlayingResponse } from "./azuracast";
 import { azuraCastWebSocket, type AzuraCastNowPlayingData } from "./azuracast-websocket";
 import { SetupWizard } from "./setup-wizard";
+import { loadConfig, getConfigValue as getRuntimeConfigValue } from "../js/config-loader";
 import WaveSurfer from 'wavesurfer.js';
 import * as THREE from 'three';
 
 console.log("SubCaster loaded!");
 
-// Global runtime configuration
+// Global runtime configuration (loaded from backend at startup)
 let runtimeConfig: Record<string, string> = {};
+let configLoaded = false;
 
-// Helper function to get config value (runtime config takes precedence)
+// Load configuration from backend on startup
+async function initializeConfig() {
+  try {
+    console.log('🔧 Loading configuration from backend...');
+    const config = await loadConfig();
+    
+    // Map backend config to old VITE_* format for compatibility
+    runtimeConfig = {
+      'VITE_OPENSUBSONIC_URL': config.opensubsonic.url,
+      'VITE_OPENSUBSONIC_USERNAME': config.opensubsonic.username,
+      'VITE_AZURACAST_SERVERS': config.azuracast.servers,
+      'VITE_AZURACAST_STATION_ID': config.azuracast.stationId,
+      'VITE_DISCORD_CHANNEL_ID': config.discord.channelId,
+      'VITE_DISCORD_GUILD_ID': config.discord.guildId,
+      'VITE_STREAM_BITRATE': config.stream.bitrate,
+      'VITE_STREAM_SAMPLE_RATE': config.stream.sampleRate,
+      'VITE_DECK_CONFIGURATION': config.deckConfiguration,
+      'VITE_USE_UNIFIED_LOGIN': String(config.unifiedLogin.enabled),
+    };
+    
+    configLoaded = true;
+    console.log('✅ Configuration loaded from backend (no secrets exposed!)');
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to load backend configuration:', error);
+    console.warn('⚠️ Falling back to build-time config (if available)');
+    return false;
+  }
+}
+
+// Helper function to get config value (runtime config from backend takes precedence)
 function getConfigValue(key: string): string | undefined {
-  return runtimeConfig[key] || import.meta.env[key];
+  // First: Runtime config from backend (secure!)
+  if (runtimeConfig[key]) {
+    return runtimeConfig[key];
+  }
+  
+  // ❌ KEIN Fallback mehr zu import.meta.env - würde ALLE Secrets embedden!
+  // Nur Runtime-Config vom Backend wird verwendet (secure!)
+  console.warn(`⚠️ Config key '${key}' not found in runtime config from backend`);
+  
+  return undefined;
 }
 
 // Global metadata update function - used for immediate metadata broadcasting
@@ -2120,28 +2162,31 @@ let autoQueueConfig = {
 async function checkConfigurationAndInitialize() {
   console.log("🔍 Checking configuration status...");
   
+  // 🔐 STEP 1: Load configuration from backend (SECURE - no tokens in frontend!)
+  console.log('🔐 Loading configuration from backend API...');
+  const backendConfigLoaded = await initializeConfig();
+  
+  if (backendConfigLoaded) {
+    console.log('✅ Backend configuration loaded successfully');
+    console.log('   - All secrets stay on server');
+    console.log('   - No rebuild needed for config changes');
+  } else {
+    console.warn('⚠️ Backend configuration failed, using fallback');
+  }
+  
   // Check if we have any environment variables that indicate configuration exists
-  const hasOpenSubsonicUrl = import.meta.env.VITE_OPENSUBSONIC_URL;
-  const hasAzuraCastServers = import.meta.env.VITE_AZURACAST_SERVERS;
-  const hasStreamConfig = import.meta.env.VITE_STREAM_BITRATE;
+  const hasOpenSubsonicUrl = getConfigValue('VITE_OPENSUBSONIC_URL');
+  const hasAzuraCastServers = getConfigValue('VITE_AZURACAST_SERVERS');
+  const hasStreamConfig = getConfigValue('VITE_STREAM_BITRATE');
 
-  console.log('🔍 Environment variables check:', {
+  console.log('🔍 Configuration check:', {
     hasOpenSubsonicUrl: !!hasOpenSubsonicUrl,
     hasAzuraCastServers: !!hasAzuraCastServers,
     hasStreamConfig: !!hasStreamConfig,
     openSubsonicUrl: hasOpenSubsonicUrl,
-    azuraCastServers: hasAzuraCastServers
+    azuraCastServers: hasAzuraCastServers,
+    source: backendConfigLoaded ? 'backend (secure)' : 'build-time (insecure)',
   });
-  
-  // DEBUG: Show all VITE environment variables
-  console.log('🔍 ALL VITE environment variables:', import.meta.env);
-  
-  // Check if .env file was actually loaded by testing specific values
-  console.log('🔍 Raw environment variable values:');
-  console.log('  VITE_OPENSUBSONIC_URL:', import.meta.env.VITE_OPENSUBSONIC_URL);
-  console.log('  VITE_AZURACAST_SERVERS:', import.meta.env.VITE_AZURACAST_SERVERS);
-  console.log('  VITE_STREAM_BITRATE:', import.meta.env.VITE_STREAM_BITRATE);
-  console.log('  VITE_OPENSUBSONIC_USERNAME:', import.meta.env.VITE_OPENSUBSONIC_USERNAME);
   
   // Check with server API if configuration exists (runtime check)
   console.log('🔍 Checking server configuration via API...');
@@ -13285,24 +13330,17 @@ function parseDiscordRequest(content: string): { name?: string, request1?: strin
  * Delete a Discord message via REST API
  */
 async function deleteDiscordMessage(messageId: string, channelId: string) {
-  const token = import.meta.env.VITE_DISCORD_BOT_TOKEN;
-  
-  if (!token) {
-    console.error('❌ Cannot delete message: No bot token configured');
-    return;
-  }
+  // ✅ Token wird vom Backend hinzugefügt - Frontend sendet KEIN Token mehr!
   
   try {
     console.log(`🗑️ Deleting Discord message ${messageId}...`);
     
-    // Use backend proxy to avoid CORS issues
+    // Backend-Proxy macht die Authentifizierung
     const proxyUrl = `${window.location.origin}/api/discord/channels/${channelId}/messages/${messageId}`;
     
     const response = await fetch(proxyUrl, {
       method: 'DELETE',
-      headers: {
-        'Authorization': `Bot ${token}`,
-      },
+      // ❌ KEIN Authorization Header mehr - Backend fügt Token hinzu!
     });
     
     if (response.status === 204) {

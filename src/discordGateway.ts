@@ -467,25 +467,21 @@ let discordClient: DiscordGatewayClient | null = null;
  * Fetch existing messages from Discord channel via REST API
  */
 export async function fetchChannelMessages(limit: number = 50): Promise<DiscordMessage[]> {
-  const token = import.meta.env.VITE_DISCORD_BOT_TOKEN;
-  const channelId = import.meta.env.VITE_DISCORD_CHANNEL_ID;
+  // Get config from runtime (secure backend) instead of build-time
+  const channelId = (window as any).getConfigValue?.('VITE_DISCORD_CHANNEL_ID');
 
-  if (!token || !channelId) {
-    console.warn('⚠️ Discord: Cannot fetch messages - missing credentials');
+  if (!channelId) {
+    console.warn('⚠️ Discord: Cannot fetch messages - missing channel ID in config');
     return [];
   }
 
   try {
     console.log(`📥 Fetching last ${limit} messages from Discord channel...`);
     
-    // Use backend proxy to avoid CORS issues
+    // Use backend proxy - no token needed from frontend!
     const proxyUrl = `${window.location.origin}/api/discord/channels/${channelId}/messages?limit=${limit}`;
     
-    const response = await fetch(proxyUrl, {
-      headers: {
-        'Authorization': `Bot ${token}`,
-      },
-    });
+    const response = await fetch(proxyUrl);
 
     if (!response.ok) {
       console.error(`❌ Failed to fetch messages: ${response.status} ${response.statusText}`);
@@ -504,16 +500,20 @@ export async function fetchChannelMessages(limit: number = 50): Promise<DiscordM
 }
 
 export function initializeDiscord(): DiscordGatewayClient | null {
-  const token = import.meta.env.VITE_DISCORD_BOT_TOKEN;
-  const channelId = import.meta.env.VITE_DISCORD_CHANNEL_ID;
-  const guildId = import.meta.env.VITE_DISCORD_GUILD_ID || null;
+  // Get config from runtime (secure backend) instead of build-time
+  const token = (window as any).getConfigValue?.('VITE_DISCORD_BOT_TOKEN') || 'BACKEND_PROXY';
+  const channelId = (window as any).getConfigValue?.('VITE_DISCORD_CHANNEL_ID');
+  const guildId = (window as any).getConfigValue?.('VITE_DISCORD_GUILD_ID') || null;
 
-  if (!token || !channelId) {
-    console.warn('⚠️ Discord: Missing environment variables (VITE_DISCORD_BOT_TOKEN, VITE_DISCORD_CHANNEL_ID)');
+  if (!channelId) {
+    console.warn('⚠️ Discord: Missing channel ID from backend config');
     return null;
   }
 
+  console.log('🔐 Discord: Using backend proxy (token stays on server!)');
+
   if (!discordClient) {
+    // Token is just a placeholder - actual auth happens on backend
     discordClient = new DiscordGatewayClient(token, channelId, guildId);
     discordClient.connect();
   }

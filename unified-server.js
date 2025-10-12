@@ -28,7 +28,7 @@ console.log('🔍 Environment Debug:');
 console.log(`   NODE_ENV: ${process.env.NODE_ENV}`);
 console.log(`   DOCKER_ENV: ${process.env.DOCKER_ENV}`);
 console.log(`   __dirname: ${__dirname}`);
-console.log(`   Discord Bot Token: ${process.env.VITE_DISCORD_BOT_TOKEN ? '✅ Set' : '❌ Missing'}`);
+console.log(`   Discord Bot Token: ${process.env.DISCORD_BOT_TOKEN ? '✅ Set' : '❌ Missing'}`);
 console.log(`   Discord Channel ID: ${process.env.VITE_DISCORD_CHANNEL_ID ? '✅ Set' : '❌ Missing'}`);
 
 // CORS für alle Requests aktivieren
@@ -40,6 +40,224 @@ app.use(cors({
 
 // JSON Body Parser for Setup-Wizard
 app.use(express.json({ limit: '10mb' }));
+
+// ============================================================================
+// BACKEND CONFIG API - Loads settings from .env at runtime (no rebuild needed!)
+// ============================================================================
+
+// Get all frontend configuration (public + masked secrets)
+app.get('/api/config', (req, res) => {
+  console.log('📋 Frontend requested configuration');
+  
+  const config = {
+    // OpenSubsonic settings
+    opensubsonic: {
+      url: process.env.VITE_OPENSUBSONIC_URL || '',
+      username: process.env.OPENSUBSONIC_USERNAME || '',
+      // Password is handled server-side only
+    },
+    
+    // AzuraCast settings
+    azuracast: {
+      servers: process.env.VITE_AZURACAST_SERVERS || '',
+      stationId: process.env.VITE_AZURACAST_STATION_ID || '1',
+      // DJ credentials handled server-side only
+    },
+    
+    // Discord settings (no tokens exposed!)
+    discord: {
+      channelId: process.env.VITE_DISCORD_CHANNEL_ID || '',
+      guildId: process.env.VITE_DISCORD_GUILD_ID || '',
+      enabled: !!(process.env.DISCORD_BOT_TOKEN && process.env.VITE_DISCORD_CHANNEL_ID),
+    },
+    
+    // Unified login settings
+    unifiedLogin: {
+      enabled: process.env.VITE_USE_UNIFIED_LOGIN === 'true',
+      // Credentials handled server-side only
+    },
+    
+    // Stream settings
+    stream: {
+      bitrate: process.env.VITE_STREAM_BITRATE || '128',
+      sampleRate: process.env.VITE_STREAM_SAMPLE_RATE || '44100',
+    },
+    
+    // Deck configuration
+    deckConfiguration: process.env.VITE_DECK_CONFIGURATION || 'four-decks',
+  };
+  
+  res.json(config);
+});
+
+// ============================================================================
+// DISCORD API PROXY - Bot token stays server-side!
+// ============================================================================
+
+// Get Discord Gateway URL
+app.get('/api/discord/gateway', async (req, res) => {
+  const token = process.env.DISCORD_BOT_TOKEN;
+  
+  if (!token) {
+    return res.status(500).json({ error: 'Discord bot token not configured' });
+  }
+  
+  try {
+    const response = await fetch('https://discord.com/api/v10/gateway/bot', {
+      headers: { 'Authorization': `Bot ${token}` }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Discord API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('❌ Discord gateway error:', error);
+    res.status(500).json({ error: 'Failed to get Discord gateway' });
+  }
+});
+
+// Get Discord channel messages
+app.get('/api/discord/channels/:channelId/messages', async (req, res) => {
+  const token = process.env.DISCORD_BOT_TOKEN;
+  const { channelId } = req.params;
+  const limit = req.query.limit || 50;
+  
+  if (!token) {
+    return res.status(500).json({ error: 'Discord bot token not configured' });
+  }
+  
+  try {
+    const response = await fetch(
+      `https://discord.com/api/v10/channels/${channelId}/messages?limit=${limit}`,
+      {
+        headers: { 'Authorization': `Bot ${token}` }
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Discord API error: ${response.status}`);
+    }
+    
+    const messages = await response.json();
+    res.json(messages);
+  } catch (error) {
+    console.error('❌ Discord messages error:', error);
+    res.status(500).json({ error: 'Failed to fetch Discord messages' });
+  }
+});
+
+// ============================================================================
+// OPENSUBSONIC API PROXY - Credentials stay server-side!
+// ============================================================================
+
+// OpenSubsonic authentication
+app.post('/api/opensubsonic/auth', async (req, res) => {
+  const serverUrl = process.env.VITE_OPENSUBSONIC_URL;
+  const username = process.env.OPENSUBSONIC_USERNAME;
+  const password = process.env.OPENSUBSONIC_PASSWORD;
+  
+  if (!serverUrl || !username || !password) {
+    return res.status(500).json({ error: 'OpenSubsonic not configured' });
+  }
+  
+  // Generate salt and token (MD5 hash)
+  const crypto = await import('crypto');
+  const salt = Math.random().toString(36).substring(2, 15);
+  const token = crypto.createHash('md5').update(password + salt).digest('hex');
+  
+  res.json({
+    serverUrl,
+    username,
+    token,
+    salt,
+  });
+});
+
+// OpenSubsonic proxy for any API call
+app.get('/api/opensubsonic/:endpoint', async (req, res) => {
+  const serverUrl = process.env.VITE_OPENSUBSONIC_URL;
+  const username = process.env.OPENSUBSONIC_USERNAME;
+  const password = process.env.OPENSUBSONIC_PASSWORD;
+  const { endpoint } = req.params;
+  
+  if (!serverUrl || !username || !password) {
+    return res.status(500).json({ error: 'OpenSubsonic not configured' });
+  }
+  
+  try {
+    const crypto = await import('crypto');
+    const salt = Math.random().toString(36).substring(2, 15);
+    const token = crypto.createHash('md5').update(password + salt).digest('hex');
+    
+    const params = new URLSearchParams({
+      u: username,
+      t: token,
+      s: salt,
+      v: '1.16.1',
+      c: 'SubCaster',
+      f: 'json',
+      ...req.query
+    });
+    
+    const url = `${serverUrl}/rest/${endpoint}?${params}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`OpenSubsonic API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('❌ OpenSubsonic proxy error:', error);
+    res.status(500).json({ error: 'OpenSubsonic API failed' });
+  }
+});
+
+// ============================================================================
+// AZURACAST API PROXY - DJ credentials stay server-side!
+// ============================================================================
+
+// AzuraCast Liquidsoap command proxy
+app.post('/api/azuracast/liquidsoap', async (req, res) => {
+  const { serverUrl, stationId, command } = req.body;
+  const username = process.env.VITE_USE_UNIFIED_LOGIN === 'true' 
+    ? process.env.UNIFIED_USERNAME 
+    : process.env.AZURACAST_DJ_USERNAME;
+  const password = process.env.VITE_USE_UNIFIED_LOGIN === 'true'
+    ? process.env.UNIFIED_PASSWORD
+    : process.env.AZURACAST_DJ_PASSWORD;
+  
+  if (!username || !password) {
+    return res.status(500).json({ error: 'AzuraCast credentials not configured' });
+  }
+  
+  try {
+    // Try HTTP API endpoint
+    const apiUrl = `${serverUrl}/api/station/${stationId}/backend/liquidsoap/command`;
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+      },
+      body: JSON.stringify({ command })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`AzuraCast API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    res.json({ success: true, response: data });
+  } catch (error) {
+    console.error('❌ AzuraCast liquidsoap error:', error);
+    res.status(500).json({ error: 'AzuraCast command failed' });
+  }
+});
 
 // Harbor Connection Handler
 let harborSocket = null;
@@ -304,10 +522,12 @@ app.get('/api/discord/gateway', async (req, res) => {
 // Discord API Proxy für DELETE requests (Message löschen)
 app.delete('/api/discord/channels/:channelId/messages/:messageId', async (req, res) => {
     const { channelId, messageId } = req.params;
-    const authHeader = req.headers.authorization;
     
-    if (!authHeader) {
-        return res.status(401).json({ error: 'Missing Authorization header' });
+    // ✅ Token wird vom Backend hinzugefügt, NICHT vom Frontend erwartet!
+    const token = process.env.DISCORD_BOT_TOKEN;
+    
+    if (!token) {
+        return res.status(500).json({ error: 'Discord bot token not configured on server' });
     }
     
     console.log(`🗑️ Discord Delete Message: ${messageId} in channel ${channelId}`);
@@ -320,7 +540,7 @@ app.delete('/api/discord/channels/:channelId/messages/:messageId', async (req, r
             {
                 method: 'DELETE',
                 headers: {
-                    'Authorization': authHeader,
+                    'Authorization': `Bot ${token}`,
                     'User-Agent': 'WebDJ-Discord-Bot'
                 }
             }
@@ -894,3 +1114,4 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 server.on('error', (error) => {
     console.error('❌ Server error:', error);
 });
+

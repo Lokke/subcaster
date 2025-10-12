@@ -12,12 +12,26 @@ dist
 dist-ssr
 *.local
 
-# Environment variables
+# Environment variables - NEVER commit real credentials!
 .env
-.env.*
-.env.docker
-.env.docker.*
+.env.local
+.env.development
+.env.production
+.env.test
+.env.*.local
 .env.backup
+.env.SECURE
+.env.INSECURE_BACKUP
+.env.OLD*
+.env.BAK*
+
+# Docker environment files
+.env.docker
+.env.docker.individual
+
+# Keep only example files (templates without real credentials)
+!.env.example
+!.env.docker.example
 
 # Editor directories and files
 .github

@@ -658,20 +658,23 @@ export class AzuraCastWebcaster {
 export function createAzuraCastConfig(overrideStationId?: string, overrideStationShortcode?: string, selectedServerUrl?: string, dynamicUsername?: string, dynamicPassword?: string): AzuraCastConfig {
   const timestamp = Date.now();
   
-  // Use runtime config if available, fallback to import.meta.env
-  const getConfigValue = (window as any).getConfigValue || ((key: string) => import.meta.env[key]);
+  // ✅ Nur Runtime-Config vom Backend verwenden (secure!)
+  // ❌ KEIN Fallback zu import.meta.env - würde Secrets embedden!
+  const getConfigValue = (window as any).getConfigValue || (() => {
+    console.warn('⚠️ getConfigValue not available - backend config not loaded?');
+    return '';
+  });
   
   const serversEnv = getConfigValue('VITE_AZURACAST_SERVERS') || 'https://localhost';
   const servers = serversEnv.split(',').map((url: string) => url.trim());
   
-  // Check for unified login
+  // Check for unified login (Backend-Proxy fügt Credentials hinzu - Frontend braucht sie nicht!)
   const useUnifiedLogin = getConfigValue('VITE_USE_UNIFIED_LOGIN') === 'true';
-  const unifiedUsername = getConfigValue('VITE_UNIFIED_USERNAME');
-  const unifiedPassword = getConfigValue('VITE_UNIFIED_PASSWORD');
   
-  // Determine credentials
-  const finalUsername = dynamicUsername || (useUnifiedLogin ? unifiedUsername : getConfigValue('VITE_AZURACAST_DJ_USERNAME')) || 'webdj';
-  const finalPassword = dynamicPassword || (useUnifiedLogin ? unifiedPassword : getConfigValue('VITE_AZURACAST_DJ_PASSWORD')) || 'webdj123';
+  // ⚠️ finalUsername/finalPassword werden nicht mehr verwendet, da Backend-Proxy die Auth übernimmt!
+  // Fallback-Werte für alte Code-Pfade (werden nicht mehr an Backend gesendet):
+  const finalUsername = dynamicUsername || 'webdj'; // Fallback, wird vom Backend ignoriert
+  const finalPassword = dynamicPassword || 'webdj123'; // Fallback, wird vom Backend ignoriert
   
   const config = {
     servers,

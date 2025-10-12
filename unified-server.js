@@ -89,6 +89,7 @@ app.get('/api/config', (req, res) => {
     deckConfiguration: process.env.VITE_DECK_CONFIGURATION || 'four-decks',
   };
   
+  // Return config directly (config-loader.ts expects this format)
   res.json(config);
 });
 
@@ -965,49 +966,6 @@ app.get('/api/setup-status', async (req, res) => {
     } catch (error) {
         console.error('❌ Error checking setup status:', error);
         res.status(500).json({ error: 'Failed to check setup status' });
-    }
-});
-
-// Runtime Configuration API - provides config values to frontend
-app.get('/api/config', async (req, res) => {
-    try {
-        // In Docker: persistentes Volume verwenden, sonst aktuelles Verzeichnis
-        const isDocker = process.env.DOCKER_ENV === 'true';
-        const envDir = isDocker ? '/app/docker-data' : __dirname;
-        const envPath = path.join(envDir, '.env');
-        
-        console.log(`📡 Loading config from: ${envPath} (Docker: ${isDocker})`);
-        
-        try {
-            const envContent = await fs.readFile(envPath, 'utf8');
-            
-            // Parse .env content
-            const config = {};
-            const lines = envContent.split('\n');
-            
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
-                    const [key, ...valueParts] = trimmed.split('=');
-                    const value = valueParts.join('=').trim();
-                    
-                    // Only expose VITE_ variables to frontend (for security)
-                    if (key.startsWith('VITE_')) {
-                        config[key] = value;
-                    }
-                }
-            }
-            
-            console.log(`📋 Sending config to frontend:`, Object.keys(config));
-            res.json({ success: true, config });
-            
-        } catch (fileError) {
-            console.log('📝 No .env file found, sending empty config');
-            res.json({ success: true, config: {} });
-        }
-    } catch (error) {
-        console.error('❌ Error loading config:', error);
-        res.status(500).json({ error: 'Failed to load configuration' });
     }
 });
 

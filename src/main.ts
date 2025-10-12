@@ -47,7 +47,7 @@ async function initializeConfig() {
 // Helper function to get config value (runtime config from backend takes precedence)
 function getConfigValue(key: string): string | undefined {
   // First: Runtime config from backend (secure!)
-  if (runtimeConfig[key]) {
+  if (key in runtimeConfig) {
     return runtimeConfig[key];
   }
   
@@ -475,6 +475,9 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
   }
   
   console.log(`✅ Player ${side.toUpperCase()} deck cleared completely`);
+  
+  // Update library markers to remove deck indicator
+  markSongsInLibrary();
 }
 
 // Get comprehensive deck state information
@@ -512,6 +515,12 @@ function getDeckState(side: 'a' | 'b' | 'c' | 'd'): 'empty' | 'loading' | 'ready
   
   // Track is loaded and ready to play
   return 'ready';
+}
+
+// Check if a deck is currently playing
+function isDeckPlaying(side: 'a' | 'b' | 'c' | 'd'): boolean {
+  const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+  return audio && !audio.paused && audio.currentTime > 0 && !audio.ended;
 }
 
 // Check if deck is truly available for new content
@@ -1016,6 +1025,49 @@ const deckConfig = {
       wishboxFrame.style.display = shouldShowCD ? '' : 'none';
     }
     
+    // Auto-Queue Management for C+D
+    if (!shouldShowCD) {
+      // Deactivate auto-queue for C+D when hidden
+      if (autoQueueConfig.deckPairCD) {
+        console.log('⏸️ Deactivating Auto-Queue for C+D (decks hidden)');
+        autoQueueConfig.deckPairCD = false;
+        
+        // Clear C+D decks using eject
+        clearPlayerDeck('c');
+        clearPlayerDeck('d');
+        
+        // Update auto-queue button state
+        const cdButton = document.getElementById('auto-queue-cd') as HTMLButtonElement;
+        if (cdButton) {
+          cdButton.classList.remove('active');
+        }
+        
+        // Reset deck assignments for C+D
+        resetDeckAssignments(['c', 'd']);
+      }
+    } else {
+      // When showing C+D: activate auto-queue and fill decks
+      if (autoQueueConfig.deckPairAB && queue.length > 0) {
+        console.log('🎵 Activating Auto-Queue for C+D (decks shown)');
+        autoQueueConfig.deckPairCD = true;
+        
+        // Update auto-queue button state
+        const cdButton = document.getElementById('auto-queue-cd') as HTMLButtonElement;
+        if (cdButton) {
+          cdButton.classList.add('active');
+        }
+        
+        // Synchronize and prepare C+D decks
+        synchronizeDecksWithQueue(['c', 'd']);
+        prepareDecksOnActivation(['c', 'd']);
+        
+        // Immediately check and fill empty decks
+        setTimeout(() => {
+          checkAndFillEmptyDecks();
+        }, 100);
+      }
+    }
+    
     // Update toggle button if it exists
     if (deckToggleBtn) {
       const btnText = deckToggleBtn.querySelector('.deck-toggle-text');
@@ -1069,7 +1121,7 @@ function initializePlayerDecks() {
   // Setup Wizard labels for similar songs
   setupWizardLabels();
   
-  // Mark that we need to setup audio event listeners later
+  // Mark that we need to setup audio event listeners laterwishbox-frame
   setTimeout(() => {
     console.log('🎵 Audio event listeners will be setup in main DOMContentLoaded...');
   }, 100);
@@ -1238,25 +1290,32 @@ function displaySimilarSongs(songs: OpenSubsonicSong[], songTitle: string, artis
       <div class="song-duration">${formatTime(song.duration || 0)}</div>
     `;
     
-    // Add double-click handler for loading into players
+    // Add double-click handler to add to queue
     songElement.addEventListener('dblclick', () => {
-      // Find first available player (not playing)
-      let targetPlayer: 'a' | 'b' | 'c' | 'd' | null = null;
-      for (const side of ['a', 'b', 'c', 'd'] as const) {
-        if (!playerStates[side].isPlaying) {
-          targetPlayer = side;
-          break;
-        }
+      // Check if song is already in queue
+      if (isSongInQueue(song.id)) {
+        console.log(`⚠️ Song already in queue: ${song.title}`);
+        return;
       }
       
-      // If all players are playing, use player A
-      if (!targetPlayer) {
-        targetPlayer = 'a';
-        console.log('All players busy, loading to player A');
+      // Check if song is already on a deck
+      const deck = getSongDeck(song.id);
+      if (deck) {
+        console.log(`⚠️ Song already on deck ${deck.toUpperCase()}: ${song.title}`);
+        return;
       }
       
-      console.log(`Loading similar song "${song.title}" to player ${targetPlayer.toUpperCase()}`);
-      loadTrackToPlayer(targetPlayer, song, false);
+      console.log(`Adding similar song "${song.title}" to queue`);
+      
+      // Add song to end of queue
+      queue.push(createSongQueueItem(song));
+      updateQueueDisplay();
+      
+      // Visual feedback
+      console.log(`✓ Added to queue: ${song.title}`);
+      
+      // Update library markers
+      markSongsInLibrary();
     });
     
     universalContainer.appendChild(songElement);
@@ -2147,6 +2206,59 @@ function createMicrophoneQueueItem(): QueueItem {
   };
 }
 
+// Check if song is already in queue
+function isSongInQueue(songId: string): boolean {
+  return queue.some(item => isSongQueueItem(item) && item.song.id === songId);
+}
+
+// Check if song is loaded on any deck and return deck letter
+function getSongDeck(songId: string): 'a' | 'b' | 'c' | 'd' | null {
+  for (const deck of ['a', 'b', 'c', 'd'] as const) {
+    const audio = document.getElementById(`audio-${deck}`) as HTMLAudioElement;
+    if (audio?.dataset.songId === songId) {
+      return deck;
+    }
+  }
+  return null;
+}
+
+// Mark songs in library browser with deck colors
+function markSongsInLibrary() {
+  // Get all song elements in library
+  const songElements = document.querySelectorAll('.track-item, .track-item-oneline, .song-row, .unified-song-item');
+  
+  songElements.forEach((element) => {
+    const el = element as HTMLElement;
+    const songId = el.dataset.songId;
+    
+    if (!songId) return;
+    
+    // Remove all existing deck markers
+    el.classList.remove('in-queue', 'on-deck-a', 'on-deck-b', 'on-deck-c', 'on-deck-d');
+    el.style.removeProperty('border-left');
+    
+    // Check if song is on a deck
+    const deck = getSongDeck(songId);
+    if (deck) {
+      el.classList.add(`on-deck-${deck}`);
+      const deckColors = {
+        'a': '#ff6b6b',
+        'b': '#4ecdc4', 
+        'c': '#ffd93d',
+        'd': '#95e1d3'
+      };
+      el.style.borderLeft = `4px solid ${deckColors[deck]}`;
+      return;
+    }
+    
+    // Check if song is in queue
+    if (isSongInQueue(songId)) {
+      el.classList.add('in-queue');
+      el.style.borderLeft = '4px solid #7289da';
+    }
+  });
+}
+
 function isSongQueueItem(item: QueueItem): item is QueueItem & { song: OpenSubsonicSong } {
   return item.type === 'song' && !!item.song;
 }
@@ -2210,12 +2322,25 @@ async function checkConfigurationAndInitialize() {
       const configResponse = await fetch('/api/config');
       const configData = await configResponse.json();
       
-      if (configData.success && configData.config) {
-        console.log('📡 Runtime config loaded:', configData.config);
+      // API returns config directly (not wrapped in { success: true, config: {...} })
+      if (configData && configData.opensubsonic) {
+        console.log('📡 Runtime config loaded:', configData);
         
-        // Store runtime config globally
-        runtimeConfig = configData.config;
-        (window as any).runtimeConfig = configData.config;
+        // Map backend config to old VITE_* format for compatibility
+        runtimeConfig = {
+          'VITE_OPENSUBSONIC_URL': configData.opensubsonic.url,
+          'VITE_OPENSUBSONIC_USERNAME': configData.opensubsonic.username,
+          'VITE_AZURACAST_SERVERS': configData.azuracast.servers,
+          'VITE_AZURACAST_STATION_ID': configData.azuracast.stationId,
+          'VITE_DISCORD_CHANNEL_ID': configData.discord.channelId,
+          'VITE_DISCORD_GUILD_ID': configData.discord.guildId,
+          'VITE_STREAM_BITRATE': configData.stream.bitrate,
+          'VITE_STREAM_SAMPLE_RATE': configData.stream.sampleRate,
+          'VITE_DECK_CONFIGURATION': configData.deckConfiguration,
+          'VITE_USE_UNIFIED_LOGIN': String(configData.unifiedLogin.enabled),
+        };
+        
+        (window as any).runtimeConfig = runtimeConfig;
         (window as any).getConfigValue = getConfigValue;
         
         console.log('🔄 Runtime configuration stored globally');
@@ -4195,6 +4320,9 @@ function displaySearchResults(results: any, addToHistory: boolean = true) {
   }
   
   console.log('Search results displayed with MediaContainer');
+  
+  // Mark songs that are in queue or on deck
+  setTimeout(() => markSongsInLibrary(), 100);
 }
 
 // Zurück zu den letzten Suchergebnissen
@@ -4414,7 +4542,7 @@ function addSongClickListeners(container: Element) {
     
     console.log(`Setting up song click ${index}: ${songTitle} (ID: ${songId})`);
     
-    // Double-click to load song to available player
+    // Double-click to add song to queue
     element.addEventListener('dblclick', async (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -4426,34 +4554,59 @@ function addSongClickListeners(container: Element) {
       
       console.log(`Song double-clicked: ${songTitle} (ID: ${songId})`);
       
+      // Check if song is already in queue
+      if (isSongInQueue(songId)) {
+        console.log(`⚠️ Song already in queue: ${songTitle}`);
+        return;
+      }
+      
+      // Check if song is already on a deck
+      const deck = getSongDeck(songId);
+      if (deck) {
+        console.log(`⚠️ Song already on deck ${deck.toUpperCase()}: ${songTitle}`);
+        return;
+      }
+      
       try {
-        // Find song in current songs list
-        const song = findSongById(songId);
+        // Try to find song in current songs list first
+        let song = findSongById(songId);
+        
+        // If not found, build song object from DOM element data
         if (!song) {
-          console.error('Could not find song in current songs');
-          return;
+          console.log('Building song from DOM element data');
+          const el = element as HTMLElement;
+          const artist = el.dataset.songArtist || 
+                        el.querySelector('.track-artist')?.textContent || 
+                        'Unknown Artist';
+          const album = el.dataset.songAlbum || 
+                       el.querySelector('.track-album')?.textContent || 
+                       'Unknown Album';
+          const coverArt = el.dataset.coverArt;
+          
+          song = {
+            id: songId,
+            title: songTitle,
+            artist: artist,
+            album: album,
+            duration: 0,
+            size: 0,
+            suffix: 'mp3',
+            bitRate: 0,
+            coverArt: coverArt
+          };
         }
         
-        // Find first available player (not playing)
-        let targetPlayer: 'a' | 'b' | 'c' | 'd' | null = null;
-        for (const side of ['a', 'b', 'c', 'd'] as const) {
-          if (!playerStates[side].isPlaying) {
-            targetPlayer = side;
-            break;
-          }
-        }
+        // Add song to end of queue
+        queue.push(createSongQueueItem(song));
+        updateQueueDisplay();
         
-        // If all players are playing, use player A
-        if (!targetPlayer) {
-          targetPlayer = 'a';
-          console.log('All players busy, loading to player A');
-        }
+        console.log(`✓ Added to queue: ${song.title}`);
         
-        console.log(`Loading song to player ${targetPlayer.toUpperCase()}`);
-        loadTrackToPlayer(targetPlayer, song, false);
+        // Update library markers
+        markSongsInLibrary();
         
       } catch (error) {
-        console.error('Error loading song to player:', error);
+        console.error('Error adding song to queue:', error);
       }
     });
     
@@ -4470,9 +4623,12 @@ function addSongClickListeners(container: Element) {
       allSongs.forEach(song => song.classList.remove('selected'));
       element.classList.add('selected');
       
-      console.log(`Song selected: ${songTitle} (Double-click to load to player)`);
+      console.log(`Song selected: ${songTitle} (Double-click to add to queue)`);
     });
   });
+  
+  // Mark songs after setting up listeners
+  setTimeout(() => markSongsInLibrary(), 100);
 }
 
 // Album Click Listeners hinzufügen
@@ -4923,6 +5079,9 @@ function updateQueueDisplay() {
   
   // Auto-prepare decks when queue gets new songs
   checkAndPrepareDecksAfterQueueUpdate();
+  
+  // Update library markers to show queued/playing songs
+  markSongsInLibrary();
 }
 
 // Check and prepare decks automatically when queue is updated
@@ -5006,22 +5165,25 @@ function setupQueueItemDropZone(wrapper: HTMLElement, index: number) {
     e.preventDefault();
     const dragEvent = e as DragEvent;
     
-    // Only handle queue reordering
+    // Handle both queue reordering AND library songs
     const data = dragEvent.dataTransfer?.getData('application/json');
     if (!data) return;
     
     try {
       const dragData = JSON.parse(data);
       
-      // Akzeptiere: type='song' mit queueIndex (Queue-Songs) ODER type='queue-microphone'
-      // Ignoriere Library-Songs (type='song' OHNE queueIndex)
+      // Akzeptiere: 
+      // 1. Queue-Songs (type='song' mit queueIndex)
+      // 2. Queue-Microphone (type='queue-microphone')
+      // 3. Library-Songs (type='song' OHNE queueIndex) - NEU!
       const isQueueSong = dragData.type === 'song' && dragData.queueIndex !== undefined;
       const isQueueMic = dragData.type === 'queue-microphone';
+      const isLibrarySong = dragData.type === 'song' && dragData.queueIndex === undefined;
       
-      if (!isQueueSong && !isQueueMic) return;
+      if (!isQueueSong && !isQueueMic && !isLibrarySong) return;
       
-      // Don't allow dropping on self
-      if (dragData.queueIndex === index) return;
+      // Don't allow dropping on self (nur für Queue-Items relevant)
+      if (isQueueSong && dragData.queueIndex === index) return;
       
       // Determine drop position based on mouse position
       const rect = wrapper.getBoundingClientRect();
@@ -5040,7 +5202,7 @@ function setupQueueItemDropZone(wrapper: HTMLElement, index: number) {
         wrapper.classList.add('drop-after');
       }
       
-      dragEvent.dataTransfer!.dropEffect = 'move';
+      dragEvent.dataTransfer!.dropEffect = isLibrarySong ? 'copy' : 'move';
     } catch (error) {
       console.error('Error parsing drag data:', error);
     }
@@ -5061,15 +5223,12 @@ function setupQueueItemDropZone(wrapper: HTMLElement, index: number) {
     try {
       const dragData = JSON.parse(data);
       
-      // Akzeptiere: type='song' mit queueIndex (Queue-Songs) ODER type='queue-microphone'
-      // Ignoriere Library-Songs (type='song' OHNE queueIndex)
+      // Akzeptiere Queue-Songs, Microphone UND Library-Songs
       const isQueueSong = dragData.type === 'song' && dragData.queueIndex !== undefined;
       const isQueueMic = dragData.type === 'queue-microphone';
+      const isLibrarySong = dragData.type === 'song' && dragData.queueIndex === undefined;
       
-      if (!isQueueSong && !isQueueMic) return;
-      
-      const sourceIndex = dragData.queueIndex;
-      if (sourceIndex === index) return; // Can't drop on self
+      if (!isQueueSong && !isQueueMic && !isLibrarySong) return;
       
       // Determine target position
       const rect = wrapper.getBoundingClientRect();
@@ -5077,6 +5236,18 @@ function setupQueueItemDropZone(wrapper: HTMLElement, index: number) {
       const dropBefore = dragEvent.clientY < midpoint;
       
       let targetIndex = dropBefore ? index : index + 1;
+      
+      // Handle Library Song Drop (insert into queue at position)
+      if (isLibrarySong) {
+        console.log(`📥 Dropping library song at queue position ${targetIndex}`);
+        insertLibrarySongIntoQueue(dragData.song, targetIndex);
+        wrapper.classList.remove('drop-before', 'drop-after');
+        return;
+      }
+      
+      // Handle Queue Reordering
+      const sourceIndex = dragData.queueIndex;
+      if (sourceIndex === index) return; // Can't drop on self
       
       // Adjust target index if moving from before to after
       if (sourceIndex < targetIndex) {
@@ -5099,33 +5270,120 @@ function setupQueueItemDropZone(wrapper: HTMLElement, index: number) {
 
 // Reorder queue items and recalculate deck assignments  
 function reorderQueueItem(sourceIndex: number, targetIndex: number) {
+  console.log(`\n🔄 ═══════════════════════════════════════════════════════════`);
+  console.log(`📝 QUEUE REORDER STARTED`);
+  console.log(`   Source Index: ${sourceIndex} → Target Index: ${targetIndex}`);
+  
   if (sourceIndex === targetIndex || sourceIndex < 0 || targetIndex < 0) {
+    console.log(`   ⏭️ Skipping: No change needed`);
     return; // No change needed
   }
   
   if (sourceIndex >= queue.length || targetIndex > queue.length) {
-    console.error('Invalid queue indices for reordering');
+    console.error(`   ❌ Invalid queue indices for reordering`);
     return;
   }
+  
+  // Log current queue state
+  console.log(`   Current Queue (${queue.length} items):`);
+  queue.forEach((item, idx) => {
+    const name = getQueueItemDisplayName(item);
+    const deck = isSongQueueItem(item) ? item.assignedToDeck : null;
+    console.log(`      ${idx}: "${name}" ${deck ? `→ Deck ${deck.toUpperCase()}` : '(unassigned)'}`);
+  });
   
   // Check if we're trying to move an item before a currently playing song
   const protection = protectCurrentlyPlayingSong(sourceIndex, targetIndex);
   if (protection.blocked) {
-    console.log(`🚫 Reorder blocked: ${protection.reason}`);
+    console.log(`   🚫 Reorder blocked: ${protection.reason}`);
     targetIndex = protection.adjustedTarget;
   }
   
   // Perform the reordering
   const [movedItem] = queue.splice(sourceIndex, 1);
+  const movedName = getQueueItemDisplayName(movedItem);
   queue.splice(targetIndex, 0, movedItem);
   
-  console.log(`✅ Queue reordered: moved "${getQueueItemDisplayName(movedItem)}" from position ${sourceIndex} to ${targetIndex}`);
+  console.log(`   ✅ Moved: "${movedName}" from position ${sourceIndex} → ${targetIndex}`);
   
-  // Recalculate deck assignments based on new order
+  // Log new queue state
+  console.log(`   New Queue Order:`);
+  queue.forEach((item, idx) => {
+    const name = getQueueItemDisplayName(item);
+    console.log(`      ${idx}: "${name}"`);
+  });
+  
+  // Recalculate deck assignments and reorganize decks to match new queue order
+  console.log(`   🔄 Recalculating deck assignments...`);
   recalculateDeckAssignments();
+  
+  // Trigger immediate queue sync
+  console.log(`   🎯 Triggering immediate queue sync...`);
+  triggerQueueSync('reorder');
   
   // Update display
   updateQueueDisplay();
+  console.log(`🔄 ═══════════════════════════════════════════════════════════\n`);
+}
+
+/**
+ * Insert a library song into the queue at a specific position
+ * Handles deck reorganization if needed
+ */
+function insertLibrarySongIntoQueue(song: OpenSubsonicSong, targetIndex: number) {
+  console.log(`\n➕ ═══════════════════════════════════════════════════════════`);
+  console.log(`📝 QUEUE INSERT STARTED`);
+  console.log(`   Song: "${song.title}"`);
+  console.log(`   Target Position: ${targetIndex}`);
+  
+  // Check if song is already in queue
+  if (isSongInQueue(song.id)) {
+    console.log(`   ⚠️ Song is already in queue - ABORT`);
+    return;
+  }
+  
+  // Check if song is already on a deck
+  const deck = getSongDeck(song.id);
+  if (deck) {
+    console.log(`   ⚠️ Song is already on deck ${deck.toUpperCase()} - ABORT`);
+    return;
+  }
+  
+  // Create queue item
+  const newItem = createSongQueueItem(song);
+  
+  // Check protection: can't insert before currently playing song
+  const protection = protectCurrentlyPlayingSong(-1, targetIndex);
+  if (protection.blocked) {
+    console.log(`   🚫 Insert blocked: ${protection.reason}`);
+    targetIndex = protection.adjustedTarget;
+  }
+  
+  // Insert at position
+  queue.splice(targetIndex, 0, newItem);
+  
+  console.log(`   ✅ Inserted at position ${targetIndex}`);
+  console.log(`   New Queue (${queue.length} items):`);
+  queue.forEach((item, idx) => {
+    const name = getQueueItemDisplayName(item);
+    console.log(`      ${idx}: "${name}"`);
+  });
+  
+  // Recalculate deck assignments - songs after this position need to be reassigned
+  console.log(`   🔄 Recalculating deck assignments...`);
+  recalculateDeckAssignments();
+  
+  // Trigger immediate queue sync
+  console.log(`   🎯 Triggering immediate queue sync...`);
+  triggerQueueSync('insert');
+  
+  // Update display
+  updateQueueDisplay();
+  
+  // Update library markers
+  markSongsInLibrary();
+  
+  console.log(`➕ ═══════════════════════════════════════════════════════════\n`);
 }
 
 // Setup queue drop zones for reordering
@@ -5267,48 +5525,141 @@ function findCurrentlyPlayingQueueIndex(): number {
 }
 
 // Recalculate deck assignments after queue reordering
-function recalculateDeckAssignments() {
-  console.log('🔄 Recalculating deck assignments after queue reorder...');
+function recalculateDeckAssignments(silent: boolean = false) {
+  if (!silent) {
+    console.log(`\n🧮 ═══════════════════════════════════════════════════════════`);
+    console.log(`📊 RECALCULATING DECK ASSIGNMENTS`);
+  }
   
   // Clear all existing assignments first
-  queue.forEach(item => {
-    item.assignedToDeck = undefined;
+  queue.forEach((item, idx) => {
+    const oldDeck = item.assignedToDeck;
+    item.assignedToDeck = null;
+    if (oldDeck && isSongQueueItem(item) && !silent) {
+      console.log(`   Cleared: "${item.song?.title}" was on Deck ${oldDeck.toUpperCase()}`);
+    }
   });
   
   // Only reassign if auto-queue is active
   if (!autoQueueConfig.deckPairAB && !autoQueueConfig.deckPairCD) {
-    console.log('📝 Auto-queue inactive, no deck assignments needed');
+    if (!silent) {
+      console.log(`   ⏸️ Auto-queue inactive, no assignments needed`);
+      console.log(`🧮 ═══════════════════════════════════════════════════════════\n`);
+    }
     return;
   }
   
-  // Get available decks based on active pairs
-  const availableDecks: ('a' | 'b' | 'c' | 'd')[] = [];
-  if (autoQueueConfig.deckPairAB) {
-    availableDecks.push('a', 'b');
-  }
-  if (autoQueueConfig.deckPairCD) {
-    availableDecks.push('c', 'd');
+  // Get rotation order based on active pairs
+  const rotationOrder = getActiveRotationOrder();
+  
+  if (rotationOrder.length === 0) {
+    if (!silent) {
+      console.log(`   ⚠️ No active deck pairs`);
+      console.log(`🧮 ═══════════════════════════════════════════════════════════\n`);
+    }
+    return;
   }
   
-  // Assign songs to decks in alternating pattern, skipping microphone placeholders
+  if (!silent) {
+    console.log(`   Active Rotation: [${rotationOrder.map(d => d.toUpperCase()).join(' → ')}]`);
+  }
+  
+  // Assign songs to decks following rotation order, skipping microphone placeholders
+  // IMPORTANT: Every song gets a deck assignment (cycling through rotation)
+  // But only the first N songs will actually be LOADED on decks
   let deckIndex = 0;
   for (let i = 0; i < queue.length; i++) {
     const queueItem = queue[i];
     
     // Skip microphone placeholders for deck assignment
     if (isMicrophoneQueueItem(queueItem)) {
-      console.log(`🎤 Skipping microphone placeholder at position ${i}`);
+      if (!silent) {
+        console.log(`   🎤 Position ${i}: Microphone (skipped)`);
+      }
       continue;
     }
     
-    // Assign to next available deck
-    const targetDeck = availableDecks[deckIndex % availableDecks.length];
+    // Assign to next deck in rotation (cycles through: A, B, C, D, A, B, ...)
+    const targetDeck = rotationOrder[deckIndex % rotationOrder.length];
     queueItem.assignedToDeck = targetDeck;
     
-    console.log(`📍 Assigned "${getQueueItemDisplayName(queueItem)}" to deck ${targetDeck.toUpperCase()}`);
+    if (!silent) {
+      const songName = isSongQueueItem(queueItem) ? queueItem.song?.title : getQueueItemDisplayName(queueItem);
+      const status = deckIndex < rotationOrder.length ? '(will load)' : '(queued)';
+      console.log(`   ✅ Position ${i}: "${songName}" → Deck ${targetDeck.toUpperCase()} ${status}`);
+    }
     
     deckIndex++;
   }
+  
+  if (!silent) {
+    console.log(`   📊 Total Assigned: ${deckIndex} songs to ${rotationOrder.length} decks (${Math.min(deckIndex, rotationOrder.length)} will be loaded)`);
+    console.log(`🧮 ═══════════════════════════════════════════════════════════\n`);
+  }
+}
+
+/**
+ * Calculate the queue position that corresponds to a specific deck
+ * Takes into account rotation order and currently playing songs
+ */
+function calculateQueuePositionForDeck(targetDeck: 'a' | 'b' | 'c' | 'd'): number | null {
+  const rotationOrder = getActiveRotationOrder();
+  
+  if (!rotationOrder.includes(targetDeck)) {
+    console.log(`⚠️ Deck ${targetDeck.toUpperCase()} is not in active rotation`);
+    return null;
+  }
+  
+  // Find the index of target deck in rotation
+  const deckIndexInRotation = rotationOrder.indexOf(targetDeck);
+  
+  // Find currently playing deck
+  const playingDeck = getCurrentPlayingDeck();
+  
+  // Count number of song queue items (skip microphone placeholders)
+  let songQueueItems = 0;
+  let targetPosition = deckIndexInRotation;
+  
+  // If there's a playing deck, adjust position
+  if (playingDeck) {
+    const playingDeckIndex = rotationOrder.indexOf(playingDeck);
+    
+    if (playingDeckIndex !== -1) {
+      // Target deck comes after playing deck in rotation
+      if (deckIndexInRotation > playingDeckIndex) {
+        // Position = (deckIndex - playingDeckIndex)
+        // This accounts for the playing song being at position 0
+        targetPosition = deckIndexInRotation - playingDeckIndex;
+      } else {
+        // Target deck comes before playing deck in rotation
+        // Can't insert before playing song, so insert after
+        targetPosition = 1 + deckIndexInRotation;
+      }
+    }
+  }
+  
+  // Count actual position in queue considering microphone placeholders
+  let actualQueuePosition = 0;
+  let songCount = 0;
+  
+  for (let i = 0; i < queue.length; i++) {
+    if (isSongQueueItem(queue[i])) {
+      if (songCount === targetPosition) {
+        actualQueuePosition = i;
+        break;
+      }
+      songCount++;
+    }
+  }
+  
+  // If we didn't find enough songs, append at end
+  if (songCount < targetPosition) {
+    actualQueuePosition = queue.length;
+  }
+  
+  console.log(`📍 Calculated queue position for deck ${targetDeck.toUpperCase()}: ${actualQueuePosition} (rotation index: ${deckIndexInRotation}, playing: ${playingDeck?.toUpperCase() || 'none'})`);
+  
+  return actualQueuePosition;
 }
 
 // Get display name for queue item (for logging)
@@ -5436,10 +5787,22 @@ function setupAutoQueueControls() {
       synchronizeDecksWithQueue(['a', 'b']);
       // Immediate preparation: check if A or B is playing and prepare the other
       prepareDecksOnActivation(['a', 'b']);
+      
+      // Recalculate and trigger immediate sync
+      recalculateDeckAssignments();
+      triggerQueueSync('enable-ab');
+      checkAndFillEmptyDecks();
     } else {
       console.log('⏸️ Auto-Queue disabled for Deck A+B');
-      // Reset deck assignments for A+B when disabled
+      // Reset deck assignments for A+B when disabled (ejecting queue songs)
       resetDeckAssignments(['a', 'b']);
+      
+      // Reorganize remaining decks if C+D still active
+      if (autoQueueConfig.deckPairCD) {
+        recalculateDeckAssignments();
+        triggerQueueSync('disable-ab');
+        checkAndFillEmptyDecks();
+      }
     }
   });
   
@@ -5454,15 +5817,30 @@ function setupAutoQueueControls() {
       synchronizeDecksWithQueue(['c', 'd']);
       // Immediate preparation: check if C or D is playing and prepare the other
       prepareDecksOnActivation(['c', 'd']);
+      
+      // Recalculate and trigger immediate sync
+      recalculateDeckAssignments();
+      triggerQueueSync('enable-cd');
+      checkAndFillEmptyDecks();
     } else {
       console.log('⏸️ Auto-Queue disabled for Deck C+D');
-      // Reset deck assignments for C+D when disabled
+      // Reset deck assignments for C+D when disabled (ejecting queue songs)
       resetDeckAssignments(['c', 'd']);
+      
+      // Reorganize remaining decks if A+B still active
+      if (autoQueueConfig.deckPairAB) {
+        recalculateDeckAssignments();
+        triggerQueueSync('disable-cd');
+        checkAndFillEmptyDecks();
+      }
     }
   });
   
   // Initial state update
   updateButtonStates();
+  
+  // Start the Auto-Queue Watcher
+  startAutoQueueWatcher();
   
   // Microphone Add Button
   const micAddButton = document.getElementById('queue-mic-add-btn') as HTMLButtonElement;
@@ -5594,19 +5972,57 @@ function reassignQueueToDecks() {
 
 // Reset deck assignments when queue pair is disabled
 function resetDeckAssignments(deckPair: ('a' | 'b' | 'c' | 'd')[]) {
-  console.log(`🔄 Resetting deck assignments for: [${deckPair.join(', ').toUpperCase()}]`);
+  console.log(`\n🔄 ═══════════════════════════════════════════════════════════`);
+  console.log(`🔄 RESETTING DECK ASSIGNMENTS FOR: [${deckPair.map(d => d.toUpperCase()).join(', ')}]`);
   
-  // Clear assignments for the specified decks
+  // Step 1: Clear queue assignments for these decks
+  console.log(`   Step 1: Clearing queue assignments...`);
   queue.forEach(queueItem => {
     if (queueItem.assignedToDeck && deckPair.includes(queueItem.assignedToDeck)) {
       const songTitle = isSongQueueItem(queueItem) && queueItem.song ? queueItem.song.title : 'Item';
-      console.log(`🔄 Clearing assignment: ${songTitle} from Deck ${queueItem.assignedToDeck.toUpperCase()}`);
+      console.log(`      Clearing: "${songTitle}" from Deck ${queueItem.assignedToDeck.toUpperCase()}`);
       queueItem.assignedToDeck = null;
     }
   });
   
+  // Step 2: Eject songs from these decks that ARE in the queue
+  console.log(`   Step 2: Ejecting queue songs from decks...`);
+  for (const deck of deckPair) {
+    const currentSong = getCurrentLoadedSong(deck);
+    
+    if (currentSong) {
+      // Check if this song is in the queue
+      const songInQueue = queue.some(item => 
+        isSongQueueItem(item) && item.song?.id === currentSong.id
+      );
+      
+      if (songInQueue) {
+        // Check if this deck is currently playing
+        const isPlaying = isDeckPlaying(deck);
+        
+        if (isPlaying) {
+          console.log(`      🛡️ Deck ${deck.toUpperCase()}: "${currentSong.title}" is PLAYING - protected (will not eject)`);
+        } else {
+          console.log(`      🗑️ Deck ${deck.toUpperCase()}: Ejecting "${currentSong.title}" (in queue, deck now inactive)`);
+          clearPlayerDeck(deck);
+        }
+      } else {
+        console.log(`      ✓ Deck ${deck.toUpperCase()}: "${currentSong.title}" is NOT in queue - keeping (manual load)`);
+      }
+    } else {
+      console.log(`      ✓ Deck ${deck.toUpperCase()}: Empty - no action needed`);
+    }
+  }
+  
+  // Step 3: Recalculate assignments for remaining active decks
+  console.log(`   Step 3: Recalculating assignments for active decks...`);
+  recalculateDeckAssignments();
+  
   // Update queue display to remove coloring
   updateQueueDisplay();
+  
+  console.log(`✅ Deck reset complete`);
+  console.log(`🔄 ═══════════════════════════════════════════════════════════\n`);
 }
 
 // Prepare decks immediately when auto-queue is activated
@@ -6774,6 +7190,712 @@ function isAutoQueueActiveForDeck(deck: 'a' | 'b' | 'c' | 'd'): boolean {
   }
 }
 
+/**
+ * Continuous Auto-Queue Watcher
+ * Monitors all decks and automatically fills empty ones when auto-queue is active
+ * Ensures queue order is always respected and maintained
+ */
+let autoQueueWatcherInterval: number | null = null;
+
+function startAutoQueueWatcher() {
+  if (autoQueueWatcherInterval !== null) {
+    console.log('🔄 Auto-Queue Watcher already running');
+    return;
+  }
+  
+  console.log('👁️ Starting Auto-Queue Watcher...');
+  
+  // Check every 2 seconds
+  autoQueueWatcherInterval = window.setInterval(() => {
+    checkAndFillEmptyDecks();
+  }, 2000);
+  
+  // Also start Queue Sync Watcher
+  startQueueSyncWatcher();
+}
+
+function stopAutoQueueWatcher() {
+  if (autoQueueWatcherInterval !== null) {
+    console.log('⏹️ Stopping Auto-Queue Watcher');
+    clearInterval(autoQueueWatcherInterval);
+    autoQueueWatcherInterval = null;
+  }
+  
+  // Also stop Queue Sync Watcher
+  stopQueueSyncWatcher();
+}
+
+/**
+ * Queue Sync Watcher
+ * Continuously monitors that decks match the queue order
+ * Protects playing songs from being ejected
+ * Runs independently and checks EVERY cycle
+ */
+let queueSyncWatcherInterval: number | null = null;
+
+function startQueueSyncWatcher() {
+  if (queueSyncWatcherInterval !== null) {
+    return;
+  }
+  
+  console.log('🔄 Starting Queue Sync Watcher (continuous monitoring)...');
+  
+  // Check EVERY 1 second continuously
+  queueSyncWatcherInterval = window.setInterval(() => {
+    // Only run if auto-queue is active
+    if (!isAutoQueueActive()) {
+      return;
+    }
+    
+    // Skip if no queue items
+    if (queue.length === 0) {
+      return;
+    }
+    
+    // Check if decks match queue order
+    validateAndFixRotation();
+  }, 1000);
+}
+
+function stopQueueSyncWatcher() {
+  if (queueSyncWatcherInterval !== null) {
+    console.log('⏹️ Stopping Queue Sync Watcher');
+    clearInterval(queueSyncWatcherInterval);
+    queueSyncWatcherInterval = null;
+  }
+}
+
+/**
+ * Trigger a queue sync immediately (for responsive UI)
+ * This is called after queue changes to ensure immediate response
+ */
+function triggerQueueSync(reason: string) {
+  console.log(`⚡ Immediate Queue Sync Triggered: ${reason}`);
+  
+  // Only run if auto-queue is active
+  if (!isAutoQueueActive()) {
+    return;
+  }
+  
+  // Skip if no queue items
+  if (queue.length === 0) {
+    return;
+  }
+  
+  // Execute immediately with verbose logging
+  validateAndFixRotation(true);
+}
+
+/**
+ * Check all decks and fill empty ones with tracks from queue
+ * Respects the rotation order: A→B→C→D→A
+ * ENSURES CORRECT ROTATION BY REORGANIZING IF NEEDED
+ */
+function checkAndFillEmptyDecks() {
+  // Only run if auto-queue is active for at least one deck pair
+  if (!isAutoQueueActive()) {
+    return;
+  }
+  
+  // Skip if no queue items available
+  if (queue.length === 0) {
+    return;
+  }
+  
+  // FIRST: Validate and fix rotation if needed
+  validateAndFixRotation();
+  
+  // Define rotation order based on active deck pairs
+  const rotationOrder = getActiveRotationOrder();
+  
+  // Determine which decks need to be filled
+  const decksToFill: ('a' | 'b' | 'c' | 'd')[] = [];
+  
+  for (const deck of rotationOrder) {
+    const deckState = getDeckState(deck);
+    const loadedSong = getCurrentLoadedSong(deck);
+    
+    // Deck needs a track if it's:
+    // 1. Empty (no track loaded)
+    // 2. Ready but not playing/paused (track ended)
+    // 3. In error state
+    if (deckState === 'empty' || deckState === 'ended' || deckState === 'error') {
+      decksToFill.push(deck);
+    }
+    // Also check if deck has a track but it's not in the queue anymore (was removed)
+    else if (loadedSong && deckState !== 'playing') {
+      const songInQueue = queue.find(item => 
+        isSongQueueItem(item) && item.song?.id === loadedSong.id
+      );
+      if (!songInQueue) {
+        // Track was removed from queue, deck should be considered empty
+        console.log(`🔄 Deck ${deck.toUpperCase()} has track not in queue, marking for refill`);
+        decksToFill.push(deck);
+      }
+    }
+  }
+  
+  // Fill empty decks in rotation order
+  if (decksToFill.length > 0) {
+    console.log(`🎯 Auto-Queue Watcher: Found ${decksToFill.length} decks to fill: [${decksToFill.map(d => d.toUpperCase()).join(', ')}]`);
+    
+    for (const deck of decksToFill) {
+      fillDeckFromQueue(deck);
+    }
+  }
+}
+
+/**
+ * Get active rotation order based on which deck pairs are active
+ */
+function getActiveRotationOrder(): ('a' | 'b' | 'c' | 'd')[] {
+  const isABActive = autoQueueConfig.deckPairAB;
+  const isCDActive = autoQueueConfig.deckPairCD;
+  
+  if (isABActive && isCDActive) {
+    // Both active: A→B→C→D
+    return ['a', 'b', 'c', 'd'];
+  } else if (isABActive) {
+    // Only A+B: A→B
+    return ['a', 'b'];
+  } else if (isCDActive) {
+    // Only C+D: C→D
+    return ['c', 'd'];
+  }
+  
+  return [];
+}
+
+/**
+ * Validate rotation and fix if songs are on wrong decks
+ * This ensures the queue order matches the deck rotation
+ * PROTECTS PLAYING SONGS - they will NEVER be ejected
+ * @param verbose - If true, logs everything. If false, only logs when changes are needed.
+ */
+function validateAndFixRotation(verbose: boolean = false) {
+  const rotationOrder = getActiveRotationOrder();
+  
+  if (rotationOrder.length === 0) {
+    return; // No active decks
+  }
+  
+  // Build expected deck content map: deck -> expected song ID
+  // CRITICAL: Only the FIRST N songs should be on decks (N = number of decks)
+  // The rest stay in queue but are not loaded yet
+  const expectedDeckContent = new Map<'a' | 'b' | 'c' | 'd', string | null>();
+  
+  // Initialize all decks as empty
+  for (const deck of rotationOrder) {
+    expectedDeckContent.set(deck, null);
+  }
+  
+  // Assign ONLY THE FIRST N songs to decks (where N = rotationOrder.length)
+  let rotationIndex = 0;
+  for (const item of queue) {
+    if (!isSongQueueItem(item) || !item.song) continue;
+    
+    // Only assign if we haven't filled all decks yet
+    if (rotationIndex < rotationOrder.length) {
+      const expectedDeck = rotationOrder[rotationIndex];
+      expectedDeckContent.set(expectedDeck, item.song.id);
+      rotationIndex++;
+    } else {
+      // All decks are full, remaining songs stay in queue
+      break;
+    }
+  }
+  
+  // Check if physical deck content matches expected content
+  let needsReorganization = false;
+  const mismatches: Array<{ deck: 'a' | 'b' | 'c' | 'd'; current: string | null; expected: string | null }> = [];
+  
+  for (const deck of rotationOrder) {
+    const currentSong = getCurrentLoadedSong(deck);
+    const currentSongId = currentSong?.id || null;
+    const expectedSongId = expectedDeckContent.get(deck) || null;
+    
+    // Check if deck content matches expected
+    if (currentSongId !== expectedSongId) {
+      // Don't count protected (playing) decks as mismatches for reorganization
+      const isPlaying = isDeckPlaying(deck);
+      if (!isPlaying) {
+        needsReorganization = true;
+        mismatches.push({
+          deck,
+          current: currentSongId,
+          expected: expectedSongId
+        });
+      }
+    }
+  }
+  
+  // Only log and reorganize if needed
+  if (needsReorganization || verbose) {
+    console.log(`\n🔍 ═══════════════════════════════════════════════════════════`);
+    console.log(`🎯 VALIDATING DECK ROTATION`);
+    console.log(`   Active Rotation: [${rotationOrder.map(d => d.toUpperCase()).join(' → ')}]`);
+    
+    // Log current deck states
+    console.log(`   Current Deck States:`);
+    for (const deck of rotationOrder) {
+      const currentSong = getCurrentLoadedSong(deck);
+      const deckState = getDeckState(deck);
+      const isPlaying = isDeckPlaying(deck);
+      
+      if (currentSong) {
+        console.log(`      Deck ${deck.toUpperCase()}: "${currentSong.title}" [${deckState}${isPlaying ? ', PLAYING' : ''}]`);
+      } else {
+        console.log(`      Deck ${deck.toUpperCase()}: Empty [${deckState}]`);
+      }
+    }
+    
+    // Log expected content
+    console.log(`   Expected Deck Content (FIRST ${rotationOrder.length} songs from queue):`);
+    let queuePos = 0;
+    for (const item of queue) {
+      if (!isSongQueueItem(item) || !item.song) continue;
+      
+      // Only show first N songs that should be on decks
+      if (queuePos < rotationOrder.length) {
+        const expectedDeck = rotationOrder[queuePos];
+        console.log(`      Queue Pos ${queuePos}: "${item.song.title}" → Deck ${expectedDeck.toUpperCase()}`);
+        queuePos++;
+      } else {
+        break; // Don't log songs that are queued but not loaded
+      }
+    }
+    
+    // Log mismatches
+    if (mismatches.length > 0) {
+      console.log(`   ❌ MISMATCHES DETECTED:`);
+      for (const mismatch of mismatches) {
+        const currentSong = queue.find(item => isSongQueueItem(item) && item.song?.id === mismatch.current)?.song?.title || 'empty';
+        const expectedSong = queue.find(item => isSongQueueItem(item) && item.song?.id === mismatch.expected)?.song?.title || 'empty';
+        console.log(`      Deck ${mismatch.deck.toUpperCase()}: Has "${currentSong}" but should have "${expectedSong}"`);
+      }
+    } else {
+      console.log(`   ✅ All decks match expected content`);
+    }
+    
+    console.log(`🔍 ═══════════════════════════════════════════════════════════\n`);
+  }
+  
+  if (needsReorganization) {
+    if (!verbose) {
+      console.log(`\n🔍 Queue Sync: ${mismatches.length} mismatch(es) detected, reorganizing...`);
+    }
+    reorganizeDecksBasedOnExpectedContent(expectedDeckContent, rotationOrder, verbose);
+  }
+}
+
+/**
+ * Reorganize decks based on expected content map
+ * This is simpler and more reliable than the old assignment-based system
+ * PROTECTS PLAYING SONGS - they will NEVER be ejected
+ */
+function reorganizeDecksBasedOnExpectedContent(
+  expectedDeckContent: Map<'a' | 'b' | 'c' | 'd', string | null>,
+  rotationOrder: ('a' | 'b' | 'c' | 'd')[],
+  verbose: boolean = false
+) {
+  if (verbose) {
+    console.log(`\n🔧 ═══════════════════════════════════════════════════════════`);
+    console.log(`🔄 REORGANIZING DECKS TO MATCH QUEUE ORDER`);
+  }
+  
+  // Step 1: Identify playing decks (MUST BE PROTECTED!)
+  const playingDecks = new Set<'a' | 'b' | 'c' | 'd'>();
+  for (const deck of rotationOrder) {
+    if (isDeckPlaying(deck)) {
+      const playingSong = getCurrentLoadedSong(deck);
+      playingDecks.add(deck);
+      if (verbose) {
+        console.log(`   🛡️ PROTECTED: Deck ${deck.toUpperCase()} is playing "${playingSong?.title}"`);
+      } else {
+        console.log(`🛡️ Deck ${deck.toUpperCase()} is playing "${playingSong?.title}" - protected`);
+      }
+    }
+  }
+  
+  // Step 2: Eject wrong songs from decks
+  if (verbose) {
+    console.log(`   Step 2: Ejecting wrong songs...`);
+  }
+  
+  for (const deck of rotationOrder) {
+    // Skip protected decks
+    if (playingDecks.has(deck)) {
+      continue;
+    }
+    
+    const currentSong = getCurrentLoadedSong(deck);
+    const expectedSongId = expectedDeckContent.get(deck);
+    
+    if (currentSong) {
+      const currentSongId = currentSong.id;
+      
+      // Deck has wrong song or shouldn't have any song
+      if (expectedSongId === null || currentSongId !== expectedSongId) {
+        const expectedSongTitle = expectedSongId 
+          ? (queue.find(item => isSongQueueItem(item) && item.song?.id === expectedSongId)?.song?.title || 'unknown')
+          : 'empty';
+        
+        if (verbose) {
+          console.log(`      🗑️ Deck ${deck.toUpperCase()}: Ejecting "${currentSong.title}" (should be "${expectedSongTitle}")`);
+        } else {
+          console.log(`🗑️ Deck ${deck.toUpperCase()}: Ejecting "${currentSong.title}"`);
+        }
+        
+        clearPlayerDeck(deck);
+        
+        // Unassign from queue
+        const queueItem = queue.find(item => isSongQueueItem(item) && item.song?.id === currentSongId);
+        if (queueItem) {
+          queueItem.assignedToDeck = null;
+        }
+      }
+    }
+  }
+  
+  // Step 3: Load correct songs to decks
+  if (verbose) {
+    console.log(`   Step 3: Loading correct songs...`);
+  }
+  
+  for (const deck of rotationOrder) {
+    // Skip protected decks
+    if (playingDecks.has(deck)) {
+      continue;
+    }
+    
+    const currentSong = getCurrentLoadedSong(deck);
+    const expectedSongId = expectedDeckContent.get(deck);
+    
+    // Deck should have a song but doesn't (or has wrong one after ejection)
+    if (expectedSongId && !currentSong) {
+      const queueItem = queue.find(item => isSongQueueItem(item) && item.song?.id === expectedSongId);
+      
+      if (queueItem && isSongQueueItem(queueItem) && queueItem.song) {
+        if (verbose) {
+          console.log(`      📥 Deck ${deck.toUpperCase()}: Loading "${queueItem.song.title}"`);
+        } else {
+          console.log(`📥 Deck ${deck.toUpperCase()}: Loading "${queueItem.song.title}"`);
+        }
+        
+        queueItem.assignedToDeck = deck;
+        loadTrackToPlayer(deck, queueItem.song, false);
+      }
+    }
+    // Deck already has correct song - just update assignment
+    else if (expectedSongId && currentSong && currentSong.id === expectedSongId) {
+      const queueItem = queue.find(item => isSongQueueItem(item) && item.song?.id === expectedSongId);
+      if (queueItem) {
+        queueItem.assignedToDeck = deck;
+        if (verbose) {
+          console.log(`      ✓ Deck ${deck.toUpperCase()}: Already has correct song "${currentSong.title}"`);
+        }
+      }
+    }
+  }
+  
+  // After reorganization, recalculate ALL assignments to ensure all songs have positions
+  // Use silent mode to avoid log spam
+  recalculateDeckAssignments(true);
+  
+  updateQueueDisplay();
+  
+  if (verbose) {
+    console.log(`   ✅ Reorganization complete`);
+    console.log(`🔧 ═══════════════════════════════════════════════════════════\n`);
+  } else {
+    console.log(`✅ Reorganization complete\n`);
+  }
+  
+  // Validate that all queue items have positions
+  validateQueuePositions();
+}
+
+/**
+ * Validate that all queue items have proper deck assignments
+ * This ensures no songs are "lost" without positions
+ */
+function validateQueuePositions() {
+  if (!isAutoQueueActive()) {
+    return; // No validation needed if auto-queue is off
+  }
+  
+  const rotationOrder = getActiveRotationOrder();
+  if (rotationOrder.length === 0) {
+    return;
+  }
+  
+  console.log(`\n📊 ═══════════════════════════════════════════════════════════`);
+  console.log(`📊 VALIDATING QUEUE POSITIONS`);
+  
+  let songCount = 0;
+  let assignedCount = 0;
+  let unassignedSongs: string[] = [];
+  
+  for (const item of queue) {
+    if (!isSongQueueItem(item) || !item.song) continue;
+    
+    songCount++;
+    
+    if (item.assignedToDeck) {
+      assignedCount++;
+      console.log(`   ✅ "${item.song.title}" → Deck ${item.assignedToDeck.toUpperCase()}`);
+    } else {
+      unassignedSongs.push(item.song.title);
+      console.log(`   ❌ "${item.song.title}" → UNASSIGNED!`);
+    }
+  }
+  
+  if (unassignedSongs.length === 0) {
+    console.log(`✅ All ${songCount} songs have deck assignments`);
+  } else {
+    console.log(`⚠️ ${unassignedSongs.length} of ${songCount} songs are UNASSIGNED!`);
+    console.log(`   This should not happen! Triggering recalculation...`);
+    recalculateDeckAssignments();
+  }
+  
+  console.log(`📊 ═══════════════════════════════════════════════════════════\n`);
+}
+
+/**
+ * OLD FUNCTION - DEPRECATED but kept for compatibility
+ * Use reorganizeDecksBasedOnExpectedContent instead
+ */
+function reorganizeDecksToMatchRotation(
+  assignedSongs: Array<{ queueItem: QueueItem; expectedDeck: 'a' | 'b' | 'c' | 'd' | null; currentDeck: 'a' | 'b' | 'c' | 'd' | null }>,
+  rotationOrder: ('a' | 'b' | 'c' | 'd')[],
+  verbose: boolean = false
+) {
+  if (verbose) {
+    console.log(`\n🔧 ═══════════════════════════════════════════════════════════`);
+    console.log(`🔄 REORGANIZING DECKS TO MATCH QUEUE ORDER`);
+  }
+  
+  // Step 0: Identify playing decks (MUST BE PROTECTED!)
+  const playingDecks = new Set<'a' | 'b' | 'c' | 'd'>();
+  for (const deck of rotationOrder) {
+    if (isDeckPlaying(deck)) {
+      const playingSong = getCurrentLoadedSong(deck);
+      playingDecks.add(deck);
+      if (verbose) {
+        console.log(`   🛡️ PROTECTED: Deck ${deck.toUpperCase()} is playing "${playingSong?.title}" - will NOT be ejected`);
+      } else {
+        console.log(`🛡️ Deck ${deck.toUpperCase()} is playing "${playingSong?.title}" - protected`);
+      }
+    }
+  }
+  
+  // Step 1: Build a map of what SHOULD be on each deck
+  if (verbose) {
+    console.log(`   Step 1: Building expected deck content map...`);
+  }
+  const expectedDeckContent = new Map<'a' | 'b' | 'c' | 'd', string | null>();
+  for (const deck of rotationOrder) {
+    expectedDeckContent.set(deck, null);
+  }
+  
+  for (const assignment of assignedSongs) {
+    if (assignment.expectedDeck && assignment.queueItem.song) {
+      const expectedSongId = assignment.queueItem.song.id;
+      expectedDeckContent.set(assignment.expectedDeck, expectedSongId);
+      console.log(`      Deck ${assignment.expectedDeck.toUpperCase()} should have: "${assignment.queueItem.song.title}" (ID: ${expectedSongId})`);
+    }
+  }
+  
+  // Step 2: Find ALL decks that need changes (eject OR load)
+  console.log(`   Step 2: Checking which decks need changes...`);
+  const decksToEject = new Set<'a' | 'b' | 'c' | 'd'>();
+  
+  // Check all active decks for mismatches
+  for (const deck of rotationOrder) {
+    const currentSong = getCurrentLoadedSong(deck);
+    const expectedSongId = expectedDeckContent.get(deck);
+    
+    // CRITICAL: Never eject playing decks!
+    if (playingDecks.has(deck)) {
+      console.log(`      Deck ${deck.toUpperCase()}: PLAYING - skipping (protected)`);
+      continue;
+    }
+    
+    // Deck has a song but shouldn't have it OR has wrong song
+    if (currentSong) {
+      if (expectedSongId === null || currentSong.id !== expectedSongId) {
+        const expectedSongName = assignedSongs.find(a => a.expectedDeck === deck)?.queueItem.song?.title || 'empty';
+        console.log(`      Deck ${deck.toUpperCase()}: Has "${currentSong.title}" but should have "${expectedSongName}" → EJECT`);
+        decksToEject.add(deck);
+      } else {
+        console.log(`      Deck ${deck.toUpperCase()}: Has correct song "${currentSong.title}" → KEEP`);
+      }
+    }
+    // Deck is empty but should have a song
+    else if (expectedSongId !== null) {
+      const expectedSongName = assignedSongs.find(a => a.expectedDeck === deck)?.queueItem.song?.title || 'unknown';
+      console.log(`      Deck ${deck.toUpperCase()}: Empty but should have "${expectedSongName}" → LOAD`);
+      // Don't add to eject set, we'll load it in step 4
+    } else {
+      console.log(`      Deck ${deck.toUpperCase()}: Empty and should be empty → OK`);
+    }
+  }
+  
+  // If no decks need ejecting, check if any need loading
+  if (decksToEject.size === 0) {
+    console.log(`   No decks need ejecting, checking if any need loading...`);
+    // Check if all expected songs are loaded
+    let allCorrect = true;
+    for (const deck of rotationOrder) {
+      const currentSong = getCurrentLoadedSong(deck);
+      const expectedSongId = expectedDeckContent.get(deck);
+      
+      if (expectedSongId !== null && (!currentSong || currentSong.id !== expectedSongId)) {
+        allCorrect = false;
+        break;
+      }
+    }
+    
+    if (allCorrect) {
+      console.log(`   ✅ All decks already correct, no action needed`);
+      console.log(`🔧 ═══════════════════════════════════════════════════════════\n`);
+      return;
+    }
+  }
+  
+  // Step 3: Eject songs from wrong decks (PROTECTED songs are already filtered out)
+  console.log(`   Step 3: Ejecting wrong songs from decks...`);
+  for (const deck of decksToEject) {
+    const loadedSong = getCurrentLoadedSong(deck);
+    if (loadedSong) {
+      console.log(`      �️ Ejecting "${loadedSong.title}" from Deck ${deck.toUpperCase()}`);
+      clearPlayerDeck(deck);
+      
+      // Unassign the song in queue
+      const queueItem = queue.find(item => 
+        isSongQueueItem(item) && item.song?.id === loadedSong.id
+      );
+      if (queueItem) {
+        queueItem.assignedToDeck = null;
+        console.log(`         Unassigned "${loadedSong.title}" from queue`);
+      }
+    }
+  }
+  
+  // Step 4: Load correct songs to decks (only if different from current)
+  console.log(`   Step 4: Loading correct songs to decks...`);
+  for (const assignment of assignedSongs) {
+    if (assignment.expectedDeck && assignment.queueItem.song) {
+      const deckState = getDeckState(assignment.expectedDeck);
+      const currentSong = getCurrentLoadedSong(assignment.expectedDeck);
+      
+      // Skip if this deck is playing (protected)
+      if (playingDecks.has(assignment.expectedDeck)) {
+        console.log(`      Deck ${assignment.expectedDeck.toUpperCase()}: Playing - skipping load (protected)`);
+        continue;
+      }
+      
+      // Only load if deck is empty OR has a different song
+      if (deckState === 'empty' || !currentSong) {
+        console.log(`      📥 Loading "${assignment.queueItem.song.title}" to Deck ${assignment.expectedDeck.toUpperCase()}`);
+        assignment.queueItem.assignedToDeck = assignment.expectedDeck;
+        loadTrackToPlayer(assignment.expectedDeck, assignment.queueItem.song, false);
+      } else if (currentSong.id === assignment.queueItem.song.id) {
+        // Song is already correct, just update assignment
+        console.log(`      ✓ Deck ${assignment.expectedDeck.toUpperCase()} already has "${currentSong.title}", updating assignment only`);
+        assignment.queueItem.assignedToDeck = assignment.expectedDeck;
+      } else {
+        console.log(`      ⚠️ Deck ${assignment.expectedDeck.toUpperCase()} has "${currentSong.title}" but should have "${assignment.queueItem.song.title}" - was this missed?`);
+      }
+    }
+  }
+  
+  updateQueueDisplay();
+  console.log(`   ✅ Reorganization complete`);
+  console.log(`🔧 ═══════════════════════════════════════════════════════════\n`);
+}
+
+/**
+ * Get the currently playing deck
+ */
+function getCurrentPlayingDeck(): 'a' | 'b' | 'c' | 'd' | null {
+  const decks: ('a' | 'b' | 'c' | 'd')[] = ['a', 'b', 'c', 'd'];
+  
+  for (const deck of decks) {
+    const state = getDeckState(deck);
+    if (state === 'playing') {
+      return deck;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Fill a specific deck with the next available track from queue
+ * RESPECTS ROTATION ORDER - finds the correct song for this deck position
+ */
+function fillDeckFromQueue(deck: 'a' | 'b' | 'c' | 'd') {
+  const rotationOrder = getActiveRotationOrder();
+  
+  if (!rotationOrder.includes(deck)) {
+    console.log(`⚠️ Deck ${deck.toUpperCase()} is not in active rotation`);
+    return;
+  }
+  
+  // Get current deck index in rotation
+  const deckIndex = rotationOrder.indexOf(deck);
+  
+  // Count how many songs are already assigned before this deck position
+  let songsBeforeThisDeck = 0;
+  
+  // Count assigned songs for each deck that comes before this one in rotation
+  for (let i = 0; i < deckIndex; i++) {
+    const priorDeck = rotationOrder[i];
+    const hasSong = queue.some(item => 
+      isSongQueueItem(item) && item.assignedToDeck === priorDeck
+    );
+    if (hasSong) {
+      songsBeforeThisDeck++;
+    }
+  }
+  
+  // Find the Nth unassigned song in queue (where N = songsBeforeThisDeck + 1)
+  let unassignedCount = 0;
+  let targetSongItem: QueueItem | null = null;
+  
+  for (const item of queue) {
+    if (!isSongQueueItem(item) || !item.song) continue;
+    
+    if (item.assignedToDeck === null) {
+      if (unassignedCount === songsBeforeThisDeck) {
+        targetSongItem = item;
+        break;
+      }
+      unassignedCount++;
+    }
+  }
+  
+  // Fallback: If no song found at exact position, take first available
+  if (!targetSongItem) {
+    targetSongItem = queue.find(item => 
+      isSongQueueItem(item) && item.assignedToDeck === null && item.song
+    ) || null;
+  }
+  
+  if (!targetSongItem || !isSongQueueItem(targetSongItem) || !targetSongItem.song) {
+    console.log(`⚠️ No available songs in queue to fill deck ${deck.toUpperCase()}`);
+    return;
+  }
+  
+  console.log(`📥 Filling deck ${deck.toUpperCase()} (position ${deckIndex}) with: "${targetSongItem.song.title}"`);
+  
+  // Assign and load
+  targetSongItem.assignedToDeck = deck;
+  loadTrackToPlayer(deck, targetSongItem.song, false);
+  updateQueueDisplay();
+}
+
 function addMicrophoneToQueue() {
   const micItem = createMicrophoneQueueItem();
   queue.push(micItem);
@@ -7430,6 +8552,11 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
     }
     
     console.log(`?? Player ${side.toUpperCase()} ejected`);
+    
+    // Immediately check if we need to fill this deck from queue
+    setTimeout(() => {
+      checkAndFillEmptyDecks();
+    }, 100);
   });
 
   restartBtn?.addEventListener('click', () => {
@@ -7736,6 +8863,9 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   applyCrossfader();
   
   console.log(`Player ${side.toUpperCase()}: "${song.title}" loaded successfully`);
+  
+  // Update library markers to show song is now on deck
+  markSongsInLibrary();
 }
 
 // Apply full volume to all decks (no crossfader)
@@ -8533,8 +9663,53 @@ function initializePlayerDropZone(side: 'a' | 'b' | 'c' | 'd') {
         } else if (songData.type === 'queue-song' && songData.song) {
           song = songData.song;
           songId = song?.id || null;
+          const queueIndex = songData.queueIndex;
+          
           if (song) {
-            console.log(`Queue song: "${song.title}" by ${song.artist}`);
+            console.log(`🎯 Queue song dropped on deck ${side.toUpperCase()}: "${song.title}" (queue position ${queueIndex})`);
+            
+            // Calculate target queue position based on deck
+            const targetQueuePosition = calculateQueuePositionForDeck(side);
+            
+            if (targetQueuePosition !== null && queueIndex !== undefined && queueIndex !== targetQueuePosition) {
+              console.log(`📋 Moving song from queue position ${queueIndex} to ${targetQueuePosition} for deck ${side.toUpperCase()}`);
+              reorderQueueItem(queueIndex, targetQueuePosition);
+            } else if (queueIndex !== undefined) {
+              // Song is already at correct position, just ensure it's loaded on this deck
+              console.log(`✓ Song already at correct queue position for deck ${side.toUpperCase()}`);
+              const queueItem = queue[queueIndex];
+              if (queueItem && isSongQueueItem(queueItem)) {
+                queueItem.assignedToDeck = side;
+                loadTrackToPlayer(side, song, false);
+              }
+            }
+            return; // Exit early since we handled the queue song
+          }
+        } else if (songData.type === 'song' && songData.queueIndex !== undefined) {
+          // Handle queue songs with type='song' (from queue drag)
+          song = songData.song;
+          songId = song?.id || null;
+          const queueIndex = songData.queueIndex;
+          
+          if (song) {
+            console.log(`🎯 Queue item (type=song) dropped on deck ${side.toUpperCase()}: "${song.title}" (queue position ${queueIndex})`);
+            
+            // Calculate target queue position based on deck
+            const targetQueuePosition = calculateQueuePositionForDeck(side);
+            
+            if (targetQueuePosition !== null && queueIndex !== undefined && queueIndex !== targetQueuePosition) {
+              console.log(`📋 Moving song from queue position ${queueIndex} to ${targetQueuePosition} for deck ${side.toUpperCase()}`);
+              reorderQueueItem(queueIndex, targetQueuePosition);
+            } else if (queueIndex !== undefined) {
+              // Song is already at correct position, just ensure it's loaded on this deck
+              console.log(`✓ Song already at correct queue position for deck ${side.toUpperCase()}`);
+              const queueItem = queue[queueIndex];
+              if (queueItem && isSongQueueItem(queueItem)) {
+                queueItem.assignedToDeck = side;
+                loadTrackToPlayer(side, song, false);
+              }
+            }
+            return; // Exit early since we handled the queue song
           }
         } else if (songData.type === 'deck-song' && songData.song) {
           song = songData.song;
@@ -13477,57 +14652,85 @@ function renderWishboxFrameItem(message: any): HTMLElement {
   itemEl.className = 'wishbox-item';
   itemEl.dataset.messageId = message.id;
   
-  const avatarUrl = getDiscordAvatar(message.author);
+  // Parse structured request format (same as main wishbox)
+  const parsedRequest = parseDiscordRequest(message.content);
   
-  itemEl.innerHTML = `
-    <div class="wishbox-item-header">
-      <div class="wishbox-item-user">
-        ${avatarUrl ? `<img src="${avatarUrl}" alt="${message.author.username}" class="wishbox-item-avatar">` : ''}
-        <span>${escapeHtml(message.author.username)}</span>
+  if (parsedRequest) {
+    // Structured format: Name, Request 1, Request 2, Message
+    let requestsHtml = '';
+    
+    if (parsedRequest.request1) {
+      requestsHtml += `
+        <div class="wishbox-item-request" data-search="${escapeHtml(parsedRequest.request1)}" title="In Suche einfügen">
+          <span class="material-icons">search</span>
+          <span class="request-text">${escapeHtml(parsedRequest.request1)}</span>
+        </div>
+      `;
+    }
+    
+    if (parsedRequest.request2) {
+      requestsHtml += `
+        <div class="wishbox-item-request" data-search="${escapeHtml(parsedRequest.request2)}" title="In Suche einfügen">
+          <span class="material-icons">search</span>
+          <span class="request-text">${escapeHtml(parsedRequest.request2)}</span>
+        </div>
+      `;
+    }
+    
+    itemEl.innerHTML = `
+      <div class="wishbox-item-header">
+        ${parsedRequest.name ? `<div class="wishbox-item-name"><span class="material-icons">person</span>${escapeHtml(parsedRequest.name)}</div>` : ''}
+        <div class="wishbox-item-time">${formatDiscordTimestamp(message.timestamp)}</div>
       </div>
-      <div class="wishbox-item-time">${formatDiscordTimestamp(message.timestamp)}</div>
-    </div>
-    <div class="wishbox-item-content">${escapeHtml(message.content)}</div>
-    <div class="wishbox-item-actions">
-      <button class="wishbox-item-action-btn search" data-search="${escapeHtml(message.content)}" title="In Suche einfügen">
-        <span class="material-icons">search</span>
-        Suchen
-      </button>
-      <button class="wishbox-item-action-btn delete" data-message-id="${message.id}" title="Nachricht löschen">
-        <span class="material-icons">delete</span>
-        Löschen
-      </button>
-    </div>
-  `;
-  
-  // Add click handler for search button
-  const searchBtn = itemEl.querySelector('.search') as HTMLButtonElement;
-  searchBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const searchQuery = searchBtn.dataset.search || '';
-    if (searchQuery) {
-      const searchInput = document.getElementById('search-input') as HTMLInputElement;
-      const searchBtnMain = document.getElementById('search-btn') as HTMLButtonElement;
-      
-      if (searchInput && searchBtnMain) {
-        searchInput.value = searchQuery;
-        searchInput.focus();
-        searchBtnMain.click();
-        console.log(`🔍 Search triggered from frame: ${searchQuery}`);
+      ${requestsHtml}
+      ${parsedRequest.message ? `<div class="wishbox-item-message"><span class="material-icons">chat</span>${escapeHtml(parsedRequest.message)}</div>` : ''}
+    `;
+    
+    // Add click handlers for request buttons
+    const requestElements = itemEl.querySelectorAll('.wishbox-item-request');
+    requestElements.forEach((reqEl) => {
+      reqEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const searchQuery = (reqEl as HTMLElement).dataset.search || '';
+        if (searchQuery) {
+          const searchInput = document.getElementById('search-input') as HTMLInputElement;
+          const searchBtnMain = document.getElementById('search-btn') as HTMLButtonElement;
+          
+          if (searchInput && searchBtnMain) {
+            searchInput.value = searchQuery;
+            searchInput.focus();
+            searchBtnMain.click();
+            console.log(`🔍 Search triggered from wishbox frame: ${searchQuery}`);
+          }
+        }
+      });
+    });
+  } else {
+    // Fallback: Simple message format (no structure)
+    itemEl.innerHTML = `
+      <div class="wishbox-item-header">
+        <div class="wishbox-item-content">${escapeHtml(message.content)}</div>
+        <div class="wishbox-item-time">${formatDiscordTimestamp(message.timestamp)}</div>
+      </div>
+    `;
+    
+    // Click handler: Insert entire message content into search
+    itemEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const searchQuery = message.content || '';
+      if (searchQuery) {
+        const searchInput = document.getElementById('search-input') as HTMLInputElement;
+        const searchBtnMain = document.getElementById('search-btn') as HTMLButtonElement;
+        
+        if (searchInput && searchBtnMain) {
+          searchInput.value = searchQuery;
+          searchInput.focus();
+          searchBtnMain.click();
+          console.log(`🔍 Search triggered from wishbox frame: ${searchQuery}`);
+        }
       }
-    }
-  });
-  
-  // Add click handler for delete button
-  const deleteBtn = itemEl.querySelector('.delete') as HTMLButtonElement;
-  deleteBtn?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const messageId = deleteBtn.dataset.messageId || '';
-    if (messageId) {
-      const channelId = getConfigValue('VITE_DISCORD_CHANNEL_ID') || '';
-      await deleteDiscordMessage(messageId, channelId);
-    }
-  });
+    });
+  }
   
   return itemEl;
 }

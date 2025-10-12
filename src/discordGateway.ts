@@ -235,6 +235,25 @@ export class DiscordGatewayClient {
     this.isConnecting = false;
     this.stopHeartbeat();
 
+    // Handle specific close codes
+    if (event.code === 4004) {
+      console.error('❌ Discord Error 4004: Authentication failed');
+      console.error('Possible causes:');
+      console.error('1. Invalid bot token in DISCORD_BOT_TOKEN environment variable');
+      console.error('2. Required intents not enabled in Discord Developer Portal:');
+      console.error('   - Go to https://discord.com/developers/applications');
+      console.error('   - Select your bot');
+      console.error('   - Go to "Bot" section');
+      console.error('   - Enable "MESSAGE CONTENT INTENT" (required!)');
+      console.error('   - Enable "SERVER MEMBERS INTENT" (recommended)');
+      console.error('   - Save changes and restart the application');
+      console.error('3. Bot token may need to be regenerated');
+      
+      // Don't attempt reconnect on auth failure
+      this.reconnectAttempts = this.maxReconnectAttempts;
+      return;
+    }
+
     // Check if we can resume
     const canResume = [4000, 4001, 4002, 4003, 4005, 4007, 4008, 4009].includes(event.code);
     

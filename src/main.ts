@@ -2629,7 +2629,42 @@ async function checkConfigurationAndInitialize() {
     }
   } catch (error) {
     console.error('❌ Error checking server configuration:', error);
-    console.log('🔧 Falling back to setup wizard due to API error');
+    console.log('� Checking localStorage for offline config (mobile/Capacitor mode)...');
+    
+    // Try to load from localStorage (for mobile/offline mode)
+    const localStorageConfig = localStorage.getItem('subcaster-config');
+    if (localStorageConfig) {
+      try {
+        const configData = JSON.parse(localStorageConfig);
+        console.log('📱 Config loaded from localStorage:', configData);
+        
+        // Map to runtime config format
+        runtimeConfig = {
+          'VITE_OPENSUBSONIC_URL': configData.opensubsonic?.url || '',
+          'VITE_OPENSUBSONIC_USERNAME': configData.opensubsonic?.username || '',
+          'VITE_AZURACAST_SERVERS': configData.azuracast?.servers || '',
+          'VITE_AZURACAST_STATION_ID': String(configData.azuracast?.stationId || '1'),
+          'VITE_DISCORD_CHANNEL_ID': configData.discord?.channelId || '',
+          'VITE_DISCORD_GUILD_ID': configData.discord?.guildId || '',
+          'VITE_STREAM_BITRATE': String(configData.streaming?.bitrate || '128'),
+          'VITE_STREAM_SAMPLE_RATE': String(configData.streaming?.sampleRate || '44100'),
+          'VITE_DECK_CONFIGURATION': 'four-decks',
+          'VITE_USE_UNIFIED_LOGIN': String(configData.unifiedLogin?.enabled || false),
+        };
+        
+        (window as any).runtimeConfig = runtimeConfig;
+        (window as any).getConfigValue = getConfigValue;
+        
+        console.log('🔄 Runtime configuration loaded from localStorage');
+        console.log('🚀 Calling initializeFullApp()...');
+        initializeFullApp();
+        return;
+      } catch (parseError) {
+        console.error('❌ Failed to parse localStorage config:', parseError);
+      }
+    }
+    
+    console.log('�🔧 Falling back to setup wizard due to API error');
     showSetupWizardOnly();
   }
 }

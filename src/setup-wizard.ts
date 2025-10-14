@@ -961,7 +961,7 @@ class SetupWizard {
   private async finishSetup(): Promise<void> {
     console.log('🚀 Finishing setup...', { isDemo: this.isDemo });
     
-    // Always save to file, regardless if demo or custom
+    // Always save to file/storage, regardless if demo or custom
     try {
       await this.saveConfigToFile(false); // No backup needed for demo
       if (this.isDemo) {
@@ -970,22 +970,27 @@ class SetupWizard {
         this.showSuccessMessage('Configuration saved successfully!');
       }
     } catch (error) {
-      console.error('Setup save error:', error);
-      this.showErrorMessage('Error saving configuration: ' + (error as Error).message);
-      return;
+      console.error('⚠️ Setup save error:', error);
+      // In mobile/Capacitor, API may not be available - save to localStorage as fallback
+      console.log('📱 Saving to localStorage as fallback...');
+      this.saveConfigToLocalStorage();
+      this.showSuccessMessage('Configuration saved successfully (offline mode)!');
     }
 
     // Apply configuration to current session
     this.applyConfigToSession();
     
-    // Hide setup wizard
-    this.hide();
-    
-    // Mark setup as completed
+    // Mark setup as completed BEFORE hiding
     localStorage.setItem('subcaster-setup-completed', 'true');
     
     // Remove demo-active flag if it exists
     localStorage.removeItem('subcaster-demo-active');
+    
+    // Small delay to ensure localStorage is written
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Hide setup wizard
+    this.hide();
   }
 
   private async saveConfigToFile(createBackup: boolean): Promise<void> {
@@ -1017,6 +1022,42 @@ class SetupWizard {
       }
       throw new Error(errorMessage);
     }
+  }
+
+  private saveConfigToLocalStorage(): void {
+    console.log('💾 Saving config to localStorage for offline/mobile use...');
+    
+    // Save entire config object to localStorage
+    const configKey = 'subcaster-config';
+    localStorage.setItem(configKey, JSON.stringify(this.config));
+    
+    // Also save individual settings for compatibility
+    if (this.config.opensubsonic) {
+      localStorage.setItem('subcaster-opensubsonic-url', this.config.opensubsonic.url);
+      localStorage.setItem('subcaster-opensubsonic-username', this.config.opensubsonic.username);
+    }
+    
+    if (this.config.azuracast) {
+      localStorage.setItem('subcaster-azuracast-servers', this.config.azuracast.servers);
+      localStorage.setItem('subcaster-azuracast-station-id', String(this.config.azuracast.stationId));
+    }
+    
+    if (this.config.unifiedLogin?.enabled) {
+      localStorage.setItem('subcaster-unified-login', 'true');
+      localStorage.setItem('subcaster-unified-username', this.config.unifiedLogin.username);
+    }
+    
+    if (this.config.discord?.enabled) {
+      localStorage.setItem('subcaster-discord-enabled', 'true');
+      localStorage.setItem('subcaster-discord-channel-id', this.config.discord.channelId);
+    }
+    
+    if (this.config.streaming) {
+      localStorage.setItem('subcaster-stream-bitrate', String(this.config.streaming.bitrate));
+      localStorage.setItem('subcaster-stream-samplerate', String(this.config.streaming.sampleRate));
+    }
+    
+    console.log('✅ Config saved to localStorage');
   }
 
   private generateEnvContent(): string {

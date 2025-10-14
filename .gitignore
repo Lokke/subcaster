@@ -33,6 +33,28 @@ dist-ssr
 !.env.example
 !.env.docker.example
 
+# Android build files and credentials
+android/local.properties
+android/keystore.properties
+android/*.keystore
+android/*.jks
+android/app/release/
+android/app/build/
+android/.gradle/
+android/build/
+android/.cxx/
+android/captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Android signing keys - NEVER commit these
+*.keystore
+*.jks
+key.properties
+signing.properties
+
 # Editor directories and files
 .github
 .vscode/*
@@ -48,5 +70,8 @@ dist-ssr
 # AzuraCast development directory
 azuracast/
 
-# Compare directory
+# Capacitor
+.capacitor/
+capacitor.config.json
+ios/# Compare directory
 compare/

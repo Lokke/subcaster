@@ -2658,18 +2658,9 @@ body.logged-in .wishbox-frame {
   font-weight: 400;
 }
 
-/* Crossfader Section - Compact */
+/* Crossfader Section - HIDDEN (not used) */
 .crossfader-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-  width: 100%;
-  max-width: 160px;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid #333;
-  border-radius: 4px;
-  padding: 0.5rem;
+  display: none !important; /* Crossfader permanently removed */
 }
 
 /* Secondary Controls - Single Button */
@@ -11565,5 +11556,640 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   92%, 100% { 
     opacity: 0;
     transform: translateX(0);
+  }
+}
+
+/* ====================================
+   RESPONSIVE DESIGN - Media Queries
+   ==================================== */
+
+/* Large screens - 1400px+ : Full layout (default) */
+
+/* Medium-Large screens - 1200px to 1399px : Slightly compressed */
+@media (max-width: 1399px) {
+  .dj-section {
+    gap: 0.75rem;
+    padding: 0.5rem 1rem 1rem 1rem;
+  }
+  
+  .player-deck {
+    padding: 0.6rem;
+    min-height: 140px;
+  }
+  
+  .album-cover {
+    width: 70px;
+    height: 70px;
+  }
+  
+  .album-section {
+    width: 70px;
+  }
+}
+
+/* Medium screens - 1024px to 1199px : Compact layout */
+@media (max-width: 1199px) {
+  .dj-section {
+    gap: 0.5rem;
+    padding: 0.5rem;
+  }
+  
+  .player-deck {
+    padding: 0.5rem;
+    min-height: 120px;
+  }
+  
+  .album-cover {
+    width: 60px;
+    height: 60px;
+  }
+  
+  .album-section {
+    width: 60px;
+  }
+  
+  /* Mixer: Hide crossfader labels, reduce size */
+  .crossfader-label {
+    display: none;
+  }
+  
+  .crossfader-container {
+    padding: 0.5rem;
+  }
+  
+  /* Queue: Reduce padding and font sizes */
+  .queue-section {
+    margin-left: -15px;
+  }
+  
+  .unified-song-item,
+  .song-row {
+    padding: 0.5rem 0.75rem;
+    gap: 0.5rem;
+  }
+  
+  .music-library {
+    grid-template-columns: 1fr 300px;
+  }
+}
+
+/* Small-Medium screens - 900px to 1023px : Mini-player mode */
+@media (max-width: 1023px) {
+  .dj-section {
+    grid-template-columns: 1fr 200px 1fr;
+    gap: 0.4rem;
+    padding: 0.4rem;
+  }
+  
+  /* Mini-Player: Compact player view */
+  .player-deck {
+    padding: 0.4rem;
+    min-height: 100px;
+  }
+  
+  .album-cover {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .album-section {
+    width: 50px;
+  }
+  
+  .track-info-section h3 {
+    font-size: 0.9rem;
+  }
+  
+  .track-info-section p {
+    font-size: 0.75rem;
+  }
+  
+  /* Mixer: Mic-only mode - show only usernames and microphone */
+  .center-controls {
+    gap: 0.25rem;
+    height: 100%;
+  }
+  
+  .center-mixer-panel {
+    max-width: 180px;
+    min-width: 180px;
+    padding: 0.5rem;
+    height: 100%; /* Match height of player A+B combined */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  
+  /* Hide all mixer elements except usernames and mic button */
+  .channel-strip:not(.mic-channel) {
+    display: none !important;
+  }
+  
+  .crossfader-section {
+    display: none !important;
+  }
+  
+  .master-section {
+    display: none !important;
+  }
+  
+  /* Hide mic effects, meters, and mic selector */
+  .mic-effects-vertical {
+    display: none !important;
+  }
+  
+  .combined-meters-section {
+    display: none !important;
+  }
+  
+  .mic-meter-control {
+    display: none !important;
+  }
+  
+  .master-meter-control {
+    display: none !important;
+  }
+  
+  /* Keep only streaming controls and microphone button visible */
+  .stream-controls {
+    order: -1; /* Move to top */
+  }
+  
+  .microphone-section {
+    flex: 1;
+    justify-content: center;
+    /* Simplify to show only mic button */
+    grid-template-columns: 1fr;
+  }
+  
+  .mic-button-container {
+    grid-column: 1;
+  }
+  
+  /* Compact mic button */
+  .mic-toggle-btn {
+    transform: scale(0.9);
+  }
+  
+  /* Queue: Very compact */
+  .music-library {
+    grid-template-columns: 1fr 250px;
+  }
+  
+  .queue-section {
+    margin-left: -10px;
+  }
+  
+  .queue-song-button {
+    padding: 0.3rem 0.5rem;
+    gap: 0.3rem;
+  }
+  
+  .queue-song-title {
+    font-size: 10px;
+  }
+  
+  .queue-song-artist {
+    font-size: 8px;
+  }
+  
+  .queue-song-rating .star {
+    font-size: 10px;
+  }
+}
+
+/* Tablet screens - 768px to 899px : Vertical stacking starts */
+@media (max-width: 899px) {
+  .dj-section {
+    grid-template-columns: 1fr 150px 1fr;
+    grid-template-rows: auto auto;
+    gap: 0.3rem;
+  }
+  
+  /* Ultra-compact players */
+  .player-deck {
+    min-height: 90px;
+    padding: 0.3rem;
+  }
+  
+  .album-cover {
+    width: 45px;
+    height: 45px;
+  }
+  
+  .album-section {
+    width: 45px;
+  }
+  
+  .waveform-container {
+    height: 30px;
+  }
+  
+  /* Mixer: Ultra-minimal mic-only */
+  .center-mixer-panel {
+    max-width: 140px;
+    min-width: 140px;
+    padding: 0.4rem;
+  }
+  
+  .mic-toggle-btn {
+    transform: scale(0.85);
+  }
+  
+  /* Keep mic-only mode - hide everything except usernames and mic button */
+  .channel-strip:not(.mic-channel) {
+    display: none !important;
+  }
+  
+  .crossfader-section {
+    display: none !important;
+  }
+  
+  .master-section {
+    display: none !important;
+  }
+  
+  /* Hide mic effects, meters, and mic selector */
+  .mic-effects-vertical {
+    display: none !important;
+  }
+  
+  .combined-meters-section {
+    display: none !important;
+  }
+  
+  .mic-meter-control {
+    display: none !important;
+  }
+  
+  .master-meter-control {
+    display: none !important;
+  }
+  
+  /* Simplify microphone section */
+  .microphone-section {
+    grid-template-columns: 1fr;
+  }
+  
+  .mic-button-container {
+    grid-column: 1;
+  }
+  
+  .volume-slider {
+    height: 50px;
+  }
+  
+  /* Queue: Minimal width */
+  .music-library {
+    grid-template-columns: 1fr 220px;
+  }
+  
+  .queue-label-row {
+    height: 25px;
+    font-size: 10px;
+  }
+  
+  .auto-queue-btn {
+    padding: 0 12px;
+    font-size: 10px;
+  }
+}
+
+/* Small screens - 640px to 767px : Single column layout */
+@media (max-width: 767px) {
+  #app {
+    height: auto;
+    min-height: 100vh;
+  }
+  
+  .dj-section {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto auto auto;
+    gap: 0.5rem;
+  }
+  
+  /* Stack players vertically */
+  #player-a {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  
+  #player-b {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  
+  .center-controls {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  
+  #player-c {
+    grid-column: 1;
+    grid-row: 4;
+  }
+  
+  #player-d {
+    grid-column: 1;
+    grid-row: 5;
+  }
+  
+  /* Full-width mixer - restore all controls in vertical layout */
+  .center-mixer-panel {
+    max-width: 100%;
+    min-width: auto;
+  }
+  
+  /* Show all mixer controls again in single column layout */
+  .channel-strip:not(.mic-channel) {
+    display: flex !important;
+  }
+  
+  /* crossfader removed - no longer restored here */
+  
+  .master-section {
+    display: flex !important;
+  }
+  
+  /* Restore mic effects, meters, and selectors */
+  .mic-effects-vertical {
+    display: flex !important;
+  }
+  
+  .combined-meters-section {
+    display: flex !important;
+  }
+  
+  .mic-meter-control {
+    display: flex !important;
+  }
+  
+  .master-meter-control {
+    display: flex !important;
+  }
+  
+  /* Restore full microphone section layout */
+  .microphone-section {
+    grid-template-columns: 1fr auto 1fr;
+  }
+  
+  /* Library below players */
+  .music-library {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      "search"
+      "queue"
+      "content";
+    height: auto;
+    max-height: 50vh;
+  }
+  
+  .queue-section {
+    grid-area: queue;
+    margin-left: 0;
+    max-height: 300px;
+  }
+  
+  .library-content {
+    grid-area: content;
+  }
+}
+
+/* Extra small screens - 480px to 639px : Minimal mode */
+@media (max-width: 639px) {
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  
+  .dj-section {
+    padding: 0.25rem;
+    gap: 0.25rem;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  
+  /* Only 2 decks (A+B) stacked vertically */
+  #player-a,
+  #player-b {
+    display: flex !important;
+  }
+  
+  #player-c,
+  #player-d {
+    display: none !important;
+  }
+  
+  /* Hide center controls in dj-section */
+  .dj-section .center-controls {
+    display: none !important;
+  }
+  
+  .player-deck {
+    min-height: 80px;
+    padding: 0.25rem;
+  }
+  
+  .album-cover {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .album-section {
+    width: 40px;
+  }
+  
+  .track-info-section h3 {
+    font-size: 0.8rem;
+  }
+  
+  .track-info-section p {
+    font-size: 0.7rem;
+  }
+  
+  .waveform-container {
+    height: 25px;
+  }
+  
+  .player-controls button {
+    width: 35px;
+    height: 35px;
+  }
+  
+  /* Hide original music-library */
+  .music-library {
+    display: none !important;
+  }
+  
+  /* Tabbed Container for Mobile */
+  .mobile-tabbed-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    background: #1a1a1a;
+    overflow: hidden;
+  }
+  
+  .mobile-tabs {
+    display: flex;
+    background: #2a2a2a;
+    border-bottom: 2px solid #4a4a4a;
+    flex-shrink: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  
+  .mobile-tab {
+    flex: 1;
+    min-width: 60px;
+    padding: 0.5rem 0.25rem;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: #888;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+  }
+  
+  .mobile-tab .material-icons {
+    font-size: 18px;
+  }
+  
+  .mobile-tab:hover {
+    color: #aaa;
+    background: rgba(255, 255, 255, 0.05);
+  }
+  
+  .mobile-tab.active {
+    color: #00ff88;
+    border-bottom-color: #00ff88;
+    background: rgba(0, 255, 136, 0.1);
+  }
+  
+  .mobile-tab-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: none;
+  }
+  
+  .mobile-tab-content.active {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* Mixer in tab */
+  .mobile-tab-content .center-mixer-panel {
+    max-width: 100%;
+    min-width: auto;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* Queue in tab */
+  .mobile-tab-content .queue-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    margin-left: 0;
+  }
+  
+  /* Browser in tab */
+  .mobile-tab-content .library-content {
+    flex: 1;
+    overflow: auto;
+  }
+  
+  /* Wishbox in tab */
+  .mobile-tab-content .wishbox-container {
+    flex: 1;
+    overflow: auto;
+  }
+  
+  /* Radio selector in tab */
+  .mobile-tab-content .radio-streams-container {
+    flex: 1;
+    overflow: auto;
+    padding: 1rem;
+  }
+}
+
+/* Mobile screens - below 480px : Absolute minimum */
+@media (max-width: 479px) {
+  body {
+    font-size: 12px;
+  }
+  
+  .dj-section {
+    padding: 0.2rem;
+    gap: 0.2rem;
+  }
+  
+  .player-deck {
+    min-height: 70px;
+    padding: 0.2rem;
+  }
+  
+  .album-cover {
+    width: 35px;
+    height: 35px;
+  }
+  
+  .album-section {
+    width: 35px;
+  }
+  
+  .track-info-section {
+    font-size: 0.7rem;
+  }
+  
+  .player-controls button {
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+  }
+  
+  .waveform-container {
+    height: 20px;
+  }
+  
+  .mixer-container,
+  .master-section {
+    padding: 0.2rem;
+  }
+  
+  .queue-label-row {
+    height: 20px;
+    font-size: 9px;
+  }
+  
+  .auto-queue-btn {
+    padding: 0 8px;
+    font-size: 9px;
+  }
+  
+  .queue-song-button {
+    padding: 0.2rem 0.3rem;
+  }
+  
+  .queue-song-title {
+    font-size: 9px;
+  }
+  
+  .queue-song-artist {
+    font-size: 7px;
   }
 }

@@ -31,9 +31,14 @@ async function initializeConfig() {
       'VITE_STREAM_SAMPLE_RATE': config.stream.sampleRate,
       'VITE_DECK_CONFIGURATION': config.deckConfiguration,
       'VITE_USE_UNIFIED_LOGIN': String(config.unifiedLogin.enabled),
+      'VITE_BLACKLISTED_GENRES': config.blacklistedGenres || '',
     };
     
     configLoaded = true;
+    
+    // Lade blacklisted genres
+    loadBlacklistedGenres();
+    
     console.log('✅ Configuration loaded from backend (no secrets exposed!)');
     
     return true;
@@ -56,6 +61,52 @@ function getConfigValue(key: string): string | undefined {
   console.warn(`⚠️ Config key '${key}' not found in runtime config from backend`);
   
   return undefined;
+}
+
+// Blacklisted Genres für Live-Streaming
+let blacklistedGenres: string[] = [];
+
+function loadBlacklistedGenres() {
+  const genresConfig = getConfigValue('VITE_BLACKLISTED_GENRES') || '';
+  console.log('🔍 Loading blacklisted genres from config:', genresConfig);
+  
+  blacklistedGenres = genresConfig
+    .split(',')
+    .map(g => g.trim().toLowerCase())
+    .filter(g => g.length > 0);
+  
+  console.log('🚫 Blacklisted genres for streaming:', blacklistedGenres);
+  console.log('🚫 Total blacklisted genres count:', blacklistedGenres.length);
+}
+
+// Prüfe ob Song ein blacklisted Genre hat
+function hasBlacklistedGenre(song: OpenSubsonicSong): boolean {
+  if (!song.genre || blacklistedGenres.length === 0) {
+    return false;
+  }
+  
+  // Genre kann multi-valued sein (komma-separiert)
+  const songGenres = song.genre.toLowerCase().split(/[,;/]/).map(g => g.trim());
+  
+  console.log('🔍 Checking blacklist:', {
+    songTitle: song.title,
+    songGenre: song.genre,
+    songGenresArray: songGenres,
+    blacklistedGenres: blacklistedGenres
+  });
+  
+  // Prüfe ob eines der Song-Genres auf der Blacklist ist
+  const isBlacklisted = songGenres.some(genre => 
+    blacklistedGenres.some(blacklisted => {
+      const matches = genre.includes(blacklisted);
+      if (matches) {
+        console.warn(`🚫 MATCH FOUND: "${genre}" contains blacklisted "${blacklisted}"`);
+      }
+      return matches;
+    })
+  );
+  
+  return isBlacklisted;
 }
 
 // Global metadata update function - used for immediate metadata broadcasting
@@ -82,6 +133,19 @@ function broadcastCurrentMetadata(force: boolean = false) {
   } else {
     console.log(`❌ AzuraCast not connected, skipping metadata broadcast`);
   }
+}
+
+// Helper: Artist Image URL mit 300px Größe
+function getArtistImageUrl(imageUrl: string | undefined, size: number = 300): string {
+  if (!imageUrl) return '';
+  
+  // Remove existing size parameter
+  let url = imageUrl.replace(/[?&]size=\d+/g, '');
+  
+  // Add size parameter
+  url += (url.includes('?') ? '&' : '?') + `size=${size}`;
+  
+  return url;
 }
 
 // User status update function
@@ -381,6 +445,9 @@ function addSongToPlayHistory(song: OpenSubsonicSong, progress: number): void {
   
   // Update library markers
   setTimeout(() => markSongsInLibrary(), 100);
+  
+  // Update queue display to reflect new play history (transparency, cooldown effects)
+  updateQueueDisplay();
 }
 
 // Get time since song was last played (in hours)
@@ -1162,7 +1229,21 @@ const deckConfig = {
         console.log('⏸️ Deactivating Auto-Queue for C+D (decks hidden)');
         autoQueueConfig.deckPairCD = false;
         
-        // Clear C+D decks using eject
+        // Move songs from C+D back to queue instead of clearing
+        const songOnC = getCurrentLoadedSong('c');
+        const songOnD = getCurrentLoadedSong('d');
+        
+        if (songOnC) {
+          console.log(`📤 Moving song from Deck C back to queue: ${songOnC.title}`);
+          moveQueueItemToEnd(songOnC, false);
+        }
+        
+        if (songOnD) {
+          console.log(`📤 Moving song from Deck D back to queue: ${songOnD.title}`);
+          moveQueueItemToEnd(songOnD, false);
+        }
+        
+        // Clear C+D decks
         clearPlayerDeck('c');
         clearPlayerDeck('d');
         
@@ -1175,26 +1256,25 @@ const deckConfig = {
         // Reset deck assignments for C+D
         resetDeckAssignments(['c', 'd']);
       }
-    } else {
-      // When showing C+D: activate auto-queue and fill decks
-      if (autoQueueConfig.deckPairAB && queue.length > 0) {
-        console.log('🎵 Activating Auto-Queue for C+D (decks shown)');
-        autoQueueConfig.deckPairCD = true;
-        
-        // Update auto-queue button state
-        const cdButton = document.getElementById('auto-queue-cd') as HTMLButtonElement;
-        if (cdButton) {
-          cdButton.classList.add('active');
+      
+      // Update button icon to visibility_off
+      if (deckToggleBtn) {
+        const icon = deckToggleBtn.querySelector('.material-icons');
+        if (icon) {
+          icon.textContent = 'visibility_off';
         }
-        
-        // Synchronize and prepare C+D decks
-        synchronizeDecksWithQueue(['c', 'd']);
-        prepareDecksOnActivation(['c', 'd']);
-        
-        // Immediately check and fill empty decks
-        setTimeout(() => {
-          checkAndFillEmptyDecks();
-        }, 100);
+      }
+    } else {
+      // When showing C+D: Just show them, don't auto-activate auto-queue
+      // User must manually activate C+D auto-queue if desired
+      console.log('👁️ Deck C+D are now visible (auto-queue remains unchanged)');
+      
+      // Update button icon to visibility
+      if (deckToggleBtn) {
+        const icon = deckToggleBtn.querySelector('.material-icons');
+        if (icon) {
+          icon.textContent = 'visibility';
+        }
       }
     }
     
@@ -1433,6 +1513,13 @@ function displaySimilarSongs(songs: OpenSubsonicSong[], songTitle: string, artis
     
     // Add double-click handler to add to queue
     songElement.addEventListener('dblclick', () => {
+      // Prüfe ob Song blacklisted Genre hat (nur wenn Streaming aktiv)
+      if (azuraCastWebcaster?.getConnectionStatus() && hasBlacklistedGenre(song)) {
+        console.warn(`🚫 Cannot add song with blacklisted genre to queue while streaming: "${song.title}" (${song.genre})`);
+        showStatusMessage(`🚫 "${song.title}" blockiert - Genre: ${song.genre}`, 'error');
+        return;
+      }
+      
       // Check if song is already in queue
       if (isSongInQueue(song.id)) {
         console.log(`⚠️ Song already in queue: ${song.title}`);
@@ -2391,54 +2478,33 @@ function markSongsInLibrary() {
     if (hoursSincePlayed !== null && hoursSincePlayed < 2) {
       el.classList.add('recently-played');
       
-      // Add scribble overlay
-      const scribbleDiv = document.createElement('div');
-      scribbleDiv.className = 'recently-played-scribble';
+      // Calculate opacity: 0.5 at 0h, 1.0 at 2h
+      const opacity = 0.5 + (hoursSincePlayed / 2) * 0.5;
+      el.style.opacity = String(opacity);
       
-      const scribbleColor = getScribbleColor(hoursSincePlayed);
-      const opacity = hoursSincePlayed < 1 ? 0.7 : 0.5 - (hoursSincePlayed - 1) * 0.3;
-      
-      scribbleDiv.style.setProperty('--scribble-color', scribbleColor);
-      scribbleDiv.style.setProperty('--scribble-opacity', String(opacity));
-      
-      // Add timestamp tooltip
+      // Add tooltip
       const playedDate = new Date(Date.now() - hoursSincePlayed * 60 * 60 * 1000);
       const timeAgo = hoursSincePlayed < 1 
         ? `${Math.round(hoursSincePlayed * 60)} min ago`
         : `${Math.round(hoursSincePlayed * 10) / 10}h ago`;
-      scribbleDiv.title = `Last played: ${timeAgo}`;
-      
-      el.style.position = 'relative';
-      el.appendChild(scribbleDiv);
+      el.title = `Last played: ${timeAgo}`;
     }
     
-    // Check artist play history (only scribble artist name for 1 hour)
+    // Check artist play history (fade artist text for 1 hour)
     const artistEl = el.querySelector('.track-artist, .song-artist, .artist-name') as HTMLElement;
     if (artistEl) {
-      // Remove old artist scribble
-      const oldArtistScribble = artistEl.querySelector('.artist-recently-played');
-      if (oldArtistScribble) {
-        oldArtistScribble.remove();
-      }
-      
       const artistName = artistEl.textContent?.trim();
       if (artistName) {
         const hoursSinceArtist = getTimeSinceArtistPlayed(artistName);
         if (hoursSinceArtist !== null && hoursSinceArtist < 1) {
-          const artistScribble = document.createElement('span');
-          artistScribble.className = 'artist-recently-played';
-          
-          const scribbleColor = getScribbleColor(hoursSinceArtist);
-          const opacity = 0.6 - hoursSinceArtist * 0.3;
-          
-          artistScribble.style.setProperty('--scribble-color', scribbleColor);
-          artistScribble.style.setProperty('--scribble-opacity', String(opacity));
+          // Calculate opacity: 0.5 at 0h, 1.0 at 1h
+          const artistOpacity = 0.5 + hoursSinceArtist * 0.5;
+          artistEl.style.opacity = String(artistOpacity);
           
           const timeAgo = `${Math.round(hoursSinceArtist * 60)} min ago`;
-          artistScribble.title = `Artist last played: ${timeAgo}`;
-          
-          artistEl.style.position = 'relative';
-          artistEl.appendChild(artistScribble);
+          artistEl.title = `Artist last played: ${timeAgo}`;
+        } else {
+          artistEl.style.opacity = '1';
         }
       }
     }
@@ -3242,6 +3308,65 @@ document.addEventListener("DOMContentLoaded", async () => {
         const currentTrack = getCurrentTrackMetadata();
         if (currentTrack) {
           azuraCastWebcaster.sendMetadata(currentTrack);
+        }
+        
+        // Auto-remove blacklisted songs from decks when streaming starts
+        let removedFromDecks = 0;
+        const decks: Array<'a' | 'b' | 'c' | 'd'> = ['a', 'b', 'c', 'd'];
+        
+        console.log('🔍 Checking decks for blacklisted genres...');
+        console.log('🔍 Blacklisted genres:', blacklistedGenres);
+        
+        for (const deck of decks) {
+          const deckState = playerStates[deck];
+          console.log(`🔍 Deck ${deck.toUpperCase()}: hasSong=${!!deckState.song}, genre=${deckState.song?.genre || 'none'}`);
+          
+          if (deckState.song && hasBlacklistedGenre(deckState.song)) {
+            console.warn(`🚫 Removing blacklisted song from deck ${deck.toUpperCase()}: "${deckState.song.title}" (${deckState.song.genre})`);
+            
+            // Stop playback if playing
+            const audio = document.getElementById(`audio-${deck}`) as HTMLAudioElement;
+            if (audio && !audio.paused) {
+              audio.pause();
+            }
+            
+            // Clear the deck
+            clearPlayerDeck(deck);
+            removedFromDecks++;
+          }
+        }
+        
+        // Auto-remove blacklisted songs from queue when streaming starts
+        const originalQueueLength = queue.length;
+        queue = queue.filter(item => {
+          if (isSongQueueItem(item)) {
+            const hasBlacklisted = hasBlacklistedGenre(item.song);
+            if (hasBlacklisted) {
+              console.warn(`🚫 Removing blacklisted song from queue: "${item.song.title}" (${item.song.genre})`);
+            }
+            return !hasBlacklisted;
+          }
+          return true; // Keep non-song items (separators, etc.)
+        });
+        
+        const removedFromQueue = originalQueueLength - queue.length;
+        const totalRemoved = removedFromDecks + removedFromQueue;
+        
+        if (totalRemoved > 0) {
+          console.log(`🧹 Removed ${totalRemoved} blacklisted song(s) when streaming started (${removedFromDecks} from decks, ${removedFromQueue} from queue)`);
+          updateQueueDisplay();
+          
+          // Non-blocking notification
+          let message = `🚫 ${totalRemoved} Song(s) mit blacklisted Genre entfernt`;
+          if (removedFromDecks > 0 && removedFromQueue > 0) {
+            message += ` (${removedFromDecks} von Decks, ${removedFromQueue} aus Queue)`;
+          } else if (removedFromDecks > 0) {
+            message += ` von Decks`;
+          } else {
+            message += ` aus Queue`;
+          }
+          
+          showStatusMessage(message, 'info');
         }
         
       } else {
@@ -4213,6 +4338,10 @@ function createUnifiedSongElement(song: OpenSubsonicSong, context: 'search' | 'a
   const trackItem = document.createElement('div');
   trackItem.className = 'music-card song-row';
   trackItem.dataset.songId = song.id;
+  trackItem.dataset.songTitle = song.title;
+  trackItem.dataset.songArtist = song.artist;
+  trackItem.dataset.songAlbum = song.album;
+  trackItem.dataset.songGenre = song.genre || '';
   trackItem.dataset.coverArt = song.coverArt || '';
   trackItem.dataset.type = 'song';
   
@@ -4227,6 +4356,7 @@ function createUnifiedSongElement(song: OpenSubsonicSong, context: 'search' | 'a
     <div class="track-title">${escapeHtml(song.title)}</div>
     <div class="track-artist">${createArtistLinks(song)}</div>
     <div class="track-album clickable-album" draggable="false" data-album-id="${song.albumId || ''}" data-album-name="${escapeHtml(song.album)}" title="View album details">${escapeHtml(song.album)}</div>
+    <div class="track-genre">${escapeHtml(song.genre || '')}</div>
     <div class="track-rating" data-song-id="${song.id}">
       ${createStarRating(song.userRating || 0, song.id)}
     </div>
@@ -4237,6 +4367,7 @@ function createUnifiedSongElement(song: OpenSubsonicSong, context: 'search' | 'a
   trackItem.draggable = true;
   trackItem.addEventListener('dragstart', (e) => {
     console.log('🚀 DRAGSTART on track item:', song.title, 'by', song.artist);
+    console.log('🚀 Song genre:', song.genre);
     console.log('🚀 Event target:', e.target);
     console.log('🚀 DataTransfer available:', !!e.dataTransfer);
     
@@ -4248,7 +4379,12 @@ function createUnifiedSongElement(song: OpenSubsonicSong, context: 'search' | 'a
         sourceUrl: openSubsonicClient?.getStreamUrl(song.id)
       };
       
-      console.log('🚀 Setting drag data:', dragData);
+      console.log('🚀 Setting drag data (song object):', {
+        title: song.title,
+        artist: song.artist,
+        genre: song.genre,
+        hasGenre: !!song.genre
+      });
       
       e.dataTransfer.setData('application/json', JSON.stringify(dragData));
       // Set song ID as text/plain for fallback compatibility
@@ -4289,6 +4425,7 @@ function createSongHTMLOneline(song: OpenSubsonicSong): string {
       <div class="track-title">${escapeHtml(song.title)}</div>
       <div class="track-artist">${createArtistLinks(song)}</div>
       <div class="track-album clickable-album" draggable="false" data-album-id="${song.albumId || ''}" data-album-name="${escapeHtml(song.album)}" title="View album details">${escapeHtml(song.album)}</div>
+      <div class="track-genre">${escapeHtml(song.genre || '')}</div>
       <div class="track-rating" data-song-id="${song.id}">
         ${createStarRating(song.userRating || 0, song.id)}
       </div>
@@ -4787,6 +4924,9 @@ function addSongClickListeners(container: Element) {
           const album = el.dataset.songAlbum || 
                        el.querySelector('.track-album')?.textContent || 
                        'Unknown Album';
+          const genre = el.dataset.songGenre || 
+                       el.querySelector('.track-genre')?.textContent || 
+                       undefined;
           const coverArt = el.dataset.coverArt;
           
           song = {
@@ -4794,12 +4934,20 @@ function addSongClickListeners(container: Element) {
             title: songTitle,
             artist: artist,
             album: album,
+            genre: genre,
             duration: 0,
             size: 0,
             suffix: 'mp3',
             bitRate: 0,
             coverArt: coverArt
           };
+        }
+        
+        // Prüfe ob Song blacklisted Genre hat (nur wenn Streaming aktiv)
+        if (azuraCastWebcaster?.getConnectionStatus() && hasBlacklistedGenre(song)) {
+          console.warn(`🚫 Cannot add song with blacklisted genre to queue while streaming: "${song.title}" (${song.genre})`);
+          showStatusMessage(`🚫 "${song.title}" blockiert - Genre: ${song.genre}`, 'error');
+          return;
         }
         
         // Add song to end of queue
@@ -5096,6 +5244,240 @@ function showStatusMessage(message: string, type: 'success' | 'error' | 'info' =
   }, 5000);
 }
 
+// ========================================
+// 🎆 SPARK EFFECT FOR QUEUE COOLDOWN
+// ========================================
+
+interface Spark {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  lifeDecay: number; // Individual decay rate per frame
+  size: number;
+  color: string;
+}
+
+const activeSparkElements = new WeakMap<HTMLElement, { canvas: HTMLCanvasElement; timer: number }>();
+
+function cleanupSparkEffect(element: HTMLElement) {
+  const existing = activeSparkElements.get(element);
+  if (existing) {
+    clearTimeout(existing.timer);
+    if (existing.canvas.parentElement) {
+      existing.canvas.remove();
+    }
+    activeSparkElements.delete(element);
+  }
+}
+
+function scheduleRandomSparks(element: HTMLElement) {
+  // Clean up any existing spark effect
+  const existing = activeSparkElements.get(element);
+  if (existing) {
+    clearTimeout(existing.timer);
+    existing.canvas.remove();
+  }
+  
+  // Schedule next spark at random interval (0-2 seconds for very frequent sparks)
+  const nextSparkDelay = Math.random() * 2000;
+  
+  const timer = window.setTimeout(() => {
+    createSparkEffect(element);
+    // Reschedule if element still has cooldown class
+    if (element.classList.contains('artist-cooldown')) {
+      scheduleRandomSparks(element);
+    }
+  }, nextSparkDelay);
+  
+  // Store timer reference
+  if (existing) {
+    existing.timer = timer;
+  } else {
+    activeSparkElements.set(element, { canvas: document.createElement('canvas'), timer });
+  }
+}
+
+function createSparkEffect(element: HTMLElement) {
+  try {
+    // Find the artist name element within the queue item
+    const artistElement = element.querySelector('.track-artist, .song-artist, .artist-name, .queue-song-artist') as HTMLElement;
+    if (!artistElement) {
+      return;
+    }
+    
+    const artistText = artistElement.textContent?.trim() || '';
+    if (!artistText) {
+      return;
+    }
+    
+    // Position canvas DIRECTLY over the artist element, not the whole queue item
+    const rect = artistElement.getBoundingClientRect();
+    
+    // Check if element has valid dimensions
+    if (rect.width === 0 || rect.height === 0) {
+      return;
+    }
+    
+    // Create canvas overlay positioned relative to the artist element
+    const canvas = document.createElement('canvas');
+    canvas.style.position = 'absolute';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.style.pointerEvents = 'none';
+  canvas.style.zIndex = '100';
+  canvas.width = rect.width;
+  canvas.height = rect.height;
+  
+  // Make artist element position relative so canvas can be positioned absolutely within it
+  const originalPosition = artistElement.style.position;
+  artistElement.style.position = 'relative';
+  artistElement.appendChild(canvas);
+  
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  
+  // Measure text to get actual text width (not element width which includes padding)
+  const tempCanvas = document.createElement('canvas');
+  const tempCtx = tempCanvas.getContext('2d');
+  if (!tempCtx) return;
+  
+  // Get computed style to match font rendering
+  const computedStyle = window.getComputedStyle(artistElement);
+  tempCtx.font = `${computedStyle.fontWeight} ${computedStyle.fontSize} ${computedStyle.fontFamily}`;
+  const textMetrics = tempCtx.measureText(artistText);
+  const actualTextWidth = textMetrics.width;
+  
+  // Get text baseline position (approximate vertical center within the element)
+  const textHeight = parseFloat(computedStyle.fontSize);
+  const verticalCenter = rect.height / 2;
+  
+  // Get text alignment to calculate actual text position
+  const textAlign = computedStyle.textAlign || 'left';
+  const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
+  const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
+  const availableWidth = rect.width - paddingLeft - paddingRight;
+  
+  let textStartX: number;
+  if (textAlign === 'center') {
+    // Text is centered
+    textStartX = paddingLeft + (availableWidth - actualTextWidth) / 2;
+  } else if (textAlign === 'right') {
+    // Text is right-aligned
+    textStartX = paddingLeft + availableWidth - actualTextWidth;
+  } else {
+    // Text is left-aligned (default)
+    textStartX = paddingLeft;
+  }
+  
+  // Spawn within the actual text bounds
+  const spawnX = textStartX + Math.random() * actualTextWidth;
+  const spawnY = verticalCenter + (Math.random() * textHeight * 0.4) - (textHeight * 0.2); // Small vertical variance
+  
+  // Create sparks with varying intensity
+  const sparks: Spark[] = [];
+  const intensity = 0.3 + Math.random() * 0.7; // 0.3 to 1.0 (wider range for more variety)
+  const sparkCount = Math.floor((2 + Math.random() * 8) * intensity); // 2-10 sparks based on intensity
+  
+  for (let i = 0; i < sparkCount; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = (0.3 + Math.random() * 1.8) * intensity; // More speed variation
+    
+    // Each spark has its own random lifetime between 200ms and 1000ms
+    // At 60fps: 1.0 life with decay of 0.001-0.005 per frame = 200-1000ms
+    const lifetimeFrames = 12 + Math.random() * 48; // 12-60 frames = 200-1000ms at 60fps
+    const lifeDecay = 1.0 / lifetimeFrames;
+    
+    // Color spectrum from deep orange to white (lava to hot white)
+    const colorRand = Math.random();
+    let sparkColor: string;
+    if (colorRand < 0.3) {
+      sparkColor = '#FF5722'; // Deep orange (lava)
+    } else if (colorRand < 0.5) {
+      sparkColor = '#FF7043'; // Orange
+    } else if (colorRand < 0.7) {
+      sparkColor = '#FF8A65'; // Light orange
+    } else if (colorRand < 0.85) {
+      sparkColor = '#FFAB91'; // Very light orange
+    } else {
+      sparkColor = '#FFFFFF'; // Hot white
+    }
+    
+    sparks.push({
+      x: spawnX,
+      y: spawnY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 0.5, // slight upward bias
+      life: 1.0,
+      maxLife: 1.0,
+      lifeDecay: lifeDecay, // Individual decay rate for each spark
+      size: (1.0 + Math.random() * 2.5) * intensity, // Size varies with intensity
+      color: sparkColor
+    });
+  }
+  
+  // Animate sparks
+  let animationFrame: number;
+  
+  function animate() {
+    if (!ctx) return;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    let allDead = true;
+    
+    for (const spark of sparks) {
+      if (spark.life <= 0) continue;
+      
+      allDead = false;
+      
+      // Update position
+      spark.x += spark.vx;
+      spark.y += spark.vy;
+      spark.vy += 0.05; // gravity
+      
+      // Update life with individual decay rate (200-1000ms lifetime)
+      spark.life -= spark.lifeDecay;
+      
+      // Draw spark
+      const alpha = Math.max(0, spark.life / spark.maxLife);
+      ctx.fillStyle = spark.color;
+      ctx.globalAlpha = alpha;
+      
+      // Draw as small glowing circle
+      ctx.beginPath();
+      ctx.arc(spark.x, spark.y, spark.size, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Add glow
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = spark.color;
+      ctx.beginPath();
+      ctx.arc(spark.x, spark.y, spark.size * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    
+    if (allDead) {
+      // Remove canvas after animation
+      canvas.remove();
+      cancelAnimationFrame(animationFrame);
+    } else {
+      animationFrame = requestAnimationFrame(animate);
+    }
+  }
+  
+  animationFrame = requestAnimationFrame(animate);
+  
+  } catch (err) {
+    // Silently fail - effects are non-critical
+  }
+}
+
 function showSearchLoading() {
   const searchContent = document.getElementById('search-content');
   
@@ -5198,6 +5580,22 @@ async function addToQueue(songOrId: string | OpenSubsonicSong): Promise<void> {
   }
   
   if (song) {
+    console.log('🔍 addToQueue - Song details:', {
+      title: song.title,
+      artist: song.artist,
+      genre: song.genre,
+      hasGenre: !!song.genre
+    });
+    console.log('🔍 addToQueue - Streaming status:', azuraCastWebcaster?.getConnectionStatus());
+    console.log('🔍 addToQueue - Blacklisted genres:', blacklistedGenres);
+    
+    // Prüfe ob Song blacklisted Genre hat (nur wenn Streaming aktiv)
+    if (azuraCastWebcaster?.getConnectionStatus() && hasBlacklistedGenre(song)) {
+      console.warn(`🚫 Cannot add song with blacklisted genre to queue while streaming: "${song.title}" (${song.genre})`);
+      showStatusMessage(`🚫 "${song.title}" blockiert - Genre: ${song.genre}`, 'error');
+      return;
+    }
+    
     // ENHANCED: Check if song already exists in queue - prevent duplicates
     const existingIndex = queue.findIndex(item => isSongQueueItem(item) && item.song?.id === song.id);
     if (existingIndex !== -1) {
@@ -5230,6 +5628,14 @@ function updateQueueDisplay() {
   const queueContainers = document.querySelectorAll('.queue-items');
   
   queueContainers.forEach(queueContainer => {
+    // Cleanup any existing spark effects before clearing
+    const oldWrappers = queueContainer.querySelectorAll('.queue-item-wrapper');
+    oldWrappers.forEach(wrapper => {
+      if (wrapper instanceof HTMLElement) {
+        cleanupSparkEffect(wrapper);
+      }
+    });
+    
     // Clear container
     queueContainer.innerHTML = '';
     
@@ -5310,6 +5716,20 @@ function updateQueueDisplay() {
       
       // Assemble wrapper
       queueWrapper.appendChild(itemContainer);
+      
+      // Check if artist is on cooldown (recently played within 1 hour)
+      if (isSongQueueItem(queueItem)) {
+        const song = queueItem.song;
+        const artistName = song.artist?.trim();
+        if (artistName) {
+          const hoursSinceArtist = getTimeSinceArtistPlayed(artistName);
+          if (hoursSinceArtist !== null && hoursSinceArtist < 1) {
+            queueWrapper.classList.add('artist-cooldown');
+            // Add random spark effects
+            scheduleRandomSparks(queueWrapper);
+          }
+        }
+      }
       
       // Setup drag for queue item
       setupQueueItemDrag(queueWrapper, index);
@@ -7876,6 +8296,12 @@ function fillDeckFromQueue(deck: 'a' | 'b' | 'c' | 'd') {
     if (!isSongQueueItem(item) || !item.song) continue;
     
     if (item.assignedToDeck === null) {
+      // Skip blacklisted genres during streaming
+      if (azuraCastWebcaster?.getConnectionStatus() && hasBlacklistedGenre(item.song)) {
+        console.warn(`🚫 Skipping blacklisted song in auto-fill: "${item.song.title}" (${item.song.genre})`);
+        continue;
+      }
+      
       if (unassignedCount === songsBeforeThisDeck) {
         targetSongItem = item;
         break;
@@ -7886,9 +8312,19 @@ function fillDeckFromQueue(deck: 'a' | 'b' | 'c' | 'd') {
   
   // Fallback: If no song found at exact position, take first available
   if (!targetSongItem) {
-    targetSongItem = queue.find(item => 
-      isSongQueueItem(item) && item.assignedToDeck === null && item.song
-    ) || null;
+    targetSongItem = queue.find(item => {
+      if (!isSongQueueItem(item) || item.assignedToDeck !== null || !item.song) {
+        return false;
+      }
+      
+      // Skip blacklisted genres during streaming
+      if (azuraCastWebcaster?.getConnectionStatus() && hasBlacklistedGenre(item.song)) {
+        console.warn(`🚫 Skipping blacklisted song in auto-fill fallback: "${item.song.title}" (${item.song.genre})`);
+        return false;
+      }
+      
+      return true;
+    }) || null;
   }
   
   if (!targetSongItem || !isSongQueueItem(targetSongItem) || !targetSongItem.song) {
@@ -7925,10 +8361,16 @@ function removeFromQueue(index: number) {
 }
 
 // Move a queue item to the end of the queue (used when manually ejecting from deck)
+// If song is not in queue, add it
 function moveQueueItemToEnd(song: OpenSubsonicSong, animated: boolean = true) {
   const index = queue.findIndex(item => isSongQueueItem(item) && item.song?.id === song.id);
+  
   if (index === -1) {
-    console.log(`⚠️ Song "${song.title}" not found in queue`);
+    // Song not in queue, add it to the end
+    console.log(`➕ Adding song "${song.title}" to queue (was not in queue)`);
+    const newItem = createSongQueueItem(song);
+    queue.push(newItem);
+    updateQueueDisplay();
     return;
   }
   
@@ -8572,6 +9014,14 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
     
     // HTML Audio controls playback, WaveSurfer follows for visualization
     if (audio.paused) {
+      // Check for blacklisted genre before playing during stream
+      const currentSong = playerStates[side].song;
+      if (azuraCastWebcaster?.getConnectionStatus() && currentSong && hasBlacklistedGenre(currentSong)) {
+        console.warn(`🚫 Cannot play song with blacklisted genre while streaming: "${currentSong.title}" (${currentSong.genre})`);
+        showStatusMessage(`🚫 "${currentSong.title}" kann nicht gespielt werden - Genre: ${currentSong.genre}`, 'error');
+        return;
+      }
+      
       if (audio.src) {
         audio.play().catch(e => {
           console.error(`? Play error on Player ${side}:`, e);
@@ -9758,13 +10208,43 @@ function initializePlayerDropZone(side: 'a' | 'b' | 'c' | 'd') {
         if (songData.type === 'song' && songData.song) {
           song = songData.song;
           songId = song?.id || null;
+          
+          console.log('🔍 Deck drop - Song details:', {
+            title: song?.title,
+            artist: song?.artist,
+            genre: song?.genre,
+            hasGenre: !!song?.genre
+          });
+          console.log('🔍 Deck drop - Streaming status:', azuraCastWebcaster?.getConnectionStatus());
+          console.log('🔍 Deck drop - Blacklisted genres:', blacklistedGenres);
+          
+          // Prüfe ob Song blacklisted Genre hat (nur wenn Streaming aktiv)
+          if (azuraCastWebcaster?.getConnectionStatus() && song && hasBlacklistedGenre(song)) {
+            console.warn(`🚫 Cannot load song with blacklisted genre while streaming: "${song.title}" (${song.genre})`);
+            showStatusMessage(`🚫 "${song.title}" blockiert - Genre: ${song.genre}`, 'error');
+            return;
+          }
         } else if (songData.type === 'track' && songData.track) {
           song = songData.track;
           songId = song?.id || null;
+          
+          // Prüfe ob Song blacklisted Genre hat (nur wenn Streaming aktiv)
+          if (azuraCastWebcaster?.getConnectionStatus() && song && hasBlacklistedGenre(song)) {
+            console.warn(`🚫 Cannot load song with blacklisted genre while streaming: "${song.title}" (${song.genre})`);
+            showStatusMessage(`🚫 "${song.title}" blockiert - Genre: ${song.genre}`, 'error');
+            return;
+          }
         } else if (songData.type === 'queue-song' && songData.song) {
           song = songData.song;
           songId = song?.id || null;
           const queueIndex = songData.queueIndex;
+          
+          // Prüfe ob Song blacklisted Genre hat (nur wenn Streaming aktiv)
+          if (azuraCastWebcaster?.getConnectionStatus() && song && hasBlacklistedGenre(song)) {
+            console.warn(`🚫 Cannot load song with blacklisted genre while streaming: "${song.title}" (${song.genre})`);
+            showStatusMessage(`🚫 "${song.title}" blockiert - Genre: ${song.genre}`, 'error');
+            return;
+          }
           
           if (song) {
             console.log(`🎯 Queue song dropped on deck ${side.toUpperCase()}: "${song.title}" (queue position ${queueIndex})`);
@@ -9817,6 +10297,13 @@ function initializePlayerDropZone(side: 'a' | 'b' | 'c' | 'd') {
           songId = song?.id || null;
           const sourceDeck = songData.sourceDeck;
           console.log(`🎵 Detected deck-song drop: from ${sourceDeck} to ${side}, song:`, song);
+          
+          // Prüfe ob Song blacklisted Genre hat (nur wenn Streaming aktiv)
+          if (azuraCastWebcaster?.getConnectionStatus() && song && hasBlacklistedGenre(song)) {
+            console.warn(`🚫 Cannot load song with blacklisted genre while streaming: "${song.title}" (${song.genre})`);
+            showStatusMessage(`🚫 "${song.title}" blockiert - Genre: ${song.genre}`, 'error');
+            return;
+          }
           
           if (song) {
             // Check if this is a radio stream
@@ -11968,14 +12455,8 @@ function showArtistDetailView(artist: OpenSubsonicArtist, albums: OpenSubsonicAl
   const detailView = document.createElement('div');
   detailView.className = 'detail-view';
   
-  let artistImageUrl = '';
-  if (artist.artistImageUrl) {
-    // Remove existing size parameter and add size=300
-    artistImageUrl = artist.artistImageUrl.replace(/[?&]size=\d+/g, '');
-    artistImageUrl += (artistImageUrl.includes('?') ? '&' : '?') + 'size=300';
-  } else if (artist.coverArt) {
-    artistImageUrl = openSubsonicClient.getCoverArtUrl(artist.coverArt, 300);
-  }
+  const artistImageUrl = getArtistImageUrl(artist.artistImageUrl, 300) 
+    || (artist.coverArt ? openSubsonicClient.getCoverArtUrl(artist.coverArt, 300) : '');
 
   detailView.innerHTML = `
     <div class="detail-header">
@@ -12368,15 +12849,49 @@ class LibraryBrowser {
 
   private async loadArtistContent(artist: OpenSubsonicArtist) {
     const content = document.getElementById('library-content')!;
+    
+    // Hole vollständige Artist-Daten
+    const [fullArtist, artistInfo] = await Promise.all([
+      openSubsonicClient.getArtist(artist.id),
+      openSubsonicClient.getArtistInfo(artist.id)
+    ]);
+    
+    console.log('Full Artist Data:', fullArtist);
+    console.log('Artist Info:', artistInfo);
+    
+    // Nutze die Daten aus fullArtist für albumCount
+    const albumCount = fullArtist?.albumCount || artist.albumCount || 0;
+    const rawArtistImageUrl = fullArtist?.artistImageUrl || artistInfo?.largeImageUrl || artistInfo?.mediumImageUrl;
+    const artistImageUrl = getArtistImageUrl(rawArtistImageUrl, 300);
+    let biography = artistInfo?.biography || '';
+    
+    // Biografie bereinigen: HTML-Links erlauben aber sicher machen
+    if (biography && biography !== 'Empty biography') {
+      // Kürze auf 300 Zeichen, aber behalte HTML-Links
+      if (biography.length > 300) {
+        // Schneide bei 300 ab, aber nicht mitten im Link
+        const linkMatch = biography.substring(0, 300).lastIndexOf('<a ');
+        const linkEnd = biography.indexOf('</a>', linkMatch);
+        if (linkMatch !== -1 && linkEnd > 300) {
+          // Link geht über 300 hinaus, nimm den ganzen Link mit
+          biography = biography.substring(0, linkEnd + 4) + '...';
+        } else {
+          biography = biography.substring(0, 300) + '...';
+        }
+      }
+    }
+    
     content.innerHTML = `
       <div class="artist-header">
         <div class="artist-info">
-          <div class="artist-image-large">
-            <span class="material-icons">person</span>
-          </div>
+          ${artistImageUrl 
+            ? `<div class="artist-image-large"><img src="${artistImageUrl}" alt="${escapeHtml(artist.name)}" onerror="this.parentElement.innerHTML='<span class=\\'material-icons\\'>person</span>';"></div>`
+            : `<div class="artist-image-large"><span class="material-icons">person</span></div>`
+          }
           <div class="artist-details">
             <h1 class="artist-name">${escapeHtml(artist.name)}</h1>
-            <p class="artist-album-count">${artist.albumCount || 0} Albums</p>
+            <p class="artist-album-count">${albumCount} Album${albumCount !== 1 ? 's' : ''}</p>
+            ${biography && biography !== 'Empty biography' ? `<p class="artist-biography">${biography}</p>` : ''}
           </div>
         </div>
       </div>
@@ -12418,6 +12933,13 @@ class LibraryBrowser {
           <div class="loading-placeholder">Loading songs...</div>
         </div>
       </div>
+
+      <div class="media-section" id="similar-artists-section" style="display: none;">
+        <h3 class="section-title">Similar Artists</h3>
+        <div class="horizontal-scroll artist-grid" id="similar-artists">
+          <div class="loading-placeholder">Loading similar artists...</div>
+        </div>
+      </div>
     `;
 
     // Load artist data
@@ -12427,6 +12949,51 @@ class LibraryBrowser {
         openSubsonicClient.getArtistSongs(artist.id),
         openSubsonicClient.getAllAlbumsWithArtist(artist.name)
       ]);
+
+      // Similar Artists anzeigen wenn vorhanden
+      if (artistInfo?.similarArtist && artistInfo.similarArtist.length > 0) {
+        const similarSection = document.getElementById('similar-artists-section');
+        if (similarSection) {
+          similarSection.style.display = 'block';
+          const similarContainer = document.getElementById('similar-artists');
+          if (similarContainer) {
+            similarContainer.innerHTML = artistInfo.similarArtist.map((simArtist: any) => {
+              const simArtistImageUrl = getArtistImageUrl(simArtist.artistImageUrl, 300);
+              return `
+                <div class="artist-card clickable" data-artist-id="${simArtist.id}" data-artist-name="${escapeHtml(simArtist.name)}">
+                  <div class="artist-image">
+                    ${simArtistImageUrl 
+                      ? `<img src="${simArtistImageUrl}" alt="${escapeHtml(simArtist.name)}" onerror="this.parentElement.innerHTML='<span class=\\'material-icons\\'>person</span>';">` 
+                      : `<span class="material-icons">person</span>`
+                    }
+                  </div>
+                  <p class="artist-name">${escapeHtml(simArtist.name)}</p>
+                </div>
+              `;
+            }).join('');
+            
+            // Drag scrolling für similar artists
+            addDragScrollingToContainer(similarContainer);
+            
+            // Click events für similar artists
+            similarContainer.querySelectorAll('.artist-card[data-artist-id]').forEach(card => {
+              card.addEventListener('click', () => {
+                const artistId = card.getAttribute('data-artist-id');
+                const artistName = card.getAttribute('data-artist-name');
+                if (artistId && artistName) {
+                  const clickedArtist: OpenSubsonicArtist = {
+                    id: artistId,
+                    name: artistName,
+                    albumCount: 0 // Wird später geladen
+                  };
+                  console.log(`🎤 Similar Artist clicked: "${artistName}"`);
+                  libraryBrowser.showArtist(clickedArtist);
+                }
+              });
+            });
+          }
+        }
+      }
 
       // Filter appears-on albums (exclude albums where artist is album artist)
       const albumArtistIds = new Set(albums.map(a => a.id));
@@ -12976,7 +13543,6 @@ class LibraryBrowser {
               <div class="no-cover">🎤</div>
             </div>
             <h4 class="artist-name">${escapeHtml(artist.name)}</h4>
-            <p class="artist-type">Artist</p>
           </div>
         `).join('');
         
@@ -13132,7 +13698,7 @@ function addDragScrollingToContainer(container: HTMLElement) {
   let isDown = false;
   let startX = 0;
   let scrollLeft = 0;
-  let hasMoved = false; // Tracks if actual dragging occurred
+  let hasMoved = false;
 
   // Markiere als initialisiert
   container.dataset.dragScrollInitialized = 'true';
@@ -13140,10 +13706,8 @@ function addDragScrollingToContainer(container: HTMLElement) {
   container.addEventListener('mousedown', (e: MouseEvent) => {
     isDown = true;
     hasMoved = false;
-    // NICHT sofort dragging-Klasse setzen - erst bei tatsächlicher Bewegung
     startX = e.pageX - container.offsetLeft;
     scrollLeft = container.scrollLeft;
-    // e.preventDefault() NICHT hier - sonst werden Click-Events blockiert
   });
 
   container.addEventListener('mouseleave', () => {
@@ -13154,14 +13718,12 @@ function addDragScrollingToContainer(container: HTMLElement) {
 
   container.addEventListener('mouseup', () => {
     isDown = false;
-    // Nur verzögertes Entfernen wenn tatsächlich gedraggt wurde
     if (hasMoved) {
       setTimeout(() => {
         container.classList.remove('dragging');
         hasMoved = false;
-      }, 50); // Längere Verzögerung für bessere Erkennung
+      }, 50);
     } else {
-      // Sofort entfernen wenn nicht gedraggt wurde
       container.classList.remove('dragging');
       hasMoved = false;
     }
@@ -13170,19 +13732,16 @@ function addDragScrollingToContainer(container: HTMLElement) {
   container.addEventListener('mousemove', (e: MouseEvent) => {
     if (!isDown) return;
     
+    e.preventDefault();
     const x = e.pageX - container.offsetLeft;
-    const walk = (x - startX) * 2; // Scroll-Geschwindigkeit (2x)
+    const walk = (x - startX) * 2;
     
-    // Nur bei tatsächlicher Bewegung als Drag behandeln
-    if (Math.abs(walk) > 8) { // Erhöhte Schwelle für bessere Unterscheidung
-      if (!hasMoved) {
-        // Erst jetzt als Drag kennzeichnen
-        hasMoved = true;
-        container.classList.add('dragging');
-        e.preventDefault();
-      }
-      container.scrollLeft = scrollLeft - walk;
+    if (Math.abs(walk) > 5) {
+      hasMoved = true;
+      container.classList.add('dragging');
     }
+    
+    container.scrollLeft = scrollLeft - walk;
   });
 
   // Touch-Support für mobile Geräte

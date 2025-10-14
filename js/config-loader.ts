@@ -28,6 +28,7 @@ interface AppConfig {
     sampleRate: string;
   };
   deckConfiguration: string;
+  blacklistedGenres?: string;
 }
 
 let cachedConfig: AppConfig | null = null;
@@ -98,6 +99,7 @@ export function getConfigValue(key: string): string {
     'VITE_STREAM_SAMPLE_RATE': () => cachedConfig!.stream.sampleRate,
     'VITE_DECK_CONFIGURATION': () => cachedConfig!.deckConfiguration,
     'VITE_USE_UNIFIED_LOGIN': () => String(cachedConfig!.unifiedLogin.enabled),
+    'VITE_BLACKLISTED_GENRES': () => cachedConfig!.blacklistedGenres || '',
   };
 
   const getter = keyMap[key];

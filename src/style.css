@@ -1889,8 +1889,10 @@ body.logged-in .wishbox-frame {
   padding: 6px 8px 0 8px;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   line-height: 1.2;
+  text-align: center; /* Zentriert wenn es passt */
+  width: 100%; /* Nutzt volle Breite */
+  direction: ltr; /* Links-nach-rechts, schneidet rechts ab */
 }
 
 .album-artist,
@@ -1901,7 +1903,9 @@ body.logged-in .wishbox-frame {
   padding: 0 8px 8px 8px;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-align: center; /* Zentriert wenn es passt */
+  width: 100%; /* Nutzt volle Breite der Card */
+  direction: ltr; /* Links-nach-rechts, schneidet rechts ab */
 }
 
 .album-artists {
@@ -1928,41 +1932,7 @@ body.logged-in .wishbox-frame {
   margin-bottom: 4px;
 }
 
-.artist-card {
-  display: flex;
-  flex-direction: column;
-  min-width: 140px;
-  width: 140px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  padding: 12px;
-  transition: all 0.2s ease;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.artist-card:hover {
-  background: rgba(255, 255, 255, 0.08);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-}
-
-.artist-image {
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  overflow: hidden;
-  position: relative;
-  background: rgba(255, 255, 255, 0.05);
-  margin-bottom: 8px;
-}
-
-.artist-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  display: block;
-}
+/* Artist card styling consolidated - see line 9219+ for main rules */
 
 .artist-name {
   font-size: 14px;
@@ -2569,7 +2539,7 @@ body.logged-in .wishbox-frame {
   top: 35px; /* Position below status indicators */
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1000;
+  z-index: 10000; /* Above library browser and other elements */
   display: none;
   margin-top: 8px;
 }
@@ -2579,89 +2549,86 @@ body.logged-in .wishbox-frame {
 }
 
 .station-dropdown-menu {
-  background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
-  border: 2px solid #555;
-  border-radius: 12px;
+  background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
+  border: 1px solid #555;
+  border-radius: 8px;
   box-shadow: 
-    0 8px 25px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  min-width: 250px;
-  max-height: 350px;
+    0 8px 32px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  min-width: 280px;
+  max-height: 400px;
   overflow-y: auto;
-  transform: perspective(600px) rotateX(-2deg);
-  transform-origin: top center;
+  backdrop-filter: blur(10px);
 }
 
 .dropdown-loading {
-  padding: 15px;
+  padding: 16px;
   text-align: center;
-  color: #999;
+  color: #888;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 13px;
+  font-family: 'Roboto', sans-serif;
 }
 
 .station-dropdown-item {
-  padding: 15px 20px;
+  padding: 14px 18px;
   cursor: pointer;
-  border-bottom: 1px solid #333;
-  transition: all 0.3s ease;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-family: 'Roboto', sans-serif;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 13px;
-  letter-spacing: 0.5px;
-  transform: perspective(600px) rotateX(-1deg);
+  letter-spacing: 0.3px;
+  background: transparent;
+  position: relative;
 }
 
 .station-dropdown-item:last-child {
   border-bottom: none;
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 8px 8px;
 }
 
 .station-dropdown-item:first-child {
-  border-radius: 10px 10px 0 0;
+  border-radius: 8px 8px 0 0;
 }
 
 .station-dropdown-item:hover {
-  background: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);
-  transform: perspective(600px) rotateX(0deg);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .station-dropdown-item.selected {
-  background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
-  color: #fff;
-  box-shadow: 
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 2px 8px rgba(0, 102, 204, 0.3);
+  background: linear-gradient(90deg, rgba(0, 102, 204, 0.2) 0%, transparent 100%);
+  color: #6ba3d4;
+  border-left: 3px solid #6ba3d4;
+  padding-left: 15px;
 }
 
-/* Station Status Colors - STREAM button style */
+/* Station Status Colors */
 .station-dropdown-item.offline {
-  color: #888;
-  background: linear-gradient(135deg, #1a1a1a 0%, #111 100%);
+  color: #666;
 }
 
 .station-dropdown-item.online {
   color: #4CAF50;
-  background: linear-gradient(135deg, #1a2a1a 0%, #0a1a0a 100%);
 }
 
 .station-dropdown-item.occupied {
   color: #ff6b6b;
-  background: linear-gradient(135deg, #2a1a1a 0%, #1a0a0a 100%);
-  border-left: 3px solid #ff6b6b;
+  border-left: 3px solid rgba(255, 107, 107, 0.3);
+  padding-left: 15px;
 }
 
 .station-item-main {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex: 1;
 }
 
@@ -2669,24 +2636,26 @@ body.logged-in .wishbox-frame {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #666;
+  background: #444;
   transition: background-color 0.3s ease;
+  flex-shrink: 0;
 }
 
 .station-status-dot.online {
   background: #4CAF50;
-  box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
+  box-shadow: 0 0 10px rgba(76, 175, 80, 0.6);
 }
 
 .station-status-dot.occupied {
   background: #ff6b6b;
-  box-shadow: 0 0 8px rgba(255, 107, 107, 0.5);
+  box-shadow: 0 0 10px rgba(255, 107, 107, 0.6);
 }
 
 .station-streamer-info {
   font-size: 11px;
-  color: #999;
+  color: #888;
   font-style: italic;
+  font-weight: 400;
 }
 
 /* Crossfader Section - Compact */
@@ -4794,8 +4763,8 @@ body.logged-in .wishbox-frame {
 /* Unified Song Design - Consistent across Search, Album Details, Queue */
 .unified-song-item {
   display: grid;
-  grid-template-columns: 40px 1fr auto auto 60px 35px;
-  gap: 1rem;
+  grid-template-columns: 40px minmax(150px, 2fr) minmax(100px, 1.5fr) minmax(100px, 1.5fr) minmax(80px, 1fr) 60px 55px;
+  gap: 0.75rem;
   align-items: center;
   padding: 0.75rem 1rem;
   background: transparent;
@@ -4971,100 +4940,102 @@ body.logged-in .wishbox-frame {
 /* Queue Label Row - seamlessly connected to search bar */
 .queue-label-row {
   display: flex;
-  align-items: stretch; /* Stretch to match search height */
+  align-items: stretch;
   justify-content: space-between;
   position: relative;
   margin-bottom: 0;
-  padding: 0; /* No padding for seamless connection */
-  height: 30px; /* Match search height exactly */
-  border-top: 1px solid #444; /* Visual connection to search area */
+  padding: 0;
+  height: 30px;
+  border-top: 1px solid #444;
 }
 
 .queue-label {
-  /* Korrekte Tilted-Breadcrumb Styling */
   display: flex;
   align-items: center;
+  justify-content: center;
   background: rgba(0, 0, 0, 0.8);
-  padding: 8px 14px;
-  border: 1px solid #444;
-  border-top: none; /* Connect to search area above */
-  clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%);
-  font-size: 13px;
+  padding: 0 18px;
+  border: 1px solid #666;
+  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   transition: all 0.2s ease;
-  margin-right: 4px; /* Gap zu den Buttons */
+  margin-right: -8px; /* Negative margin für Verbindung zu Buttons */
   min-height: 30px;
+  height: 30px;
   line-height: 1;
-  flex: 1; /* Take available space */
-  /* Active state like Library breadcrumb */
+  flex: 1;
   color: white;
-  border-color: #666;
   background: rgba(255, 255, 255, 0.1);
+  z-index: 2;
 }
 
-/* Auto-Queue Controls - Vereinfacht ohne Abstände */
+/* Auto-Queue Controls - Einheitlich zusammenhängend mit Tilted-Design */
 .queue-label-row .auto-queue-controls {
   display: flex;
-  gap: 0; /* Keine Abstände zwischen Buttons */
+  gap: 0;
   margin: 0;
   align-items: center;
   height: 30px;
+  position: relative;
 }
 
 .auto-queue-controls {
   display: flex;
-  gap: 0; /* Keine Abstände zwischen Buttons */
+  gap: 0;
   align-items: center;
+  position: relative;
 }
 
 .auto-queue-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   background: rgba(0, 0, 0, 0.8);
-  padding: 8px 14px;
-  border: none;
-  border-top: 1px solid #444;
-  border-bottom: 1px solid #444;
-  border-left: 1px solid #444;
-  clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%);
-  font-size: 13px;
+  padding: 0 18px;
+  border: 1px solid #444;
+  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   transition: all 0.2s ease;
-  margin: 0;
   min-height: 30px;
   height: 30px;
   line-height: 1;
   cursor: pointer;
-  color: #ccc;
+  color: #999;
   flex-shrink: 0;
+  position: relative;
+  margin-left: -8px; /* Negative margin für nahtlose Verbindung */
+  z-index: 1;
 }
 
-.auto-queue-btn:last-child {
-  border-right: 1px solid #444; /* Letzter Button bekommt rechten Border */
+.auto-queue-btn:first-child {
+  margin-left: 0; /* Erster Button ohne negative margin */
 }
 
 .auto-queue-btn:hover {
   color: #fff;
   border-color: #666;
-  background: rgba(255, 255, 255, 0.1);
-  z-index: 1;
+  background: rgba(255, 255, 255, 0.08);
+  z-index: 3;
 }
 
 .auto-queue-btn.active {
   color: #64FFDA;
   border-color: #64FFDA;
-  background: rgba(100, 255, 218, 0.1);
-  z-index: 2;
+  background: rgba(100, 255, 218, 0.12);
+  z-index: 4;
 }
 
 .auto-queue-btn.active:hover {
   color: #80ffff;
   border-color: #80ffff;
-  background: rgba(128, 255, 255, 0.15);
+  background: rgba(128, 255, 255, 0.18);
+  z-index: 5;
 }
 
 /* Queue Panel */
@@ -5097,44 +5068,91 @@ body.logged-in .wishbox-frame {
   display: inline-block;
 }
 
-.radio-stream-btn {
-  /* Korrekte Tilted-Breadcrumb Styling wie auf der ganzen Seite */
+/* Unified Queue Button Styling - All buttons share same base */
+.radio-stream-btn,
+.wishbox-btn,
+.queue-mic-add-btn,
+.deck-toggle-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.8) !important;
-  padding: 8px 12px;
-  border: 1px solid #444 !important;
-  clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%) !important;
-  font-size: 13px;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 0 16px;
+  border: 1px solid #444;
+  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   transition: all 0.2s ease;
-  margin-right: 4px;
   min-height: 30px;
   height: 30px;
   line-height: 1;
   cursor: pointer;
-  color: #ccc !important;
-  box-shadow: none !important;
+  color: #999;
   flex-shrink: 0;
-  min-width: 44px;
+  position: relative;
+  margin: 0;
+  margin-left: -8px;
+  z-index: 1;
+  box-shadow: none;
 }
 
-.radio-stream-btn:hover {
-  color: #fff !important;
-  border-color: #666 !important;
-  background: rgba(255, 255, 255, 0.1) !important;
-  transform: translateY(-1px);
-  box-shadow: none !important;
+/* First button in auto-queue-controls (A+B) gets no negative margin */
+.auto-queue-controls .auto-queue-btn:first-child {
+  margin-left: 0;
 }
 
-.radio-stream-btn.active {
-  color: #64FFDA !important;
-  border-color: #64FFDA !important;
-  background: rgba(100, 255, 218, 0.1) !important;
-  box-shadow: none !important;
+/* Hover state for all buttons */
+.radio-stream-btn:hover,
+.wishbox-btn:hover,
+.queue-mic-add-btn:hover,
+.deck-toggle-btn:hover,
+.auto-queue-btn:hover {
+  color: #fff;
+  border-color: #666;
+  background: rgba(255, 255, 255, 0.08);
+  z-index: 3;
+}
+
+/* Active/Selected states */
+.auto-queue-btn.active {
+  color: #64FFDA;
+  border-color: #64FFDA;
+  background: rgba(100, 255, 218, 0.12);
+  z-index: 4;
+}
+
+.auto-queue-btn.active:hover {
+  color: #80ffff;
+  border-color: #80ffff;
+  background: rgba(128, 255, 255, 0.18);
+  z-index: 5;
+}
+
+/* Microphone button special coloring */
+.queue-mic-add-btn {
+  color: #FF5722;
+  border-color: #FF5722;
+  background: rgba(255, 87, 34, 0.12);
+}
+
+.queue-mic-add-btn:hover {
+  color: #FF7043;
+  border-color: #FF7043;
+  background: rgba(255, 112, 67, 0.18);
+}
+
+.queue-mic-add-btn .material-icons {
+  font-size: 16px;
+}
+
+/* Wishbox button active state */
+.wishbox-btn.active {
+  color: #64FFDA;
+  border-color: #64FFDA;
+  background: rgba(100, 255, 218, 0.2);
+  z-index: 4;
 }
 
 .radio-stream-dropdown {
@@ -5303,88 +5321,25 @@ body.logged-in .wishbox-frame {
   display: inline-block;
 }
 
-/* Wishbox Button (similar to Radio button) */
-.wishbox-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.8) !important;
-  padding: 8px 12px;
-  border: 1px solid #444 !important;
-  clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%) !important;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  transition: all 0.2s ease;
-  margin-right: 4px;
-  min-height: 30px;
-  height: 30px;
-  line-height: 1;
-  cursor: pointer;
-  color: #64FFDA !important; /* Turquoise like radio stream */
-  box-shadow: none !important;
-  flex-shrink: 0;
-  min-width: 44px;
-}
-
-.wishbox-btn:hover {
-  color: #99AAB5 !important;
-  border-color: #64FFDA !important;
-  background: rgba(100, 255, 218, 0.1) !important;
-  transform: translateY(-1px);
-  box-shadow: none !important;
-}
-
-.wishbox-btn.active {
-  color: #64FFDA !important;
-  border-color: #64FFDA !important;
-  background: rgba(100, 255, 218, 0.2) !important;
-  box-shadow: none !important;
-}
-
-/* Deck C+D Toggle Button (matching wishbox-btn style) */
-.deck-toggle-selector {
-  position: relative;
-}
-
+/* Deck C+D Toggle Button - schmaler, nur Icon, direkt nach C+D */
 .deck-toggle-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(0, 0, 0, 0.8) !important;
-  padding: 8px 12px;
-  border: 1px solid #444 !important;
-  clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%) !important;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  transition: all 0.2s ease;
-  margin-right: 4px;
-  min-height: 30px;
-  height: 30px;
-  line-height: 1;
-  cursor: pointer;
-  color: #fff !important;
-  box-shadow: none !important;
-  flex-shrink: 0;
-}
-
-.deck-toggle-btn:hover {
-  color: #fff !important;
-  border-color: #666 !important;
-  background: rgba(255, 255, 255, 0.1) !important;
-  transform: translateY(-1px);
-  box-shadow: none !important;
+  padding: 0 8px; /* 40% der normalen Breite */
+  min-width: auto;
 }
 
 .deck-toggle-btn .material-icons {
   font-size: 18px;
+  margin: 0;
+  transition: transform 0.2s ease;
 }
 
-.deck-toggle-text {
-  font-size: 11px;
+.deck-toggle-btn:hover .material-icons {
+  transform: scale(1.1);
+}
+
+/* Hide C+D button when decks are hidden */
+body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"]) #auto-queue-cd {
+  display: none;
 }
 
 /* Wishbox Dropdown (matching radio-stream-dropdown) */
@@ -5887,49 +5842,6 @@ body.logged-in .wishbox-frame {
 .search-prompt p {
   color: #718096;
   font-size: 1rem;
-}
-
-/* Queue Microphone Add Button - Vereinheitlicht mit Auto-Queue Buttons */
-.queue-mic-add-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 87, 34, 0.15);
-  padding: 8px 10px;
-  border: none;
-  border-top: 1px solid #FF5722;
-  border-bottom: 1px solid #FF5722;
-  border-left: 1px solid #FF5722;
-  border-right: 1px solid #FF5722;
-  clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%);
-  color: #FF5722;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  outline: none;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  min-height: 30px;
-  height: 30px;
-  margin: 0;
-  flex-shrink: 0;
-}
-
-.queue-mic-add-btn:hover {
-  border-color: #FF7043;
-  background: rgba(255, 87, 34, 0.25);
-  color: #FF7043;
-  z-index: 1;
-}
-
-.queue-mic-add-btn:active {
-  background: rgba(255, 87, 34, 0.35);
-}
-
-.queue-mic-add-btn .material-icons {
-  font-size: 16px;
-  color: inherit;
 }
 
 /* Queue Drag & Drop Styles */
@@ -6654,7 +6566,8 @@ body.logged-in .wishbox-frame {
 .horizontal-scroll .artist-card:hover {
   background: transparent !important;
   border: none !important;
-  transform: translateY(-4px) !important;
+  transform: none !important; /* Keine Bewegung beim Hover */
+  box-shadow: none !important; /* Kein Schatten */
 }
 
 .horizontal-scroll .artist-item .artist-image,
@@ -6980,13 +6893,65 @@ body.logged-in .wishbox-frame {
 /* Album/Artist Detail Views */
 .album-header,
 .artist-header {
-  background: linear-gradient(135deg, #2d3748, #4a5568);
-  padding: 1rem;
-  border-radius: 8px;
-  margin-bottom: 1rem;
+  padding: 20px;
+  background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.artist-info {
   display: flex;
-  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.artist-image-large {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #333;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.artist-image-large img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.artist-image-large .material-icons {
+  font-size: 60px;
+  color: #666;
+}
+
+.artist-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.artist-name {
+  margin: 0 0 8px 0;
+  font-size: 2rem;
+  font-weight: bold;
+  color: #00ff88;
+}
+
+.artist-album-count {
+  margin: 0 0 12px 0;
+  color: #999;
+  font-size: 0.95rem;
+}
+
+.artist-biography {
+  margin: 0;
+  color: #ccc;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  max-width: 800px;
 }
 
 .album-header h3,
@@ -7515,125 +7480,80 @@ body.logged-in .wishbox-frame {
 }
 
 /* ========================================
-   🎵 RECENTLY PLAYED SCRIBBLE EFFECT
+   🎵 RECENTLY PLAYED TRANSPARENCY FADE
    ======================================== */
 
-/* Recently played song - hand-drawn scribble overlay */
-.recently-played-scribble {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
-  z-index: 10;
-  opacity: var(--scribble-opacity, 0.7);
-  
-  /* Hand-drawn scribble effect with SVG pattern */
-  background-image: 
-    /* Thick diagonal scribbles (irregular) */
-    repeating-linear-gradient(
-      43deg,
-      transparent 0px,
-      transparent 3px,
-      var(--scribble-color, #ff5555) 3px,
-      var(--scribble-color, #ff5555) 6px,
-      transparent 6px,
-      transparent 12px,
-      var(--scribble-color, #ff5555) 12px,
-      var(--scribble-color, #ff5555) 15px,
-      transparent 15px,
-      transparent 25px
-    ),
-    repeating-linear-gradient(
-      -38deg,
-      transparent 0px,
-      transparent 5px,
-      var(--scribble-color, #ff5555) 5px,
-      var(--scribble-color, #ff5555) 9px,
-      transparent 9px,
-      transparent 18px,
-      var(--scribble-color, #ff5555) 18px,
-      var(--scribble-color, #ff5555) 22px,
-      transparent 22px,
-      transparent 35px
-    ),
-    repeating-linear-gradient(
-      47deg,
-      transparent 0px,
-      transparent 8px,
-      var(--scribble-color, #ff5555) 8px,
-      var(--scribble-color, #ff5555) 12px,
-      transparent 12px,
-      transparent 28px
-    ),
-    /* Wavy horizontal scribbles */
-    repeating-linear-gradient(
-      2deg,
-      transparent 0px,
-      transparent 6px,
-      var(--scribble-color, #ff5555) 6px,
-      var(--scribble-color, #ff5555) 11px,
-      transparent 11px,
-      transparent 20px,
-      var(--scribble-color, #ff5555) 20px,
-      var(--scribble-color, #ff5555) 24px,
-      transparent 24px,
-      transparent 40px
-    ),
-    repeating-linear-gradient(
-      -3deg,
-      transparent 0px,
-      transparent 10px,
-      var(--scribble-color, #ff5555) 10px,
-      var(--scribble-color, #ff5555) 15px,
-      transparent 15px,
-      transparent 45px
-    );
-  
-  /* Add organic feel with blur and contrast */
-  filter: blur(0.3px) contrast(1.3);
+/* Recently played songs fade from 50% to 100% opacity over 2 hours */
+.recently-played {
+  transition: opacity 0.3s ease;
 }
 
-/* Artist name scribble - only affects text, inline style */
-.artist-recently-played {
-  position: absolute;
-  top: 50%;
-  left: -2%;
-  right: -2%;
-  height: 0;
-  transform: translateY(-50%);
-  pointer-events: none;
-  z-index: 5;
-  opacity: var(--scribble-opacity, 0.6);
-  
-  /* Multiple thick hand-drawn strike-through lines with variations */
-  box-shadow: 
-    /* Main strike lines - thick and slightly wavy */
-    0 -1px 0 1px var(--scribble-color, #ff5555),
-    0 0px 0 2px var(--scribble-color, #ff5555),
-    0 1px 0 2px var(--scribble-color, #ff5555),
-    0 2px 0 1px var(--scribble-color, #ff5555),
-    
-    /* Additional overlapping strokes for hand-drawn feel */
-    -1px -2px 0 1px var(--scribble-color, #ff5555),
-    1px 1px 0 1px var(--scribble-color, #ff5555),
-    -2px 0px 0 1px var(--scribble-color, #ff5555),
-    2px -1px 0 1px var(--scribble-color, #ff5555),
-    
-    /* Lighter secondary strokes */
-    0 -3px 0 1px color-mix(in srgb, var(--scribble-color, #ff5555) 70%, transparent),
-    0 3px 0 1px color-mix(in srgb, var(--scribble-color, #ff5555) 70%, transparent),
-    -3px -1px 0 1px color-mix(in srgb, var(--scribble-color, #ff5555) 60%, transparent),
-    3px 1px 0 1px color-mix(in srgb, var(--scribble-color, #ff5555) 60%, transparent);
-  
-  filter: blur(0.5px);
+/* Artist cooldown lava glow effect - only on artist name */
+/* Artist Cooldown Lava Glow Effect */
+.artist-cooldown .track-artist,
+.artist-cooldown .song-artist,
+.artist-cooldown .artist-name,
+.artist-cooldown .queue-song-artist {
+  position: relative; /* Required for spark canvas positioning */
+  animation: lavaGlow 8s ease-in-out infinite;
+  text-shadow: 
+    0 0 3px rgba(255, 87, 34, 0.4),
+    0 0 6px rgba(255, 87, 34, 0.3),
+    0 0 9px rgba(255, 87, 34, 0.2);
+  font-weight: 700;
 }
 
-/* Make sure artist text container has position relative */
-.track-artist, .song-artist, .artist-name {
-  position: relative;
-  display: inline-block;
+@keyframes lavaGlow {
+  0% {
+    color: #FF5722;
+    text-shadow: 
+      0 0 3px rgba(255, 87, 34, 0.4),
+      0 0 6px rgba(255, 87, 34, 0.3),
+      0 0 9px rgba(255, 87, 34, 0.2);
+  }
+  15% {
+    color: #FF6030;
+    text-shadow: 
+      0 0 4px rgba(255, 96, 48, 0.5),
+      0 0 8px rgba(255, 96, 48, 0.35),
+      0 0 12px rgba(255, 96, 48, 0.25);
+  }
+  33% {
+    color: #FF5722;
+    text-shadow: 
+      0 0 3px rgba(255, 87, 34, 0.4),
+      0 0 6px rgba(255, 87, 34, 0.3),
+      0 0 9px rgba(255, 87, 34, 0.2);
+  }
+  48% {
+    color: #FF7043;
+    text-shadow: 
+      0 0 5px rgba(255, 112, 67, 0.6),
+      0 0 10px rgba(255, 112, 67, 0.4),
+      0 0 15px rgba(255, 112, 67, 0.3);
+  }
+  67% {
+    color: #FF5722;
+    text-shadow: 
+      0 0 3px rgba(255, 87, 34, 0.4),
+      0 0 6px rgba(255, 87, 34, 0.3),
+      0 0 9px rgba(255, 87, 34, 0.2);
+  }
+  82% {
+    color: #FF8A65;
+    text-shadow: 
+      0 0 6px rgba(255, 138, 101, 0.7),
+      0 0 12px rgba(255, 138, 101, 0.5),
+      0 0 18px rgba(255, 138, 101, 0.35),
+      0 0 24px rgba(255, 138, 101, 0.2);
+  }
+  100% {
+    color: #FF5722;
+    text-shadow: 
+      0 0 3px rgba(255, 87, 34, 0.4),
+      0 0 6px rgba(255, 87, 34, 0.3),
+      0 0 9px rgba(255, 87, 34, 0.2);
+  }
 }
 
 /* Player Drop Zone Styles */
@@ -8085,26 +8005,7 @@ body.logged-in .wishbox-frame {
   color: #777;
 }
 
-/* Artist Cards */
-.artist-card {
-  min-width: 160px;
-  max-width: 160px;
-  background: linear-gradient(135deg, #1a1a1a, #0f0f0f);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 0;
-  overflow: hidden;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-.artist-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(0, 255, 136, 0.5);
-  box-shadow: 0 4px 12px rgba(0, 255, 136, 0.2);
-  background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
-}
+/* Artist Cards - consolidated styling at line 9185+ */
 
 .artist-avatar {
   width: 100%;
@@ -8157,20 +8058,7 @@ body.logged-in .wishbox-frame {
   transform: scale(1.1);
 }
 
-.artist-name {
-  padding: 1rem 0.75rem;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #fff;
-  line-height: 1.2;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.2));
-}
+/* Artist Cards - consolidated styling at line 9165+ */
 
 /* Loading Placeholder */
 .loading-placeholder {
@@ -8615,7 +8503,7 @@ body.logged-in .wishbox-frame {
 /* Album Grid in Artist Detail - Minimalistic Cards */
 .album-grid .albums {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 16px;
   padding: 8px 0;
 }
@@ -9211,7 +9099,7 @@ body.logged-in .wishbox-frame {
 
 /* Album Cards - Quadratisch und einheitlich */
 .album-card {
-  width: 135px !important; /* Verkleinert von 180px auf 135px (25% kleiner) */
+  width: 135px !important; /* Optimale Größe für Grid-Layout */
   min-width: 135px !important;
   max-width: 135px !important;
   height: auto; /* Höhe wird durch Content bestimmt */
@@ -9222,10 +9110,9 @@ body.logged-in .wishbox-frame {
   padding: 0;
   transition: all 0.2s ease;
   overflow: hidden;
-  white-space: nowrap; /* Verhindert Textumbruch in der Karte */
   display: flex; /* Flex statt inline-block für bessere Kontrolle */
   flex-direction: column; /* Vertikal angeordnet */
-  align-items: center; /* Zentriert */
+  align-items: stretch; /* Text nutzt volle Breite */
 }
 
 /* Library Album Cover - Spezifisch für Browse/Search Bereiche */
@@ -9289,10 +9176,11 @@ body.logged-in .wishbox-frame {
   color: rgba(255, 255, 255, 0.7);
   margin: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   padding: 0 8px; /* Etwas Innenabstand für bessere Lesbarkeit */
-  text-align: center; /* Zentriert für einheitliches Layout */
+  text-align: center; /* Zentriert wenn es passt */
+  width: 100%; /* Nutzt volle verfügbare Breite */
+  direction: ltr; /* Links-nach-rechts, schneidet rechts ab */
 }
 
 /* Multi-Artist support in album details */
@@ -9315,8 +9203,30 @@ body.logged-in .wishbox-frame {
 
 /* Artist Cards */
 .artist-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   width: 180px;
   min-width: 180px;
+  max-width: 180px;
+  background: transparent; /* Kein Hintergrund */
+  border: none; /* Kein Rahmen */
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none; /* Kein Schatten */
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  overflow: visible;
+  user-select: none; /* Verhindert Selektion beim Drag-Scrollen */
+  -webkit-user-select: none;
+}
+
+.artist-card:hover {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  transform: none; /* Keine Bewegung */
 }
 
 .artist-image {
@@ -9327,6 +9237,9 @@ body.logged-in .wishbox-frame {
   margin-bottom: 12px;
   position: relative;
   background: rgba(255, 255, 255, 0.05);
+  box-shadow: none; /* Kein Schatten */
+  user-select: none; /* Verhindert Text-Selektion */
+  -webkit-user-select: none;
 }
 
 .artist-image img {
@@ -9335,6 +9248,11 @@ body.logged-in .wishbox-frame {
   object-fit: cover;
   object-position: center;
   transition: transform 0.2s ease;
+  user-drag: none;
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none; /* Verhindert versehentliches Drag des Bildes */
 }
 
 .music-card:hover .artist-image img {
@@ -9345,18 +9263,19 @@ body.logged-in .wishbox-frame {
   font-size: 14px;
   font-weight: 600;
   color: white;
-  margin: 0 0 4px 0;
+  margin: 0;
+  padding: 0; /* Kein Padding */
   line-height: 1.3;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: center;
+  direction: ltr;
+  background: transparent; /* Kein Hintergrund */
+  text-shadow: none; /* Kein Schatten */
 }
 
 .artist-type {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
-  margin: 0;
-  text-transform: capitalize;
+  display: none; /* "Artist" Text ausblenden */
 }
 
 /* Song Cards - List Style */
@@ -9458,6 +9377,15 @@ body.logged-in .wishbox-frame {
   text-decoration: underline;
 }
 
+.track-genre {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
+
 .track-rating {
   display: flex;
   gap: 2px;
@@ -9538,6 +9466,8 @@ body.logged-in .wishbox-frame {
   gap: 10px; /* Reduziert von 16px auf 10px */
   overflow-x: auto !important;
   overflow-y: hidden !important;
+  overscroll-behavior-x: contain; /* Verhindert Page-Scroll bei horizontalem Ende */
+  overscroll-behavior-y: auto; /* Erlaubt Page-Scroll bei vertikalem Drag */
   padding: 6px 0 12px 0; /* Reduziert von 8px/16px auf 6px/12px */
   scroll-behavior: smooth;
   cursor: grab;

@@ -524,6 +524,16 @@ class SubsonicApiClient {
     }
   }
 
+  async getArtistInfo(artistId: string): Promise<any | null> {
+    try {
+      const response = await this.makeRequest('getArtistInfo', { id: artistId });
+      return response.artistInfo || null;
+    } catch (error) {
+      console.error('Error getting artist info:', error);
+      return null;
+    }
+  }
+
   // Alle Alben finden, auf denen ein Künstler vorkommt (auch Sampler)
   async getAllAlbumsWithArtist(artistName: string): Promise<OpenSubsonicAlbum[]> {
     try {

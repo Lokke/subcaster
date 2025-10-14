@@ -87,6 +87,9 @@ app.get('/api/config', (req, res) => {
     
     // Deck configuration
     deckConfiguration: process.env.VITE_DECK_CONFIGURATION || 'four-decks',
+    
+    // Blacklisted genres for live streaming
+    blacklistedGenres: process.env.VITE_BLACKLISTED_GENRES || '',
   };
   
   // Return config directly (config-loader.ts expects this format)

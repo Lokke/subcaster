@@ -4935,26 +4935,20 @@ body.logged-in .wishbox-frame {
   flex-direction: column;
   height: 100%; /* Nutze gesamte verfügbare Höhe */
   min-height: 0; /* Erlaubt Schrumpfen im Flexbox */
+  overflow: hidden; /* Verhindert, dass Inhalte herausragen */
 }
 
 /* Queue Label Row - seamlessly connected to search bar */
 .queue-label-row {
   display: flex;
-  align-items: stretch;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
   position: relative;
   margin-bottom: 0;
   padding: 0;
   height: 30px;
   border-top: 1px solid #444;
-}
-
-.queue-label {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: rgba(0, 0, 0, 0.8);
-  padding: 0 18px;
   border: 1px solid #666;
   clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
   font-size: 12px;
@@ -4962,14 +4956,16 @@ body.logged-in .wishbox-frame {
   letter-spacing: 0.5px;
   text-transform: uppercase;
   transition: all 0.2s ease;
-  margin-right: -8px; /* Negative margin für Verbindung zu Buttons */
   min-height: 30px;
-  height: 30px;
   line-height: 1;
-  flex: 1;
   color: white;
   background: rgba(255, 255, 255, 0.1);
-  z-index: 2;
+  flex-shrink: 0; /* Verhindert Schrumpfen bei kleinem Bildschirm */
+  z-index: 2; /* Über queue-panel */
+}
+
+.queue-label {
+  display: none; /* Label wird nicht mehr verwendet */
 }
 
 /* Auto-Queue Controls - Einheitlich zusammenhängend mit Tilted-Design */
@@ -4978,14 +4974,17 @@ body.logged-in .wishbox-frame {
   gap: 0;
   margin: 0;
   align-items: center;
+  justify-content: center; /* Zentriere die Buttons */
   height: 30px;
   position: relative;
+  flex: 1; /* Nutze gesamten verfügbaren Platz */
 }
 
 .auto-queue-controls {
   display: flex;
   gap: 0;
   align-items: center;
+  justify-content: center; /* Zentriere die Buttons */
   position: relative;
 }
 
@@ -5054,6 +5053,8 @@ body.logged-in .wishbox-frame {
   overflow-y: auto; /* Scroll im Panel, nicht in queue-items */
   margin: 0;
   transition: all 0.3s ease;
+  position: relative; /* Sicherstellt korrekte Positionierung */
+  z-index: 1; /* Unter queue-label-row */
 }
 
 .queue-panel.drag-over {
@@ -6013,6 +6014,33 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   letter-spacing: 0.4px;
 }
 
+/* Queue Song Rating */
+.queue-song-rating {
+  display: flex;
+  gap: 1px;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+}
+
+.queue-song-rating .star {
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.queue-song-rating .star:hover {
+  color: #ffd700;
+  transform: scale(1.15);
+}
+
+.queue-song-rating .star.filled {
+  color: #ffd700;
+  text-shadow: 0 0 3px rgba(255, 215, 0, 0.4);
+}
+
 /* Queue Song Remove Button - Vereinheitlicht */
 .queue-song-remove {
   display: flex;
@@ -6744,9 +6772,7 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
     grid-template-columns: 1fr;
   }
   
-  .queue-panel {
-    order: -1;
-  }
+  /* Queue Panel order removed - Grid-Layout kontrolliert die Positionierung */
 }
 
 /* Queue Specific Styles */
@@ -9303,7 +9329,7 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   border-radius: 4px;
   padding: 8px 16px;
   display: grid;
-  grid-template-columns: 40px 1fr 1fr 1fr auto 60px;
+  grid-template-columns: 40px minmax(150px, 2fr) minmax(100px, 1.5fr) minmax(100px, 1.5fr) minmax(80px, 1fr) 60px 55px;
   gap: 12px;
   align-items: center;
   width: 100%;
@@ -9384,6 +9410,16 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   text-overflow: ellipsis;
   white-space: nowrap;
   font-style: italic;
+  transition: all 0.2s ease;
+}
+
+.track-genre.blacklisted {
+  color: #ff4444;
+  font-weight: 600;
+  background: rgba(255, 68, 68, 0.15);
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 68, 68, 0.3);
 }
 
 .track-rating {

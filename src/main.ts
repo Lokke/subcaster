@@ -4302,6 +4302,9 @@ function createCompactQueueSongElement(song: OpenSubsonicSong): HTMLElement {
       <div class="queue-song-title">${escapeHtml(song.title)}</div>
       <div class="queue-song-artist">${escapeHtml(song.artist)}</div>
     </div>
+    <div class="queue-song-rating rating-stars" data-song-id="${song.id}">
+      ${createStarRating(song.userRating || 0, song.id)}
+    </div>
   `;
   
   // WICHTIG: Element selbst ist NICHT draggable, da der Wrapper das Drag-Event handelt
@@ -4348,6 +4351,10 @@ function createUnifiedSongElement(song: OpenSubsonicSong, context: 'search' | 'a
   const duration = formatDuration(song.duration);
   const coverUrl = song.coverArt && openSubsonicClient ? openSubsonicClient.getCoverArtUrl(song.coverArt, 40) : '';
   
+  // Check if genre is blacklisted
+  const isBlacklisted = hasBlacklistedGenre(song);
+  const genreClass = isBlacklisted ? 'track-genre blacklisted' : 'track-genre';
+  
   // Modern row layout für Song-Listen
   trackItem.innerHTML = `
     <div class="track-cover">
@@ -4356,7 +4363,7 @@ function createUnifiedSongElement(song: OpenSubsonicSong, context: 'search' | 'a
     <div class="track-title">${escapeHtml(song.title)}</div>
     <div class="track-artist">${createArtistLinks(song)}</div>
     <div class="track-album clickable-album" draggable="false" data-album-id="${song.albumId || ''}" data-album-name="${escapeHtml(song.album)}" title="View album details">${escapeHtml(song.album)}</div>
-    <div class="track-genre">${escapeHtml(song.genre || '')}</div>
+    <div class="${genreClass}">${escapeHtml(song.genre || '')}</div>
     <div class="track-rating" data-song-id="${song.id}">
       ${createStarRating(song.userRating || 0, song.id)}
     </div>
@@ -4458,7 +4465,12 @@ async function setRating(songId: string, rating: number) {
 
 // Rating Display aktualisieren
 function updateRatingDisplay(songId: string, rating: number) {
-  const ratingContainers = document.querySelectorAll(`[data-song-id="${songId}"] .rating-stars`);
+  // Suche nach Rating-Containern in zwei Varianten:
+  // 1. .rating-stars innerhalb eines Elements mit data-song-id (Library-Ansicht)
+  // 2. .rating-stars mit direktem data-song-id Attribut (Queue-Ansicht)
+  const ratingContainers = document.querySelectorAll(
+    `[data-song-id="${songId}"] .rating-stars, .rating-stars[data-song-id="${songId}"]`
+  );
   ratingContainers.forEach(container => {
     container.innerHTML = createStarRating(rating, songId);
   });
@@ -10558,10 +10570,25 @@ function initializeRatingListeners() {
 // Sterne für Hover-Effekt hervorheben
 function highlightStars(songId: string, rating: number) {
   // Alle Rating-Container für diesen Song finden
-  const ratingContainers = document.querySelectorAll(`[data-song-id="${songId}"]`);
-  
-  ratingContainers.forEach(container => {
+  // Variante 1: Container mit data-song-id (Library-Elemente haben data-song-id am Parent)
+  const parentContainers = document.querySelectorAll(`[data-song-id="${songId}"]`);
+  parentContainers.forEach(container => {
     // Alle Sterne in diesem Container (sowohl .star als auch .rating-star)
+    const stars = container.querySelectorAll('.star, .rating-star');
+    
+    stars.forEach((star, index) => {
+      const starElement = star as HTMLElement;
+      if (index < rating) {
+        starElement.classList.add('hover-preview');
+      } else {
+        starElement.classList.remove('hover-preview');
+      }
+    });
+  });
+  
+  // Variante 2: Rating-Container mit direktem data-song-id (Queue-Elemente)
+  const directContainers = document.querySelectorAll(`.rating-stars[data-song-id="${songId}"]`);
+  directContainers.forEach(container => {
     const stars = container.querySelectorAll('.star, .rating-star');
     
     stars.forEach((star, index) => {
@@ -10597,10 +10624,18 @@ function highlightStars(songId: string, rating: number) {
 
 // Stern-Highlight zurücksetzen
 function resetStarHighlight(songId: string) {
-  // Alle Rating-Container für diesen Song finden
-  const ratingContainers = document.querySelectorAll(`[data-song-id="${songId}"]`);
+  // Variante 1: Alle Rating-Container für diesen Song finden (Parent hat data-song-id)
+  const parentContainers = document.querySelectorAll(`[data-song-id="${songId}"]`);
+  parentContainers.forEach(container => {
+    const stars = container.querySelectorAll('.star, .rating-star');
+    stars.forEach(star => {
+      star.classList.remove('hover-preview');
+    });
+  });
   
-  ratingContainers.forEach(container => {
+  // Variante 2: Rating-Container mit direktem data-song-id (Queue-Elemente)
+  const directContainers = document.querySelectorAll(`.rating-stars[data-song-id="${songId}"]`);
+  directContainers.forEach(container => {
     const stars = container.querySelectorAll('.star, .rating-star');
     stars.forEach(star => {
       star.classList.remove('hover-preview');

@@ -1,5 +1,8 @@
 ﻿# SubCaster
 
+[![Build and Push Docker Image](https://github.com/Lokke/subcaster/actions/workflows/docker-build.yml/badge.svg)](https://github.com/Lokke/subcaster/actions/workflows/docker-build.yml)
+[![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Flokke%2Fsubcaster-blue?logo=docker)](https://github.com/Lokke/subcaster/pkgs/container/subcaster)
+
 Web interface for radio moderators. Provides access to music from OpenSubsonic-compatible servers (Navidrome, Gonic, Ampache, Astiga, LMS, Nextcloud Music, ownCloud Music, Supysonic) with live streaming to AzuraCast.
 <img width="1846" height="999" alt="Screenshot 2025-09-24 002355" src="https://github.com/user-attachments/assets/b3c522a6-95bc-417a-9f3c-15ff7dfa8fd9" />
 
@@ -22,47 +25,76 @@ See LICENSE and COMMERCIAL-LICENSE.md for details.
 
 This project uses Material Icons (MaterialIcons-Regular.woff2) provided by Google under the Apache License 2.0. See LICENSE-MATERIAL-ICONS for the full license text.
 
-## Docker Setup
+## 🐳 Docker Deployment
 
-Clone repository:
+### Quick Start (Pre-built Image)
 
-```bash
-git clone https://github.com/Lokke/subcaster.git
-cd subcaster
-```
-
-Start with Docker Compose:
+The easiest way to run SubCaster is using the pre-built Docker image from GitHub Container Registry:
 
 ```bash
-docker-compose up -d
+# Pull latest image
+docker pull ghcr.io/lokke/subcaster:latest
+
+# Run with docker-compose
+docker-compose -f docker-compose.env.yml up -d
 ```
 
-Open interface at http://localhost:5173
+**Image automatically rebuilds on every commit!** ✅
+
+### Deployment Options
+
+We provide 3 deployment configurations:
+
+| File | Use Case | Documentation |
+|------|----------|---------------|
+| `docker-compose.production.yml` | Standalone (all ENV in file) | For Portainer/Remote |
+| `docker-compose.env.yml` | With `.env` file | **Recommended** |
+| `docker-compose.ghcr.yml` | Minimal | Manual config |
+
+📖 **Full deployment guide:** [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)
+
+📖 **CI/CD setup:** [DOCKER_CI_CD.md](DOCKER_CI_CD.md)
 
 ### Environment Variables
 
-**Streaming Configuration:**
-- `STREAM_USERNAME` - Streaming username
-- `STREAM_PASSWORD` - Streaming password  
-- `STREAM_SERVER` - Streaming server hostname
-- `STREAM_PORT` - Streaming port (default: 8015)
-- `STREAM_MOUNT` - Mount point (default: /)
+Create a `.env` file with your configuration:
 
-**OpenSubsonic Configuration:**
-- `VITE_OPENSUBSONIC_URL` - OpenSubsonic server URL
-- `VITE_OPENSUBSONIC_USERNAME` - OpenSubsonic username  
-- `VITE_OPENSUBSONIC_PASSWORD` - OpenSubsonic password
+```bash
+# Copy example
+cp .env.example .env
 
-**Advanced Streaming Options:**
-- `VITE_STREAM_SERVER_TYPE` - Server type: 'icecast' or 'shoutcast' (default: icecast)
-- `VITE_STREAM_BITRATE` - Audio bitrate in kbps (default: 192)
-- `VITE_USE_PROXY` - Use proxy for streaming (true/false)
-- `VITE_PROXY_SERVER` - Proxy server URL (default: http://localhost:3001)
+# Edit with your values
+nano .env
+```
 
-**Unified Login (Optional):**
-- `VITE_USE_UNIFIED_LOGIN` - Use same credentials for all services (true/false)
-- `VITE_UNIFIED_USERNAME` - Unified username for all services
-- `VITE_UNIFIED_PASSWORD` - Unified password for all services
+**Essential Variables:**
+
+- `VITE_OPENSUBSONIC_URL` - Your music server URL
+- `VITE_AZURACAST_SERVERS` - Your radio server URL(s)
+- `VITE_DISCORD_CHANNEL_ID` - Discord channel for song requests (optional)
+
+**Security Note:** 🔒
+- Variables with `VITE_` prefix are **public** (embedded in frontend)
+- Variables **without** `VITE_` are **private** (server-side only)
+- Never put secrets in `VITE_*` variables!
+
+**Full variable list:** See `.env.example` or [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)
+
+### Update to Latest Version
+
+```bash
+# Pull new image
+docker-compose -f docker-compose.env.yml pull
+
+# Restart with new version
+docker-compose -f docker-compose.env.yml up -d
+```
+
+Check logs:
+
+```bash
+docker logs -f subcaster
+```
 
 ## Manual Installation
 

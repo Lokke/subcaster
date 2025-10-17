@@ -16,7 +16,7 @@ Die Workflow-Datei `.github/workflows/docker-build.yml` ist bereits konfiguriert
 
 **Was passiert:**
 - Bei jedem `git push` auf `main` wird automatisch ein Docker Image gebaut
-- Das Image wird zu `ghcr.io/lokke/webdj:latest` gepusht
+- Das Image wird zu `ghcr.io/lokke/subcaster:latest` gepusht
 - Zusätzliche Tags: Branch-Name und Git-SHA
 
 ### 2. GitHub Packages Berechtigungen
@@ -27,7 +27,7 @@ Die Actions haben bereits `packages: write` Permission durch `GITHUB_TOKEN`.
 
 ```bash
 # Image von GitHub Container Registry pullen
-docker pull ghcr.io/lokke/webdj:latest
+docker pull ghcr.io/lokke/subcaster:latest
 ```
 
 ## ENV-Variablen Konfiguration
@@ -81,7 +81,7 @@ version: '3.8'
 
 services:
   subcaster:
-    image: ghcr.io/lokke/webdj:latest
+    image: ghcr.io/lokke/subcaster:latest
     container_name: subcaster
     ports:
       - "3002:3001"
@@ -130,7 +130,7 @@ docker run -d \
   -e VITE_OPENSUBSONIC_USERNAME="user" \
   -e VITE_OPENSUBSONIC_PASSWORD="pass" \
   --restart unless-stopped \
-  ghcr.io/lokke/webdj:latest
+  ghcr.io/lokke/subcaster:latest
 ```
 
 ## Workflow: Automatisches Update
@@ -141,7 +141,7 @@ docker run -d \
 
 ```bash
 # Image pullen
-docker pull ghcr.io/lokke/webdj:latest
+docker pull ghcr.io/lokke/subcaster:latest
 
 # Container neu starten (ENV-Variablen bleiben erhalten!)
 docker-compose -f docker-compose.ghcr.yml down
@@ -155,7 +155,7 @@ Erstelle `update-subcaster.sh`:
 ```bash
 #!/bin/bash
 echo "🔄 Pulling latest image..."
-docker pull ghcr.io/lokke/webdj:latest
+docker pull ghcr.io/lokke/subcaster:latest
 
 echo "🛑 Stopping old container..."
 docker-compose -f docker-compose.ghcr.yml down

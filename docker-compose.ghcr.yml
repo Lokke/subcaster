@@ -12,7 +12,7 @@ version: '3.8'
 
 services:
   subcaster:
-    image: ghcr.io/lokke/webdj:latest  # Automatisch von GitHub Actions gebaut
+    image: ghcr.io/lokke/subcaster:latest  # Automatisch von GitHub Actions gebaut
     container_name: subcaster
     ports:
       - "3002:3001"

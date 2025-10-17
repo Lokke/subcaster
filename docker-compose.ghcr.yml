@@ -1,0 +1,40 @@
+version: '3.8'
+
+# Docker Compose Configuration für GitHub Container Registry Image
+# 
+# VERWENDUNG:
+# 1. Erstelle eine .env Datei mit allen VITE_* Variablen (siehe .env.example)
+# 2. Starte mit: docker-compose -f docker-compose.ghcr.yml up -d
+#
+# ENV VARIABLEN:
+# Alle Umgebungsvariablen werden zur Laufzeit gesetzt!
+# Das Image ist bereits gebaut, aber die ENV-Vars werden beim Container-Start geladen.
+
+services:
+  subcaster:
+    image: ghcr.io/lokke/webdj:latest  # Automatisch von GitHub Actions gebaut
+    container_name: subcaster
+    ports:
+      - "3002:3001"
+    env_file:
+      - .env  # Lädt alle VITE_* Variablen zur Laufzeit
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DOCKER_ENV=true
+    restart: unless-stopped
+    volumes:
+      # Host directory für persistente .env Datei (optional)
+      - ./docker-data:/app/docker-data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - webdj-network
+
+networks:
+  webdj-network:
+    driver: bridge

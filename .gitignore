@@ -56,7 +56,6 @@ key.properties
 signing.properties
 
 # Editor directories and files
-.github
 .vscode/*
 !.vscode/extensions.json
 .idea

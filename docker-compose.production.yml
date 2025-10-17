@@ -1,0 +1,131 @@
+version: '3.8'
+
+# ============================================
+# SubCaster Production Docker Compose
+# ============================================
+# Verwendet das pre-built Image von GitHub Container Registry
+# 
+# VERWENDUNG:
+# 1. Fülle die ENV-Variablen unten aus (oder verwende .env Datei)
+# 2. Starte mit: docker-compose -f docker-compose.production.yml up -d
+# 3. Stoppe mit: docker-compose -f docker-compose.production.yml down
+# 4. Update: docker-compose -f docker-compose.production.yml pull && docker-compose -f docker-compose.production.yml up -d
+#
+# ============================================
+
+services:
+  subcaster:
+    image: ghcr.io/lokke/subcaster:latest
+    container_name: subcaster
+    restart: unless-stopped
+    
+    ports:
+      - "3002:3001"  # Host:Container - Ändere 3002 wenn nötig
+    
+    environment:
+      # ============================================
+      # SYSTEM
+      # ============================================
+      - NODE_ENV=production
+      - PORT=3001
+      - DOCKER_ENV=true
+      - PROXY_PORT=3001
+      
+      # ============================================
+      # UNIFIED LOGIN (Optional)
+      # ============================================
+      - VITE_USE_UNIFIED_LOGIN=true
+      # ❌ Server-only Secrets (nicht in Browser sichtbar)
+      - UNIFIED_USERNAME=your_unified_username
+      - UNIFIED_PASSWORD=your_unified_password
+      
+      # ============================================
+      # DISCORD WISHBOX
+      # ============================================
+      # ❌ Server-only Secret
+      - DISCORD_BOT_TOKEN=your_discord_bot_token_here
+      
+      # ✅ Public Config (embedded in client)
+      - VITE_DISCORD_CHANNEL_ID=927495125888794634
+      - VITE_DISCORD_GUILD_ID=785932996406280192
+      
+      # ============================================
+      # OPENSUBSONIC (Music Library)
+      # ============================================
+      # ✅ Public URL
+      - VITE_OPENSUBSONIC_URL=https://musik.radio-endstation.de
+      
+      # ❌ Server-only Secrets
+      - OPENSUBSONIC_USERNAME=your_opensubsonic_username
+      - OPENSUBSONIC_PASSWORD=your_opensubsonic_password
+      
+      # ============================================
+      # AZURACAST WEBDJ
+      # ============================================
+      # ✅ Public Config
+      - VITE_AZURACAST_SERVERS=https://funkturm.radio-endstation.de,https://radio.krawallradio.com,https://azuracast.subculture69radio.com
+      - VITE_AZURACAST_STATION_ID=1
+      
+      # ❌ Server-only Secrets
+      - AZURACAST_DJ_USERNAME=your_dj_username
+      - AZURACAST_DJ_PASSWORD=your_dj_password
+      
+      # ============================================
+      # STREAMING CONFIGURATION
+      # ============================================
+      # ✅ Public Settings
+      - VITE_STREAM_BITRATE=128
+      - VITE_STREAM_SAMPLE_RATE=44100
+      
+      # ❌ Server-only Secrets
+      - STREAM_SERVER=your_stream_server
+      - STREAM_PORT=8000
+      - STREAM_USERNAME=your_stream_username
+      - STREAM_PASSWORD=your_stream_password
+      
+      # ============================================
+      # DECK CONFIGURATION
+      # ============================================
+      # ✅ Public Config
+      - VITE_DECK_CONFIGURATION=four-decks
+      
+      # ============================================
+      # GENRE BLACKLIST
+      # ============================================
+      # ✅ Public Config
+      - VITE_BLACKLISTED_GENRES=RAC,RAC!,RECHTSROCK,RECHTS-ROCK,ROCK AGAINST COMMUNISM,NSBM,NATIONALSOZIALISTISCHER BLACK METAL,WHITE POWER,WHITE-POWER
+    
+    volumes:
+      # Persistente Daten (optional)
+      - ./docker-data:/app/docker-data
+    
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    networks:
+      - subcaster-network
+
+networks:
+  subcaster-network:
+    driver: bridge
+
+# ============================================
+# WICHTIG: ENV-Variablen anpassen!
+# ============================================
+# Ersetze alle "your_*" Platzhalter mit echten Werten:
+# - your_unified_username
+# - your_unified_password
+# - your_opensubsonic_username
+# - your_opensubsonic_password
+# - your_dj_username
+# - your_dj_password
+# - your_stream_server
+# - your_stream_username
+# - your_stream_password
+#
+# ODER: Verwende eine .env Datei und referenziere mit ${VARIABLE}
+# ============================================

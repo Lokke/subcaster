@@ -61,17 +61,40 @@ export async function loadConfig(): Promise<AppConfig> {
 
     return config;
   } catch (error) {
-    console.error('❌ Failed to load configuration:', error);
+    console.warn('⚠️ Backend config not available, falling back to build-time ENV variables');
     
-    // Fallback to empty config
+    // Fallback to import.meta.env (für lokale Entwicklung)
     const fallbackConfig: AppConfig = {
-      opensubsonic: { url: '', username: '' },
-      azuracast: { servers: '', stationId: '1' },
-      discord: { channelId: '', guildId: '', enabled: false },
-      unifiedLogin: { enabled: false },
-      stream: { bitrate: '128', sampleRate: '44100' },
-      deckConfiguration: 'four-decks',
+      opensubsonic: { 
+        url: import.meta.env.VITE_OPENSUBSONIC_URL || '', 
+        username: import.meta.env.VITE_OPENSUBSONIC_USERNAME || '' 
+      },
+      azuracast: { 
+        servers: import.meta.env.VITE_AZURACAST_SERVERS || '', 
+        stationId: import.meta.env.VITE_AZURACAST_STATION_ID || '1' 
+      },
+      discord: { 
+        channelId: import.meta.env.VITE_DISCORD_CHANNEL_ID || '', 
+        guildId: import.meta.env.VITE_DISCORD_GUILD_ID || '', 
+        enabled: !!(import.meta.env.VITE_DISCORD_CHANNEL_ID && import.meta.env.VITE_DISCORD_GUILD_ID)
+      },
+      unifiedLogin: { 
+        enabled: import.meta.env.VITE_USE_UNIFIED_LOGIN === 'true'
+      },
+      stream: { 
+        bitrate: import.meta.env.VITE_STREAM_BITRATE || '128', 
+        sampleRate: import.meta.env.VITE_STREAM_SAMPLE_RATE || '44100' 
+      },
+      deckConfiguration: import.meta.env.VITE_DECK_CONFIGURATION || 'four-decks',
+      blacklistedGenres: import.meta.env.VITE_BLACKLISTED_GENRES || '',
     };
+
+    cachedConfig = fallbackConfig;
+
+    console.log('✅ Configuration loaded from ENV');
+    console.log('   OpenSubsonic:', fallbackConfig.opensubsonic.url ? '✅' : '❌');
+    console.log('   AzuraCast:', fallbackConfig.azuracast.servers ? '✅' : '❌');
+    console.log('   Discord:', fallbackConfig.discord.enabled ? '✅' : '❌');
 
     return fallbackConfig;
   }

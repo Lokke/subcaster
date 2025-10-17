@@ -2586,8 +2586,8 @@ async function checkConfigurationAndInitialize() {
     source: backendConfigLoaded ? 'backend (secure)' : 'build-time (insecure)',
   });
   
-  // Check with server API if configuration exists (runtime check)
-  console.log('🔍 Checking server configuration via API...');
+  // 🚀 PRODUCTION MODE: Skip setup wizard and load directly from server
+  console.log('� Production mode detected - loading config from server API...');
   
   try {
     const response = await fetch('/api/setup-status');
@@ -2627,13 +2627,13 @@ async function checkConfigurationAndInitialize() {
         console.log('🚀 Calling initializeFullApp()...');
         initializeFullApp();
       } else {
-        console.log('❌ Failed to load runtime config - showing setup wizard');
-        showSetupWizardOnly();
+        console.log('❌ Failed to load runtime config - trying app initialization');
+        initializeFullApp();
       }
     } else {
-      console.log('❌ No server configuration found - showing setup wizard');
-      console.log('🔧 Calling showSetupWizardOnly()...');
-      showSetupWizardOnly();
+      console.log('❌ No server configuration found - trying app initialization');
+      console.log('🔧 Calling initializeFullApp()...');
+      initializeFullApp();
     }
   } catch (error) {
     console.error('❌ Error checking server configuration:', error);
@@ -2678,32 +2678,10 @@ async function checkConfigurationAndInitialize() {
 }
 
 function showSetupWizardOnly() {
-  console.log('🔧 Showing setup wizard only - hiding main app');
+  console.log('� PRODUCTION MODE: Setup wizard disabled - starting app directly');
   
-  // Set global flag to prevent legacy code execution
-  isSetupOnlyMode = true;
-  
-  // Clear any previous setup completion flags since no config file exists
-  localStorage.removeItem('subcaster-setup-completed');
-  localStorage.removeItem('subcaster-setup-skipped');
-  localStorage.removeItem('subcaster-demo-active');
-  
-  // Hide the main app interface
-  const mainApp = document.querySelector('main') || document.body;
-  if (mainApp) {
-    // Hide all main app elements except setup wizard
-    const allElements = mainApp.children;
-    for (let i = 0; i < allElements.length; i++) {
-      const element = allElements[i] as HTMLElement;
-      if (element.id !== 'setup-wizard-overlay') {
-        element.style.display = 'none';
-      }
-    }
-  }
-  
-  // Show setup wizard
-  const setupWizard = new SetupWizard();
-  setupWizard.show();
+  // 🚀 PRODUCTION: Skip setup wizard completely and load app
+  initializeFullApp();
   
   // Make setup wizard globally accessible
   (window as any).showSetupWizard = () => {
@@ -4180,7 +4158,11 @@ function initializeSearch() {
       return;
     }
     
-    const query = searchInput.value.trim();
+    // Clean query: remove standalone dashes (not attached to letters/numbers)
+    const rawQuery = searchInput.value.trim();
+    const query = rawQuery.replace(/\s-\s/g, ' ').replace(/\s+/g, ' ').trim();
+    
+    console.log(`🧹 Query cleaning: "${rawQuery}" → "${query}"`);
     
     // Wenn Suchfeld leer ist, zeige No Search State
     if (!query) {

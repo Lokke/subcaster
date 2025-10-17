@@ -594,6 +594,14 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
     console.log(`📻 Cleared radio track data for deck ${side.toUpperCase()}`);
   }
   
+  // Clear HTTP polling interval if exists
+  const pollInterval = (window as any)[`radioPollInterval_${side}`];
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    delete (window as any)[`radioPollInterval_${side}`];
+    console.log(`🔄 Cleared radio HTTP polling for deck ${side.toUpperCase()}`);
+  }
+  
   // Clear local file ObjectURL if exists (prevent memory leaks)
   const localObjectUrl = (window as any)[`localObjectUrl_${side}`];
   if (localObjectUrl) {
@@ -6792,6 +6800,12 @@ function updateRadioStreamDisplay(deck: string, station: any) {
 function updateRadioStreamFromWebSocket(deck: string, station: any, data: AzuraCastNowPlayingData) {
   console.log(`📻 WebSocket update for deck ${deck.toUpperCase()}:`, data);
   
+  // Validate that we have song data
+  if (!data.now_playing?.song) {
+    console.warn(`⚠️ No song data in WebSocket update for deck ${deck}`);
+    return;
+  }
+  
   // Ensure deck is lowercase for element IDs
   const deckLower = deck.toLowerCase();
   
@@ -6801,7 +6815,17 @@ function updateRadioStreamFromWebSocket(deck: string, station: any, data: AzuraC
   console.log(`📻 Looking for element: waveform-info-${deckLower}, found:`, !!waveformInfo);
   
   if (!waveformInfo) {
-    console.error(`❌ waveform-info-${deckLower} not found`);
+    console.error(`❌ waveform-info-${deckLower} not found - deck may not be loaded yet`);
+    // Try again after a short delay in case the deck is still loading
+    setTimeout(() => {
+      const retryWaveformInfo = document.getElementById(`waveform-info-${deckLower}`);
+      if (retryWaveformInfo) {
+        console.log(`✅ Retry successful: found waveform-info-${deckLower}`);
+        updateRadioStreamFromWebSocket(deck, station, data);
+      } else {
+        console.error(`❌ Retry failed: waveform-info-${deckLower} still not found`);
+      }
+    }, 1000);
     return;
   }
   
@@ -7563,11 +7587,40 @@ function setupRadioStreamSelector() {
       createLiveWaveformForRadio(deckType, audio);
       
       // Subscribe to WebSocket updates for this station
+      console.log(`🔌 Setting up WebSocket subscription for ${station.shortcode} on ${station.serverUrl}`);
       azuraCastWebSocket.subscribe(station.serverUrl, station.shortcode, (data: AzuraCastNowPlayingData) => {
+        console.log(`📻 WebSocket data received for deck ${deck}:`, data);
         updateRadioStreamFromWebSocket(deck, station, data);
         // Note: updateRadioStreamFromWebSocket already updates all metadata
         // No need to call updateWaveformInfoForRadio again as it would overwrite the changes
       });
+      
+      // Immediate test: Check if we can get current data
+      setTimeout(() => {
+        const currentData = azuraCastWebSocket.getCurrentData(station.serverUrl, station.shortcode);
+        console.log(`📻 Current WebSocket data for deck ${deck}:`, currentData);
+        if (currentData) {
+          updateRadioStreamFromWebSocket(deck, station, currentData);
+        } else {
+          console.warn(`⚠️ No WebSocket data available for deck ${deck}, setting up HTTP fallback`);
+          // Fallback: Manual polling every 30 seconds
+          const pollInterval = setInterval(async () => {
+            try {
+              const response = await fetch(`${station.serverUrl}/api/nowplaying/${station.shortcode}`);
+              const nowPlayingData = await response.json();
+              console.log(`📻 HTTP fallback data for deck ${deck}:`, nowPlayingData);
+              if (nowPlayingData.now_playing?.song) {
+                updateRadioStreamFromWebSocket(deck, station, nowPlayingData);
+              }
+            } catch (error) {
+              console.error(`❌ HTTP fallback failed for deck ${deck}:`, error);
+            }
+          }, 30000);
+          
+          // Store interval for cleanup
+          (window as any)[`radioPollInterval_${deck}`] = pollInterval;
+        }
+      }, 2000); // Check after 2 seconds
       
       // Setup audio event listeners for radio streams
       setupAudioEventListeners(audio, deckType);

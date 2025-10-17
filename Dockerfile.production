@@ -11,28 +11,14 @@ WORKDIR /app
 # Package files kopieren
 COPY package*.json ./
 
-# Dependencies installieren
-RUN npm ci --only=production \
-    && npm cache clean --force
+# Alle Dependencies installieren (inkl. devDependencies für Build)
+RUN npm ci && npm cache clean --force
 
 # Source code kopieren
 COPY . .
 
 # Build OHNE spezifische ENV-Variablen
 # Der Code lädt Config zur Runtime vom Backend (/api/config)
-RUN npm run build
-ENV VITE_UNIFIED_PASSWORD=$VITE_UNIFIED_PASSWORD
-
-# Package-Dateien kopieren
-COPY package*.json ./
-
-# Alle Dependencies installieren (build braucht devDependencies)
-RUN npm ci
-
-# Source-Code kopieren
-COPY . .
-
-# Production build erstellen (mit Environment Variables)
 RUN npm run build
 
 # Production Stage

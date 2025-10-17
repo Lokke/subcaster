@@ -2682,12 +2682,6 @@ function showSetupWizardOnly() {
   
   // 🚀 PRODUCTION: Skip setup wizard completely and load app
   initializeFullApp();
-  
-  // Make setup wizard globally accessible
-  (window as any).showSetupWizard = () => {
-    console.log('🔧 Setup Wizard already active');
-    setupWizard.show();
-  };
 }
 
 function initializeFullApp() {

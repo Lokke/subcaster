@@ -4926,7 +4926,7 @@ body.logged-in .wishbox-frame {
   flex-direction: column;
   height: 100%; /* Nutze gesamte verfügbare Höhe */
   min-height: 0; /* Erlaubt Schrumpfen im Flexbox */
-  overflow: hidden; /* Verhindert, dass Inhalte herausragen */
+  overflow: visible; /* Erlaubt Dropdowns über Grenzen hinaus */
 }
 
 /* Queue Label Row - seamlessly connected to search bar */
@@ -5148,16 +5148,19 @@ body.logged-in .wishbox-frame {
 }
 
 .radio-stream-dropdown {
-  position: absolute;
-  top: calc(100% + 5px);
-  right: 0;
+  position: fixed; /* Fixed statt absolute, um aus parent-context rauszukommen */
+  /* Position wird via JS gesetzt, aber für Fallback: */
+  top: auto;
+  right: auto;
+  left: auto;
   background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
   border: 2px solid #444;
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  z-index: 1000;
-  min-width: 280px;
-  max-height: 400px;
+  z-index: 9999;
+  min-width: 500px;
+  max-width: 700px;
+  max-height: 80vh; /* 80% der Viewport-Höhe, passt sich an Inhalt an */
   overflow-y: auto;
   display: none;
 }
@@ -5249,6 +5252,56 @@ body.logged-in .wishbox-frame {
   white-space: nowrap;
 }
 
+/* Compact Badge System - 3 layers, zero waste */
+.station-badge-stack {
+  display: inline-block;
+}
+
+/* Top layer: Listener count - türkis, kompakt */
+.badge-listeners {
+  display: inline-block;
+  padding: 2px 4px;
+  margin: 0;
+  border: 1px solid #64FFDA;
+  border-radius: 3px;
+  background: rgba(100, 255, 218, 0.15);
+  color: #64FFDA;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+/* Middle-right layer: Extra connections - hellblau, direkt rechts */
+.badge-extra {
+  display: inline-block;
+  padding: 2px 3px;
+  margin: 0 0 0 1px;
+  border: 1px solid #88ccff;
+  border-radius: 3px;
+  background: rgba(136, 204, 255, 0.15);
+  color: #88ccff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+/* Bottom layer: Station name - grau, minimaler Abstand */
+.badge-name {
+  display: inline-block;
+  padding: 2px 6px;
+  margin: 0 0 0 3px;
+  border: 1px solid #666;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ccc;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  vertical-align: middle;
+}
+
 .radio-stream-description {
   color: #999;
   font-size: 12px;
@@ -5336,14 +5389,16 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
 
 /* Wishbox Dropdown (matching radio-stream-dropdown) */
 .wishbox-dropdown {
-  position: absolute;
-  top: calc(100% + 5px);
-  right: 0;
+  position: fixed; /* Fixed statt absolute, um aus parent-context rauszukommen */
+  /* Position wird via JS gesetzt, aber für Fallback: */
+  top: auto;
+  right: auto;
+  left: auto;
   background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
   border: 2px solid #444;
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  z-index: 1000;
+  z-index: 9999;
   min-width: 500px;
   max-width: 700px;
   max-height: 500px;

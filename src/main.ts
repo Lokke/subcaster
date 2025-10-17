@@ -580,6 +580,14 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
     console.log(`🔄 Cleared radio stream refresh interval for deck ${side.toUpperCase()}`);
   }
   
+  // Clear radio stream reconnect timers if exist
+  const reconnectCleanup = (window as any)[`radioReconnectCleanup_${side}`];
+  if (reconnectCleanup) {
+    reconnectCleanup();
+    delete (window as any)[`radioReconnectCleanup_${side}`];
+    console.log(`🔄 Cleared radio stream reconnect timers for deck ${side.toUpperCase()}`);
+  }
+  
   // Clear radio track data if exists
   if ((window as any)[`radioTrack_${side}`]) {
     delete (window as any)[`radioTrack_${side}`];
@@ -6962,19 +6970,29 @@ function setupRadioStreamSelector() {
   let isDropdownOpen = false;
   let radioStations: any[] = [];
   let listenerUpdateInterval: NodeJS.Timeout | null = null;
+  // Store original parent for portal restore
+  const dropdownPlaceholder = document.createComment('radio-dropdown-placeholder');
+  let originalDropdownParent: Node | null = null;
   
   // Toggle dropdown
   const toggleDropdown = async () => {
     if (isDropdownOpen) {
+      // close
       dropdown.classList.remove('show');
       radioBtn.classList.remove('active');
+      restoreDropdown(dropdown, dropdownPlaceholder, originalDropdownParent);
       isDropdownOpen = false;
       
       // Stop listener updates
       stopListenerUpdates();
     } else {
+      // open: Show dropdown first so it has dimensions, THEN portal and position it
       dropdown.classList.add('show');
       radioBtn.classList.add('active');
+      // Use setTimeout to ensure DOM has updated and element has dimensions
+      setTimeout(() => {
+        originalDropdownParent = portalDropdownToBody(dropdown, dropdownPlaceholder, radioBtn);
+      }, 0);
       isDropdownOpen = true;
       
       // Load radio stations if not already loaded
@@ -7015,8 +7033,9 @@ function setupRadioStreamSelector() {
           radioStations.push({
             ...station,
             serverUrl: serverData.serverUrl,
-            // Add live info from the response
+            // Add live info, listeners, and now_playing from the response root level
             live: stationResponse.live || station.live,
+            listeners: stationResponse.listeners || station.listeners,
             now_playing: stationResponse.now_playing || station.now_playing
           });
         });
@@ -7052,25 +7071,47 @@ function setupRadioStreamSelector() {
       // Add live class for styling
       stationItem.className = `radio-stream-item ${isLive ? 'live-stream' : ''}`;
       
-      // Create description text with listener count
-      let description = station.description || 'Radio Stream';
-      if (isLive && streamerName) {
-        description = `🔴 LIVE: ${streamerName}`;
-      } else if (nowPlaying) {
-        description = `🎵 ${nowPlaying.artist} - ${nowPlaying.title}`;
+      // Listener counts with compact layered badge display
+      const uniqueListeners = station.listeners?.unique || 0;
+      const totalListeners = station.listeners?.current || 0;
+      const extraConnections = totalListeners - uniqueListeners;
+      
+      // Compact badge: listeners (top) | diff (middle-right) | name (bottom)
+      let badgeHtml = '<span class="station-badge-stack">';
+      
+      // Top layer: Listener count
+      badgeHtml += `<span class="badge-listeners">👥${uniqueListeners}</span>`;
+      
+      // Middle-right layer: Extra connections (if any)
+      if (extraConnections > 0) {
+        badgeHtml += `<span class="badge-extra">+${extraConnections}</span>`;
       }
       
-      // Add listener count if available
-      const listenerCount = station.listeners?.unique || station.listeners?.current || 0;
-      const listenerDisplay = ` • 👥 ${listenerCount}`;
+      // Bottom layer: Station name
+      badgeHtml += `<span class="badge-name">`;
+      if (isLive && streamerName) {
+        badgeHtml += `${streamerName} - ${station.name}`;
+      } else {
+        badgeHtml += `${station.name}`;
+      }
+      badgeHtml += `</span>`;
+      
+      badgeHtml += '</span>'; // close station-badge-stack
+      
+      let firstLine = badgeHtml;
+      
+      // Second line: Always the current song
+      let secondLine = '';
+      if (nowPlaying) {
+        secondLine = `🎵 ${nowPlaying.artist} - ${nowPlaying.title}`;
+      } else {
+        secondLine = station.description || 'Radio Stream';
+      }
       
       stationItem.innerHTML = `
         <div class="radio-stream-info">
-          <div class="radio-stream-name">
-            ${isLive ? '<span class="live-indicator">●</span>' : ''}
-            ${station.name}
-          </div>
-          <div class="radio-stream-description">${description}${listenerDisplay}</div>
+          <div class="radio-stream-name">${firstLine}</div>
+          <div class="radio-stream-description">${secondLine}</div>
         </div>
         <div class="radio-stream-deck-buttons">
           <button class="radio-deck-btn" data-deck="a" data-station-id="${station.id}" data-server-url="${station.serverUrl}" data-shortcode="${station.shortcode}">A</button>
@@ -7082,7 +7123,7 @@ function setupRadioStreamSelector() {
       
       // Add data attributes for easier updates
       stationItem.setAttribute('data-station-key', `${station.serverUrl}:${station.shortcode}`);
-      stationItem.setAttribute('data-listener-count', listenerCount.toString());
+      stationItem.setAttribute('data-listener-count', uniqueListeners.toString());
       
       streamList.appendChild(stationItem);
     });
@@ -7149,23 +7190,55 @@ function setupRadioStreamSelector() {
     const stationItem = streamList.querySelector(`[data-station-key="${stationKey}"]`);
     
     if (stationItem) {
+      const nameEl = stationItem.querySelector('.radio-stream-name');
       const descriptionEl = stationItem.querySelector('.radio-stream-description');
-      if (descriptionEl) {
-        // Update now playing info
-        let description = station.description || 'Radio Stream';
-        if (data.live?.is_live && data.live?.streamer_name) {
-          description = `🔴 LIVE: ${data.live.streamer_name}`;
-        } else if (data.now_playing?.song) {
-          const song = data.now_playing.song;
-          description = `🎵 ${song.artist} - ${song.title}`;
+      
+      if (nameEl && descriptionEl) {
+        const isLive = data.live?.is_live;
+        const streamerName = data.live?.streamer_name;
+        const nowPlaying = data.now_playing?.song;
+        
+        // Listener counts with compact layered badge display
+        const uniqueListeners = data.listeners?.unique || 0;
+        const totalListeners = data.listeners?.current || 0;
+        const extraConnections = totalListeners - uniqueListeners;
+        
+        // Compact badge: listeners (top) | diff (middle-right) | name (bottom)
+        let badgeHtml = '<span class="station-badge-stack">';
+        
+        // Top layer: Listener count
+        badgeHtml += `<span class="badge-listeners">👥${uniqueListeners}</span>`;
+        
+        // Middle-right layer: Extra connections (if any)
+        if (extraConnections > 0) {
+          badgeHtml += `<span class="badge-extra">+${extraConnections}</span>`;
         }
         
-        // Update listener count if available
-        const listenerCount = data.listeners?.unique || data.listeners?.current || 0;
-        const listenerDisplay = ` • 👥 ${listenerCount}`;
+        // Bottom layer: Station name
+        badgeHtml += `<span class="badge-name">`;
+        if (isLive && streamerName) {
+          badgeHtml += `${streamerName} - ${station.name}`;
+          stationItem.classList.add('live-stream');
+        } else {
+          badgeHtml += `${station.name}`;
+          stationItem.classList.remove('live-stream');
+        }
+        badgeHtml += `</span>`;
         
-        descriptionEl.textContent = description + listenerDisplay;
-        stationItem.setAttribute('data-listener-count', listenerCount.toString());
+        badgeHtml += '</span>'; // close station-badge-stack
+        
+        nameEl.innerHTML = badgeHtml;
+        
+        // Second line: Always the current song
+        let secondLine = '';
+        if (nowPlaying) {
+          secondLine = `🎵 ${nowPlaying.artist} - ${nowPlaying.title}`;
+        } else {
+          secondLine = station.description || 'Radio Stream';
+        }
+        
+        descriptionEl.textContent = secondLine;
+        stationItem.setAttribute('data-listener-count', uniqueListeners.toString());
       }
     }
   };
@@ -7182,27 +7255,19 @@ function setupRadioStreamSelector() {
       const { fetchAllAzuraCastStations } = await import('./azuracast');
       const allServersData = await fetchAllAzuraCastStations(serverUrls);
       
-      // Update listener counts in DOM
+      // Update listener counts in DOM - via WebSocket updates (no need to update description anymore)
       allServersData.forEach(serverData => {
         serverData.stations.forEach(stationResponse => {
           const station = stationResponse.station || stationResponse;
           const listeners = stationResponse.listeners || station.listeners;
           const stationKey = `${serverData.serverUrl}:${station.shortcode}`;
           
-          // Find the station item in DOM
+          // Find the station item in DOM and update data attribute
           const stationItem = streamList.querySelector(`[data-station-key="${stationKey}"]`);
           if (stationItem && listeners) {
-            const descriptionEl = stationItem.querySelector('.radio-stream-description');
-            if (descriptionEl) {
-              const currentText = descriptionEl.textContent || '';
-              const textWithoutListeners = currentText.replace(/\s*•\s*👥\s*\d+/, '');
-              const uniqueListeners = listeners.unique || listeners.current || 0;
-              const listenerDisplay = ` • 👥 ${uniqueListeners}`;
-              descriptionEl.textContent = textWithoutListeners + listenerDisplay;
-              
-              // Update data attribute
-              stationItem.setAttribute('data-listener-count', uniqueListeners.toString());
-            }
+            const uniqueListeners = listeners.unique || listeners.current || 0;
+            // Update data attribute only (badges are updated via WebSocket)
+            stationItem.setAttribute('data-listener-count', uniqueListeners.toString());
           }
         });
       });
@@ -7214,6 +7279,147 @@ function setupRadioStreamSelector() {
   };
   
   // Load radio stream to specified deck
+  // Setup robust error handling and auto-reconnect for radio streams
+  const setupRadioStreamErrorHandling = (
+    audio: HTMLAudioElement, 
+    deckType: 'a' | 'b' | 'c' | 'd', 
+    station: any, 
+    streamUrls: string[]
+  ) => {
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let wasPlaying = false;
+    
+    // Track if user manually paused
+    let manuallyPaused = false;
+    audio.addEventListener('pause', () => {
+      if (!audio.ended) {
+        manuallyPaused = true;
+        console.log(`⏸️ Deck ${deckType.toUpperCase()}: User manually paused`);
+      }
+    });
+    
+    audio.addEventListener('play', () => {
+      manuallyPaused = false;
+      reconnectAttempts = 0; // Reset reconnect counter on successful play
+    });
+    
+    const attemptReconnect = () => {
+      if (manuallyPaused) {
+        console.log(`⏸️ Deck ${deckType.toUpperCase()}: Skip reconnect (manually paused)`);
+        return;
+      }
+      
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        console.error(`❌ Deck ${deckType.toUpperCase()}: Max reconnect attempts reached for ${station.name}`);
+        // Show user notification
+        const fileInfo = document.querySelector(`#file-info-${deckType} .file-path-display`);
+        if (fileInfo) {
+          fileInfo.textContent = `⚠️ ${station.name} - Connection failed`;
+        }
+        return;
+      }
+      
+      reconnectAttempts++;
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 10000); // Exponential backoff, max 10s
+      
+      console.log(`🔄 Deck ${deckType.toUpperCase()}: Reconnect attempt ${reconnectAttempts}/${maxReconnectAttempts} in ${delay}ms`);
+      
+      const fileInfo = document.querySelector(`#file-info-${deckType} .file-path-display`);
+      if (fileInfo) {
+        fileInfo.textContent = `🔄 ${station.name} - Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`;
+      }
+      
+      reconnectTimeout = setTimeout(() => {
+        const currentUrlIndex = reconnectAttempts % streamUrls.length;
+        const reconnectUrl = streamUrls[currentUrlIndex];
+        const freshUrl = `${reconnectUrl}?reconnect=${Date.now()}&attempt=${reconnectAttempts}`;
+        
+        console.log(`🔗 Deck ${deckType.toUpperCase()}: Trying ${freshUrl}`);
+        
+        // Store playback state
+        wasPlaying = !audio.paused;
+        
+        // Reload stream
+        audio.src = freshUrl;
+        audio.load();
+        
+        // Try to resume playback if it was playing before
+        if (wasPlaying) {
+          audio.play().catch(err => {
+            console.warn(`⚠️ Deck ${deckType.toUpperCase()}: Auto-play failed, user interaction may be needed:`, err);
+          });
+        }
+      }, delay);
+    };
+    
+    // Handle network errors
+    audio.addEventListener('error', (e) => {
+      // Ignore errors if stream is actually playing fine
+      if (!audio.paused && audio.readyState >= 2) {
+        console.log(`⚠️ Deck ${deckType.toUpperCase()}: Error event but stream is playing, ignoring`);
+        return;
+      }
+      
+      console.error(`❌ Deck ${deckType.toUpperCase()}: Stream error for ${station.name}:`, e);
+      attemptReconnect();
+    });
+    
+    // Handle stalled streams (buffering issues)
+    audio.addEventListener('stalled', () => {
+      // Ignore stalled if stream is actually playing fine
+      if (!audio.paused && audio.readyState >= 2) {
+        console.log(`⚠️ Deck ${deckType.toUpperCase()}: Stalled event but stream is playing, ignoring`);
+        return;
+      }
+      
+      console.warn(`⚠️ Deck ${deckType.toUpperCase()}: Stream stalled for ${station.name}`);
+      attemptReconnect();
+    });
+    
+    // Handle waiting for data
+    let waitingTimeout: NodeJS.Timeout | null = null;
+    audio.addEventListener('waiting', () => {
+      console.warn(`⏳ Deck ${deckType.toUpperCase()}: Waiting for data from ${station.name}`);
+      
+      // If waiting too long (5 seconds), try reconnect
+      if (waitingTimeout) clearTimeout(waitingTimeout);
+      waitingTimeout = setTimeout(() => {
+        if (audio.readyState < 3) { // HAVE_FUTURE_DATA
+          console.warn(`⏰ Deck ${deckType.toUpperCase()}: Waiting timeout, attempting reconnect`);
+          attemptReconnect();
+        }
+      }, 5000);
+    });
+    
+    // Clear waiting timeout when playback resumes
+    audio.addEventListener('playing', () => {
+      if (waitingTimeout) {
+        clearTimeout(waitingTimeout);
+        waitingTimeout = null;
+      }
+      
+      // Reset reconnect counter on successful playback
+      if (reconnectAttempts > 0) {
+        console.log(`✅ Deck ${deckType.toUpperCase()}: Stream recovered after ${reconnectAttempts} attempts`);
+        reconnectAttempts = 0;
+        
+        const fileInfo = document.querySelector(`#file-info-${deckType} .file-path-display`);
+        if (fileInfo) {
+          fileInfo.textContent = `📻 ${station.name}`;
+        }
+      }
+    });
+    
+    // Cleanup on deck clear
+    (window as any)[`radioReconnectCleanup_${deckType}`] = () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (waitingTimeout) clearTimeout(waitingTimeout);
+      reconnectAttempts = 0;
+    };
+  };
+
   const loadRadioStreamToDeck = async (deck: string, station: any) => {
     try {
       console.log(`📻 Loading ${station.name} to Deck ${deck.toUpperCase()}`);
@@ -7390,6 +7596,9 @@ function setupRadioStreamSelector() {
       // Setup audio event listeners for radio streams
       setupAudioEventListeners(audio, deckType);
       
+      // Setup robust error handling and auto-reconnect for radio streams
+      setupRadioStreamErrorHandling(audio, deckType, station, streamUrls);
+      
       // Update file info display
       const fileInfo = document.querySelector(`#file-info-${deck} .file-path-display`);
       if (fileInfo) {
@@ -7432,6 +7641,99 @@ function setupRadioStreamSelector() {
   
   console.log('📻 Radio stream selector initialized');
 }
+
+  // Helper: move dropdown to document.body and position it
+  function portalDropdownToBody(el: HTMLElement, placeholder: Comment, anchor: HTMLElement): Node | null {
+    try {
+      const parent = el.parentNode;
+      if (!parent) return null;
+      // Insert placeholder where element was
+      parent.replaceChild(placeholder, el);
+      // Append to body
+      document.body.appendChild(el);
+      // Position fixed (already set in CSS, but enforce it)
+      const rect = anchor.getBoundingClientRect();
+      el.style.position = 'fixed';
+      el.style.zIndex = '9999';
+      
+      // Slight offset below button: 5px spacing
+      let top = rect.bottom + 5;
+      
+      const viewportHeight = window.innerHeight;
+      const dropdownWidth = el.offsetWidth;
+      const dropdownHeight = el.offsetHeight;
+      
+      console.log('🔧 Portal Dropdown Debug:', {
+        buttonRect: rect,
+        dropdownWidth,
+        dropdownHeight,
+        viewportWidth: window.innerWidth,
+        viewportHeight
+      });
+      
+      // Position dropdown: right edge aligned with button's right edge, extending left
+      // This makes it open towards the library (to the left)
+      let left = rect.right - dropdownWidth;
+      
+      console.log(`📍 Initial left calculation: ${rect.right} - ${dropdownWidth} = ${left}`);
+      
+      // Ensure dropdown doesn't go off left edge (minimum 10px margin)
+      if (left < 10) {
+        console.log(`⚠️ Left clamped from ${left} to 10`);
+        left = 10;
+      }
+      
+      // Prevent overflow bottom
+      if (top + dropdownHeight > viewportHeight) {
+        // Position above the button instead
+        top = rect.top - dropdownHeight - 5;
+        console.log(`⬆️ Moved above button: top = ${top}`);
+      }
+      // Prevent overflow top
+      if (top < 10) {
+        top = 10;
+        console.log(`⚠️ Top clamped to 10`);
+      }
+      
+      console.log(`✅ Final position: top=${top}px, left=${left}px`);
+      
+      el.style.top = `${top}px`;
+      el.style.left = `${left}px`;
+      el.style.right = 'auto';
+      
+      console.log('📦 Applied styles:', {
+        position: el.style.position,
+        top: el.style.top,
+        left: el.style.left,
+        right: el.style.right,
+        zIndex: el.style.zIndex
+      });
+      
+      return parent;
+    } catch (e) {
+      console.error('Failed to portal dropdown', e);
+      return null;
+    }
+  }
+
+  // Helper: restore dropdown back to original parent
+  function restoreDropdown(el: HTMLElement, placeholder: Comment, originalParent: Node | null) {
+    try {
+      // Remove absolute positioning
+      el.style.position = '';
+      el.style.top = '';
+      el.style.left = '';
+      el.style.right = '';
+      el.style.zIndex = '';
+      if (placeholder.parentNode) {
+        placeholder.parentNode.replaceChild(el, placeholder);
+      } else if (originalParent) {
+        originalParent.appendChild(el);
+      }
+    } catch (e) {
+      console.error('Failed to restore dropdown', e);
+    }
+  }
 
 // Handle Auto-Queue Logic when a track ends
 function handleAutoQueue(finishedDeck: 'a' | 'b' | 'c' | 'd') {
@@ -14915,6 +15217,9 @@ import { initializeDiscord, getDiscordClient, type DiscordGatewayClient } from '
 // Wishbox UI elements (Dropdown)
 const wishboxBtn = document.getElementById('wishbox-btn') as HTMLButtonElement;
 const wishboxDropdown = document.getElementById('wishbox-dropdown') as HTMLDivElement;
+// Placeholder & original parent for portal
+const wishboxDropdownPlaceholder = document.createComment('wishbox-dropdown-placeholder');
+let wishboxOriginalParent: Node | null = null;
 const wishboxSortBtn = document.getElementById('wishbox-sort-btn') as HTMLButtonElement;
 const wishboxCloseBtn = document.getElementById('wishbox-close-btn') as HTMLButtonElement;
 const wishboxStatus = document.getElementById('wishbox-status') as HTMLDivElement;
@@ -15509,6 +15814,7 @@ function toggleWishbox() {
  * Open wishbox dropdown
  */
 function openWishbox() {
+  // Show dropdown first so it has dimensions
   wishboxDropdown.classList.add('show');
   wishboxBtn.classList.add('active');
   updateWishboxContent();
@@ -15518,6 +15824,11 @@ function openWishbox() {
   if (client) {
     wishboxStatus.classList.add('hidden');
   }
+  
+  // Portal to body and position after DOM update
+  setTimeout(() => {
+    wishboxOriginalParent = portalDropdownToBody(wishboxDropdown, wishboxDropdownPlaceholder, wishboxBtn as HTMLElement);
+  }, 0);
 }
 
 /**
@@ -15526,11 +15837,22 @@ function openWishbox() {
 function closeWishbox() {
   wishboxDropdown.classList.remove('show');
   wishboxBtn.classList.remove('active');
+  restoreDropdown(wishboxDropdown, wishboxDropdownPlaceholder, wishboxOriginalParent);
 }
 
 // Event listeners for wishbox
 wishboxBtn?.addEventListener('click', toggleWishbox);
 wishboxCloseBtn?.addEventListener('click', closeWishbox);
+
+// Close wishbox when clicking outside (same as radio dropdown)
+document.addEventListener('click', (e) => {
+  const wishboxIsOpen = wishboxDropdown?.classList.contains('show');
+  if (wishboxIsOpen && wishboxBtn && wishboxDropdown && 
+      !wishboxBtn.contains(e.target as Node) && 
+      !wishboxDropdown.contains(e.target as Node)) {
+    closeWishbox();
+  }
+});
 
 // Sort button event listener
 wishboxSortBtn?.addEventListener('click', (e) => {

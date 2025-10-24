@@ -90,125 +90,79 @@ class UpdateChecker {
     }
     this.updatePromptShown = true;
 
-    // Erstelle Update-Banner
-    const banner = document.createElement('div');
-    banner.id = 'update-banner';
-    banner.style.cssText = `
+    // Finde die Versions-Anzeige
+    const versionDisplay = document.getElementById('version-display');
+    if (!versionDisplay) {
+      console.warn('⚠️ Version display not found');
+      return;
+    }
+
+    // Erstelle kleines Update-Badge
+    const updateBadge = document.createElement('div');
+    updateBadge.id = 'update-badge';
+    updateBadge.style.cssText = `
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
+      bottom: 14px;
+      right: 110px;
+      z-index: 10001;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
-      padding: 16px;
-      text-align: center;
-      z-index: 10000;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      animation: slideDown 0.3s ease-out;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+      animation: pulse 2s ease-in-out infinite;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.3s ease;
     `;
 
-    banner.innerHTML = `
-      <div style="max-width: 800px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px;">
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span style="font-size: 24px;">🚀</span>
-          <div style="text-align: left;">
-            <div style="font-weight: 600; font-size: 16px; margin-bottom: 4px;">
-              Neue Version verfügbar!
-            </div>
-            <div style="font-size: 13px; opacity: 0.9;">
-              SubCaster wurde aktualisiert. Lade die Seite neu, um die neueste Version zu verwenden.
-            </div>
-          </div>
-        </div>
-        <div style="display: flex; gap: 10px; flex-shrink: 0;">
-          <button id="update-reload-btn" style="
-            background: white;
-            color: #667eea;
-            border: none;
-            padding: 10px 24px;
-            border-radius: 6px;
-            font-weight: 600;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.2s;
-          ">
-            Jetzt neu laden
-          </button>
-          <button id="update-dismiss-btn" style="
-            background: rgba(255,255,255,0.2);
-            color: white;
-            border: 1px solid rgba(255,255,255,0.3);
-            padding: 10px 24px;
-            border-radius: 6px;
-            font-weight: 600;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.2s;
-          ">
-            Später
-          </button>
-        </div>
-      </div>
+    updateBadge.innerHTML = `
+      <span style="font-size: 14px;">🚀</span>
+      <span>UPDATE</span>
     `;
+
+    // Hover-Effekt
+    updateBadge.addEventListener('mouseenter', () => {
+      updateBadge.style.transform = 'scale(1.1)';
+      updateBadge.style.boxShadow = '0 4px 16px rgba(102, 126, 234, 0.6)';
+    });
+    
+    updateBadge.addEventListener('mouseleave', () => {
+      updateBadge.style.transform = 'scale(1)';
+      updateBadge.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.4)';
+    });
+
+    // Click: Reload
+    updateBadge.addEventListener('click', () => {
+      window.location.reload();
+    });
 
     // Animations-CSS hinzufügen
-    if (!document.getElementById('update-banner-styles')) {
+    if (!document.getElementById('update-badge-styles')) {
       const style = document.createElement('style');
-      style.id = 'update-banner-styles';
+      style.id = 'update-badge-styles';
       style.textContent = `
-        @keyframes slideDown {
-          from {
-            transform: translateY(-100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateY(0);
+        @keyframes pulse {
+          0%, 100% {
             opacity: 1;
           }
-        }
-        
-        #update-reload-btn:hover {
-          transform: scale(1.05);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
-        
-        #update-dismiss-btn:hover {
-          background: rgba(255,255,255,0.3);
+          50% {
+            opacity: 0.7;
+          }
         }
       `;
       document.head.appendChild(style);
     }
 
-    document.body.appendChild(banner);
+    document.body.appendChild(updateBadge);
 
-    // Event Listeners
-    const reloadBtn = document.getElementById('update-reload-btn');
-    const dismissBtn = document.getElementById('update-dismiss-btn');
-
-    reloadBtn?.addEventListener('click', () => {
-      console.log('🔄 User requested reload for update');
-      window.location.reload();
-    });
-
-    dismissBtn?.addEventListener('click', () => {
-      console.log('⏭️ User dismissed update prompt');
-      banner.style.animation = 'slideDown 0.3s ease-out reverse';
-      setTimeout(() => {
-        banner.remove();
-        // Erlaube erneutes Anzeigen nach 5 Minuten
-        setTimeout(() => {
-          this.updatePromptShown = false;
-        }, 300000);
-      }, 300);
-    });
-
-    // Auto-dismiss nach 30 Sekunden (sanft ausblenden)
-    setTimeout(() => {
-      if (banner.parentNode) {
-        banner.style.opacity = '0.7';
-      }
-    }, 30000);
+    console.log('� Update badge displayed - click to reload');
   }
 }
 

@@ -29,6 +29,9 @@ dist-ssr
 .env.docker
 .env.docker.individual
 
+# Docker compose with credentials
+docker-compose.autoupdate.yml
+
 # Keep only example files (templates without real credentials)
 !.env.example
 !.env.docker.example

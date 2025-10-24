@@ -25,25 +25,20 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "concurrently": "^9.2.1",
-    "http-server": "^14.1.1",
+    "knip": "^5.66.2",
     "typescript": "~5.8.3",
     "vite": "^7.1.6"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.3",
-    "@capacitor/app": "^7.1.0",
     "@capacitor/cli": "^7.4.3",
     "@capacitor/core": "^7.4.3",
-    "@capacitor/filesystem": "^7.1.4",
-    "@capacitor/network": "^7.0.2",
     "@types/three": "^0.180.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
-    "http-proxy-middleware": "^3.0.5",
     "node-fetch": "^3.3.2",
     "three": "^0.180.0",
-    "wavesurfer.js": "^7.10.1",
-    "ws": "^8.18.3"
+    "wavesurfer.js": "^7.10.1"
   }
 }

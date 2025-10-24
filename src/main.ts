@@ -2713,6 +2713,36 @@ function showSetupWizardOnly() {
   initializeFullApp();
 }
 
+// Display current version in UI
+async function displayCurrentVersion() {
+  try {
+    const response = await fetch('/api/version');
+    if (response.ok) {
+      const data = await response.json();
+      const versionDisplay = document.getElementById('version-display');
+      if (versionDisplay) {
+        const versionText = versionDisplay.querySelector('.version-text');
+        if (versionText) {
+          // Show short Git SHA (first 7 chars)
+          const shortSha = data.gitCommit?.substring(0, 7) || 'dev';
+          versionText.textContent = shortSha;
+          versionDisplay.title = `Version: ${data.version}\nCommit: ${data.gitCommit}\nBuild: ${data.buildDate}`;
+          console.log('📌 Version displayed:', shortSha);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('❌ Failed to fetch version:', error);
+    const versionDisplay = document.getElementById('version-display');
+    if (versionDisplay) {
+      const versionText = versionDisplay.querySelector('.version-text');
+      if (versionText) {
+        versionText.textContent = 'dev';
+      }
+    }
+  }
+}
+
 function initializeFullApp() {
   console.log("🚀 Initializing full SubCaster application...");
   
@@ -2720,6 +2750,9 @@ function initializeFullApp() {
   updateChecker.start().catch(err => {
     console.error('❌ Failed to start update checker:', err);
   });
+  
+  // Display current version
+  displayCurrentVersion();
   
   // 1. Initialize Player Decks first (creates HTML)
   initializePlayerDecks();

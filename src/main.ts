@@ -4,6 +4,7 @@ import { AzuraCastWebcaster, createAzuraCastConfig, fetchAzuraCastStations, fetc
 import { azuraCastWebSocket, type AzuraCastNowPlayingData } from "./azuracast-websocket";
 import { SetupWizard } from "./setup-wizard";
 import { loadConfig, getConfigValue as getRuntimeConfigValue } from "../js/config-loader";
+import { updateChecker } from "./update-checker";
 import WaveSurfer from 'wavesurfer.js';
 import * as THREE from 'three';
 
@@ -2714,6 +2715,11 @@ function showSetupWizardOnly() {
 
 function initializeFullApp() {
   console.log("🚀 Initializing full SubCaster application...");
+  
+  // Start update checker service
+  updateChecker.start().catch(err => {
+    console.error('❌ Failed to start update checker:', err);
+  });
   
   // 1. Initialize Player Decks first (creates HTML)
   initializePlayerDecks();

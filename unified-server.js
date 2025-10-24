@@ -47,6 +47,20 @@ app.use(express.json({ limit: '10mb' }));
 // BACKEND CONFIG API - Loads settings from .env at runtime (no rebuild needed!)
 // ============================================================================
 
+// Get app version info (for update checks)
+app.get('/api/version', (req, res) => {
+  console.log('📋 Frontend requested version info');
+  
+  const versionInfo = {
+    version: process.env.APP_VERSION || 'dev',
+    gitCommit: process.env.GIT_COMMIT || 'unknown',
+    buildDate: process.env.BUILD_DATE || 'unknown',
+    // Optional: Check for newer version on GHCR (requires additional API call)
+  };
+  
+  res.json(versionInfo);
+});
+
 // Get all frontend configuration (public + masked secrets)
 app.get('/api/config', (req, res) => {
   console.log('📋 Frontend requested configuration');

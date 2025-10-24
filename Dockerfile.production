@@ -1,6 +1,11 @@
 # Multi-stage build für optimierte Production-Image
 FROM node:24.8.0-alpine AS builder
 
+# Build-time arguments for versioning
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
+ARG VERSION=dev
+
 # Arbeitsverzeichnis setzen
 WORKDIR /app
 
@@ -23,6 +28,16 @@ RUN npm run build
 
 # Production Stage
 FROM node:24.8.0-alpine AS production
+
+# Copy version info from builder stage
+ARG GIT_COMMIT
+ARG BUILD_DATE
+ARG VERSION
+
+# Set version as environment variables for runtime access
+ENV APP_VERSION=${VERSION} \
+    GIT_COMMIT=${GIT_COMMIT} \
+    BUILD_DATE=${BUILD_DATE}
 
 # Arbeitsverzeichnis setzen
 WORKDIR /app

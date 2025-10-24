@@ -56,6 +56,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             NODE_VERSION=24.8.0
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VERSION=${{ github.ref_name }}-${{ github.sha }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ steps.repo_owner.outputs.owner }}/subcaster:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ steps.repo_owner.outputs.owner }}/subcaster:buildcache,mode=max
 

@@ -547,26 +547,46 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
   // Clear audio
   if (audio) {
     audio.pause();
-    audio.src = '';
-    audio.currentTime = 0;
-    audio.removeAttribute('data-song-id');
     
-    // FEHLERFIX: Cleanup MediaElementSourceNode to prevent "already connected" errors
+    // CHROME FIX: Disconnect and remove MediaElementSourceNode BEFORE clearing src
+    // This prevents "HTMLMediaElement already connected" errors in Chrome
     if ((audio as any)._audioSourceNode) {
       try {
-        (audio as any)._audioSourceNode.disconnect();
+        const sourceNode = (audio as any)._audioSourceNode;
+        sourceNode.disconnect();
         console.log(`🔌 Disconnected MediaElementSourceNode for player ${side}`);
       } catch (e) {
         console.warn(`⚠️ Source node disconnect error for player ${side}:`, e);
       }
-      // Clear the reference completely
+      // Clear ALL references completely
       delete (audio as any)._audioSourceNode;
       delete (audio as any)._isConnectedToMixer;
-      console.log(`🗑️ Removed MediaElementSourceNode reference for player ${side}`);
+      console.log(`🗑️ Removed MediaElementSourceNode references for player ${side}`);
     }
     
-    // Note: We don't need to clone the audio element since we want to keep the basic event listeners
-    // The audio element will be properly reinitialized when a new track is loaded
+    // CHROME FIX: Clone the audio element to completely reset its Web Audio API state
+    // This is necessary because Chrome maintains internal connections even after disconnect()
+    const newAudio = audio.cloneNode(false) as HTMLAudioElement; // false = shallow clone without children
+    newAudio.id = audio.id;
+    newAudio.className = audio.className;
+    newAudio.crossOrigin = 'anonymous'; // Important for Web Audio API
+    newAudio.preload = 'auto';
+    newAudio.preservesPitch = false;
+    
+    // Replace the old audio element with the fresh clone
+    if (audio.parentNode) {
+      audio.parentNode.replaceChild(newAudio, audio);
+      console.log(`🔄 Replaced audio element for player ${side} (Chrome Web Audio API reset)`);
+    }
+    
+    // Clear the new audio element (it should already be empty from cloning)
+    newAudio.src = '';
+    newAudio.load(); // Force reload to ensure clean state
+    
+    // Re-setup the essential event listeners that were lost in cloning
+    // Note: Most event listeners will be re-added when a new track is loaded via setupAudioEventListeners()
+    // But we need to re-add the critical 'play' event listener for Web Audio API connection
+    setupAudioEventListeners(newAudio, side);
   }
   
   // Clear stored song data for drag & drop

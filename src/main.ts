@@ -248,7 +248,7 @@ let bPlayerGain: GainNode | null = null;
 let cPlayerGain: GainNode | null = null;
 let dPlayerGain: GainNode | null = null;
 let microphoneGain: GainNode | null = null;
-let crossfaderGain: { a: GainNode; b: GainNode; c: GainNode; d: GainNode } | null = null;
+// REMOVED: crossfaderGain - now handled by Mixer module with direct routing (no crossfading)
 let microphoneStream: MediaStream | null = null;
 
 // Radio Broadcast Processing Nodes
@@ -312,7 +312,7 @@ function cleanupAudioResources(): void {
     cPlayerGain = null;
     dPlayerGain = null;
     microphoneGain = null;
-    crossfaderGain = null;
+    // REMOVED: crossfaderGain - no longer needed (direct routing)
     
     console.log('✅ Audio resources cleaned up successfully');
   } catch (error) {
@@ -819,7 +819,7 @@ async function initializeAudioMixing() {
     // Initialize AudioManager first
     await AudioManager.init();
     
-    // Initialize Mixer (crossfader and routing)
+    // Initialize Mixer (direct routing, no crossfader)
     Mixer.init();
     
     // Get references to nodes for backwards compatibility
@@ -842,17 +842,10 @@ async function initializeAudioMixing() {
     dPlayerGain = AudioManager.getDeckGain('d');
     microphoneGain = AudioManager.getMicrophoneGain();
     
-    // Crossfader gains now managed by Mixer module
-    // Legacy variable kept for compatibility, but routing is in Mixer
-    crossfaderGain = {
-      a: Mixer.getCrossfaderGain('a')!,
-      b: Mixer.getCrossfaderGain('b')!,
-      c: Mixer.getCrossfaderGain('c')!,
-      d: Mixer.getCrossfaderGain('d')!
-    };
+    // REMOVED: crossfaderGain - no longer needed (direct routing)
     
     console.log('✅ Audio mixing initialized via AudioManager + Mixer');
-    console.log('🎛️ Routing: Decks → Crossfader → [Master + Stream]');
+    console.log('🎛️ Routing: Decks → Direct → [Master + Stream] (no crossfader)');
     
     // Start volume meters
     console.log('🎵 Starting volume meters...');
@@ -9412,27 +9405,14 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
     }, { once: true }); // Event listener nur einmal ausführen
   }
   
-  // Crossfader anwenden falls aktiv
-  applyCrossfader();
-  
+  // REMOVED: applyCrossfader() - Crossfader removed, all decks route directly at full volume
   console.log(`Player ${side.toUpperCase()}: "${song.title}" loaded successfully`);
   
   // Update library markers to show song is now on deck
   markSongsInLibrary();
 }
 
-// Apply full volume to all decks (no crossfader)
-function applyCrossfader() {
-  // Set all deck gains to 100% (1.0)
-  if (crossfaderGain) {
-    crossfaderGain.a.gain.value = 1.0;
-    crossfaderGain.b.gain.value = 1.0;
-    crossfaderGain.c.gain.value = 1.0;
-    crossfaderGain.d.gain.value = 1.0;
-    
-    console.log(`🎚️ All decks at 100% volume`);
-  }
-}
+// REMOVED: applyCrossfader() - Crossfader removed, all decks now route directly at full volume via Mixer.ts
 
 // Player Drop Zones initialisieren
 function initializePlayerDropZones() {

@@ -16,15 +16,24 @@
     "start:production": "node start-production.js",
     "stop:production": "node stop-production.js",
     "deploy:production": "node create-production-deployment.js",
+    "electron:dev": "concurrently \"npm run start:unified\" \"electron electron/main.js\"",
+    "electron:build": "npm run build && electron-builder",
+    "electron:build:win": "npm run build && electron-builder --win",
+    "electron:build:mac": "npm run build && electron-builder --mac",
+    "electron:build:linux": "npm run build && electron-builder --linux",
+    "android:init": "npx cap add android",
     "android:sync": "npm run build && npx cap sync android",
     "android:open": "npx cap open android",
     "android:run": "npm run android:sync && npx cap run android",
     "android:build": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease",
-    "android:build-debug": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug"
+    "android:build-debug": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
+    "android:clean": "cd android && ./gradlew clean"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "concurrently": "^9.2.1",
+    "electron": "^28.0.0",
+    "electron-builder": "^25.1.8",
     "knip": "^5.66.2",
     "typescript": "~5.8.3",
     "vite": "^7.1.6"
@@ -38,7 +47,9 @@
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "node-fetch": "^3.3.2",
+    "nodejs-mobile-capacitor": "^1.0.0",
     "three": "^0.180.0",
     "wavesurfer.js": "^7.10.1"
-  }
+  },
+  "main": "electron/main.js"
 }

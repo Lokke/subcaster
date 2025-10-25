@@ -3,17 +3,47 @@
 [![Build and Push Docker Image](https://github.com/Lokke/subcaster/actions/workflows/docker-build.yml/badge.svg)](https://github.com/Lokke/subcaster/actions/workflows/docker-build.yml)
 [![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Flokke%2Fsubcaster-blue?logo=docker)](https://github.com/Lokke/subcaster/pkgs/container/subcaster)
 
-Web interface for radio moderators. Provides access to music from OpenSubsonic-compatible servers (Navidrome, Gonic, Ampache, Astiga, LMS, Nextcloud Music, ownCloud Music, Supysonic) with live streaming to AzuraCast.
+Professional web interface for radio moderators and DJs. Provides access to music from OpenSubsonic-compatible servers with live streaming to AzuraCast.
+
+**Available on multiple platforms:**
+- 🌐 Web Browser (Docker/Node.js)
+- 💻 Desktop App (Electron - Windows/macOS/Linux)
+- 📱 Android App (Native with embedded Node.js server)
+
 <img width="1846" height="999" alt="Screenshot 2025-09-24 002355" src="https://github.com/user-attachments/assets/b3c522a6-95bc-417a-9f3c-15ff7dfa8fd9" />
 
 ## Features
 
-- Music library browser for OpenSubsonic servers
-- Dual-deck audio player with crossfader
+- Music library browser for OpenSubsonic servers (Navidrome, Gonic, Ampache, Astiga, etc.)
+- 4-deck audio player with crossfader
 - Microphone input with live mixing
 - Direct streaming to AzuraCast
 - Smart metadata transmission
-- Browser-based interface
+- Browser-based interface with native desktop/mobile apps
+
+## 🚀 Quick Start
+
+### Web (Docker - Recommended)
+```bash
+docker pull ghcr.io/lokke/subcaster:latest
+docker-compose -f docker-compose.env.yml up -d
+```
+
+### Desktop (Electron)
+```bash
+npm install
+npm run electron:dev
+```
+
+### Android
+```bash
+npm install
+npm run android:init
+npm run android:sync
+npm run android:open
+```
+
+**📖 See [PLATFORM_BUILDS.md](PLATFORM_BUILDS.md) for complete platform-specific instructions.**
 
 ## License
 

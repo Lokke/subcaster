@@ -4519,6 +4519,13 @@ body.logged-in .wishbox-frame {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  /* Prevent layout shift when scrollbar appears */
+  scrollbar-gutter: stable;
+  /* Enable smooth scrolling with hardware acceleration */
+  scroll-behavior: smooth;
+  will-change: scroll-position;
+  /* Force overlay scrollbars in Chrome */
+  overflow: overlay;
 }
 
 /* Search Results - scrollable */
@@ -4526,6 +4533,10 @@ body.logged-in .wishbox-frame {
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
+  scroll-behavior: smooth;
+  will-change: scroll-position;
+  overflow: overlay;
 }
 
 #search-content {
@@ -6402,6 +6413,9 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 1.5rem;
   padding: 1.5rem;
+  /* Optimize scrolling performance */
+  transform: translateZ(0);
+  will-change: scroll-position;
 }
 
 /* Modern Album Grid Cards */
@@ -7645,18 +7659,25 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
 .library-content::-webkit-scrollbar,
 .search-results::-webkit-scrollbar {
   width: 8px;
+  /* Scrollbar always takes space but is transparent by default */
 }
 
 .library-content::-webkit-scrollbar-track,
 .search-results::-webkit-scrollbar-track {
-  background: #2a2a2a;
+  background: transparent;
   border-radius: 4px;
 }
 
 .library-content::-webkit-scrollbar-thumb,
 .search-results::-webkit-scrollbar-thumb {
-  background: #4a4a4a;
+  background: rgba(74, 74, 74, 0.3);
   border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.library-content:hover::-webkit-scrollbar-thumb,
+.search-results:hover::-webkit-scrollbar-thumb {
+  background: rgba(74, 74, 74, 0.6);
 }
 
 .library-content::-webkit-scrollbar-thumb:hover,

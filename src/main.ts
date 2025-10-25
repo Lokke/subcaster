@@ -9,9 +9,11 @@ import { initElectronTitlebar } from "./electron-titlebar";
 import WaveSurfer from 'wavesurfer.js';
 import * as THREE from 'three';
 
-// 🎵 NEW AUDIO SYSTEM - Phase 1
+// 🎵 NEW AUDIO SYSTEM - Phase 1, 2 & 3
 import * as AudioManager from './audio/AudioManager';
 import { getOrCreateSourceNode as getOrCreateSourceNodeNew, removeSourceNode, hasSourceNode } from './audio/SourceNodeCache';
+import * as Mixer from './audio/Mixer';
+import { Deck, type DeckSide } from './audio/Deck';
 
 console.log("SubCaster loaded!");
 
@@ -200,8 +202,7 @@ function updateUserStatus(service: 'opensubsonic' | 'stream', username: string, 
 let libraryBrowser: any; // Wird später als LibraryBrowser initialisiert
 // let volumeMeterIntervals: { [key: string]: NodeJS.Timeout }; // Wird später definiert
 
-// 🆕 NEW: Deck instances for managing player decks
-import { Deck, type DeckSide } from './audio/Deck';
+// 🆕 NEW: Deck instances for managing player decks (imported above)
 const deckInstances: Map<DeckSide, Deck> = new Map();
 
 // Helper to get or create a Deck instance
@@ -281,6 +282,9 @@ function cleanupAudioResources(): void {
       });
       microphoneStream = null;
     }
+    
+    // Cleanup Mixer module (Phase 3)
+    Mixer.cleanup();
     
     // Close AudioManager (includes AudioContext and SourceNodeCache cleanup)
     AudioManager.close();
@@ -803,26 +807,27 @@ let streamConfig: StreamConfig = {
 // AUDIO MIXING FUNCTIONS (Moved up for proper scoping)
 
 // Audio-Mixing-System initialisieren
-// 🎵 NEW: Facade to AudioManager module (Phase 1)
+// 🎵 NEW: Facade to AudioManager + Mixer modules (Phase 1 & 3)
 async function initializeAudioMixing() {
   try {
-    console.log('🎵 Initializing audio mixing (routing to new AudioManager)...');
+    console.log('🎵 Initializing audio mixing (routing to new AudioManager + Mixer)...');
     
-    // Initialize new AudioManager
+    // Initialize AudioManager first
     await AudioManager.init();
     
-    // Get references to new nodes for backwards compatibility
+    // Initialize Mixer (crossfader and routing)
+    Mixer.init();
+    
+    // Get references to nodes for backwards compatibility
     const ctx = AudioManager.getContext();
     audioContext = ctx;
     
     // Get gain nodes from AudioManager
     masterGainNode = AudioManager.getMasterGain();
-    streamGainNode = ctx.createGain(); // Temp: will be moved to AudioManager in Phase 2
-    streamGainNode.gain.value = 0.99;
+    streamGainNode = AudioManager.getStreamGain(); // Now properly exposed
     
     const streamDest = AudioManager.getStreamDestination();
     if (streamDest) {
-      streamGainNode.connect(streamDest);
       masterAudioDestination = streamDest;
     }
     
@@ -833,42 +838,17 @@ async function initializeAudioMixing() {
     dPlayerGain = AudioManager.getDeckGain('d');
     microphoneGain = AudioManager.getMicrophoneGain();
     
-    // Crossfader gains (temporary - will be moved to Mixer module in Phase 2)
+    // Crossfader gains now managed by Mixer module
+    // Legacy variable kept for compatibility, but routing is in Mixer
     crossfaderGain = {
-      a: ctx.createGain(),
-      b: ctx.createGain(),
-      c: ctx.createGain(),
-      d: ctx.createGain()
+      a: Mixer.getCrossfaderGain('a')!,
+      b: Mixer.getCrossfaderGain('b')!,
+      c: Mixer.getCrossfaderGain('c')!,
+      d: Mixer.getCrossfaderGain('d')!
     };
-    const initialGain = Math.cos(0.5 * Math.PI / 2);
-    crossfaderGain.a.gain.value = initialGain;
-    crossfaderGain.b.gain.value = initialGain;
-    crossfaderGain.c.gain.value = initialGain;
-    crossfaderGain.d.gain.value = initialGain;
     
-    // Wire up crossfader (will be moved to Mixer in Phase 2)
-    if (masterGainNode) {
-      crossfaderGain.a.connect(masterGainNode);
-      crossfaderGain.b.connect(masterGainNode);
-      crossfaderGain.c.connect(masterGainNode);
-      crossfaderGain.d.connect(masterGainNode);
-    }
-    
-    if (streamGainNode) {
-      crossfaderGain.a.connect(streamGainNode);
-      crossfaderGain.b.connect(streamGainNode);
-      crossfaderGain.c.connect(streamGainNode);
-      crossfaderGain.d.connect(streamGainNode);
-      if (microphoneGain) microphoneGain.connect(streamGainNode);
-    }
-    
-    if (aPlayerGain) aPlayerGain.connect(crossfaderGain.a);
-    if (bPlayerGain) bPlayerGain.connect(crossfaderGain.b);
-    if (cPlayerGain) cPlayerGain.connect(crossfaderGain.c);
-    if (dPlayerGain) dPlayerGain.connect(crossfaderGain.d);
-    
-    console.log('✅ Audio mixing initialized via AudioManager');
-    console.log('🎛️ Routing: Decks → Crossfader → [Monitor + Stream]');
+    console.log('✅ Audio mixing initialized via AudioManager + Mixer');
+    console.log('🎛️ Routing: Decks → Crossfader → [Master + Stream]');
     
     // Start volume meters
     console.log('🎵 Starting volume meters...');
@@ -4031,40 +4011,20 @@ async function setupMicrophone() {
 }
 
 // Crossfader-Position setzen (0 = A, 0.25 = B, 0.5 = C, 0.75 = D, 1 = alle)
+// ============================================================================
+// FACADE: Crossfader Position (routes to Mixer module - Phase 3)
+// ============================================================================
 function setCrossfaderPosition(position: number) {
-  if (!crossfaderGain) return;
-  
-  // Position zwischen 0 und 1 begrenzen
-  position = Math.max(0, Math.min(1, position));
-  
-  // Gleichmäßige Verteilung für 4 Decks
-  const aGain = position < 0.25 ? 1.0 : 1.0 - (position - 0.25) * 4;
-  const bGain = position < 0.25 ? position * 4 : (position < 0.5 ? 1.0 : 1.0 - (position - 0.5) * 4);
-  const cGain = position < 0.5 ? 0 : (position < 0.75 ? (position - 0.5) * 4 : 1.0 - (position - 0.75) * 4);
-  const dGain = position < 0.75 ? 0 : (position - 0.75) * 4;
-  
-  // Monitor-Crossfader (für Speaker/Kopfhörer)
-  crossfaderGain.a.gain.value = Math.max(0, Math.min(1, aGain));
-  crossfaderGain.b.gain.value = Math.max(0, Math.min(1, bGain));
-  crossfaderGain.c.gain.value = Math.max(0, Math.min(1, cGain));
-  crossfaderGain.d.gain.value = Math.max(0, Math.min(1, dGain));
-  
-  console.log(`🎚️ Crossfader position: ${position}, A: ${aGain.toFixed(2)}, B: ${bGain.toFixed(2)}, C: ${cGain.toFixed(2)}, D: ${dGain.toFixed(2)}`);
+  // Route to new Mixer module
+  Mixer.setCrossfaderPosition(position);
 }
 
-// Mikrofon Lautstärke steuern (Stream bleibt immer aktiv)
+// ============================================================================
+// FACADE: Microphone Control (routes to Mixer module - Phase 3)
+// ============================================================================
 function setMicrophoneEnabled(enabled: boolean, volume: number = 1) {
-  if (!microphoneGain) return;
-  
-  if (enabled) {
-    microphoneGain.gain.value = volume;
-    console.log(`🎤 Microphone volume set to ${Math.round(volume * 100)}%`);
-  } else {
-    // Mute but keep stream alive for consistent behavior
-    microphoneGain.gain.value = 0;
-    console.log(`🎤 Microphone muted (stream still recording)`);
-    // Note: Stream stays active for consistent meter display and instant activation
-  }
+  // Route to new Mixer module
+  Mixer.setMicrophoneEnabled(enabled, volume);
 }
 
 

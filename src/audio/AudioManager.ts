@@ -201,6 +201,13 @@ export function getMasterGain(): GainNode | null {
 }
 
 /**
+ * Get the stream gain node (for broadcasting volume control)
+ */
+export function getStreamGain(): GainNode | null {
+  return state.streamGainNode;
+}
+
+/**
  * Check if AudioManager is initialized
  */
 export function isInitialized(): boolean {

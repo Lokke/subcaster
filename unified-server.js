@@ -316,11 +316,15 @@ let currentMountIndex = 0;
 app.get('/api/opensubsonic-stream', async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) {
+        console.error('❌ [AUDIO-PROXY] Missing URL parameter');
         return res.status(400).json({ error: 'Missing URL parameter' });
     }
     
-    console.log(`🎵 Audio-Stream Request: ${targetUrl}`);
-    console.log(`📡 Headers: Range=${req.headers.range || 'none'}`);
+    console.log(`🎵 [AUDIO-PROXY] Stream Request received`);
+    console.log(`🎵 [AUDIO-PROXY] Target URL: ${targetUrl}`);
+    console.log(`🎵 [AUDIO-PROXY] Timestamp: ${new Date().toISOString()}`);
+    console.log(`📡 [AUDIO-PROXY] Range Header: ${req.headers.range || 'none'}`);
+    console.log(`📡 [AUDIO-PROXY] User-Agent: ${req.headers['user-agent'] || 'none'}`);
     
     try {
         const fetch = (await import('node-fetch')).default;
@@ -340,13 +344,21 @@ app.get('/api/opensubsonic-stream', async (req, res) => {
             requestHeaders['Authorization'] = req.headers.authorization;
         }
         
-        console.log(`📤 Forwarding headers:`, requestHeaders);
+        console.log(`📤 [AUDIO-PROXY] Forwarding headers:`, requestHeaders);
+        console.log(`📤 [AUDIO-PROXY] Starting fetch...`);
         
+        const fetchStartTime = Date.now();
         const response = await fetch(targetUrl, {
             headers: requestHeaders,
             // Timeout hinzufügen
             timeout: 30000
         });
+        
+        const fetchDuration = Date.now() - fetchStartTime;
+        console.log(`✅ [AUDIO-PROXY] Fetch completed in ${fetchDuration}ms`);
+        console.log(`✅ [AUDIO-PROXY] Response status: ${response.status}`);
+        console.log(`✅ [AUDIO-PROXY] Content-Type: ${response.headers.get('content-type')}`);
+        console.log(`✅ [AUDIO-PROXY] Content-Length: ${response.headers.get('content-length')}`);
         
         console.log(`📥 OpenSubsonic response: ${response.status} ${response.statusText}`);
         
@@ -383,7 +395,8 @@ app.get('/api/opensubsonic-stream', async (req, res) => {
         
         // Error-Handler für Response
         res.on('error', (err) => {
-            console.error('❌ Audio response stream error:', err.message);
+            console.error('❌ [AUDIO-PROXY] Response stream error:', err.message);
+            console.error('❌ [AUDIO-PROXY] Error stack:', err.stack);
             if (response.body) {
                 response.body.destroy();
             }
@@ -391,7 +404,8 @@ app.get('/api/opensubsonic-stream', async (req, res) => {
         
         // Error-Handler für incoming stream
         response.body.on('error', (err) => {
-            console.error('❌ Audio source stream error:', err.message);
+            console.error('❌ [AUDIO-PROXY] Source stream error:', err.message);
+            console.error('❌ [AUDIO-PROXY] Error stack:', err.stack);
             if (!res.headersSent) {
                 res.status(500).json({ error: 'Stream Error' });
             } else {
@@ -401,17 +415,29 @@ app.get('/api/opensubsonic-stream', async (req, res) => {
         
         // Check if client disconnected
         req.on('close', () => {
+            console.log(`🔌 [AUDIO-PROXY] Client disconnected`);
             if (response.body) {
                 response.body.destroy();
             }
         });
         
         // Stream weiterleiten
+        console.log(`📤 [AUDIO-PROXY] Starting to pipe response body to client...`);
+        const pipeStartTime = Date.now();
+        
         response.body.pipe(res);
-        console.log(`✅ Audio-Stream proxied: ${response.status}`);
+        
+        res.on('finish', () => {
+            const pipeDuration = Date.now() - pipeStartTime;
+            console.log(`✅ [AUDIO-PROXY] Stream completed in ${pipeDuration}ms`);
+        });
+        
+        console.log(`✅ [AUDIO-PROXY] Audio stream proxied with status: ${response.status}`);
         
     } catch (error) {
-        console.error(`❌ Audio-Proxy Error:`, error.message);
+        console.error(`❌ [AUDIO-PROXY] Proxy Error:`, error.message);
+        console.error(`❌ [AUDIO-PROXY] Error stack:`, error.stack);
+        console.error(`❌ [AUDIO-PROXY] Error name:`, error.name);
         if (!res.headersSent) {
             res.status(500).json({ error: 'Proxy Error', details: error.message });
         }

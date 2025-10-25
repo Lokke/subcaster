@@ -277,6 +277,12 @@ function cleanupAudioResources(): void {
   console.log('🧹 Cleaning up audio resources...');
   
   try {
+    // Stop volume meter animation loop (Phase 6)
+    stopVolumeMeterAnimationLoop();
+    
+    // Cleanup VolumeMeters module (Phase 6)
+    volumeMeters.disposeAll();
+    
     // Stop microphone stream and all tracks
     if (microphoneStream) {
       microphoneStream.getTracks().forEach(track => {
@@ -849,27 +855,107 @@ async function initializeAudioMixing() {
     console.log('✅ Audio mixing initialized via AudioManager + Mixer');
     console.log('🎛️ Routing: Decks → Direct → [Master + Stream] (no crossfader)');
     
-    // Start volume meters
-    console.log('🎵 Starting volume meters...');
+    // Initialize VolumeMeters (NEW Phase 6 integration)
+    console.log('📊 Initializing VolumeMeters module...');
     try {
-      if (typeof startVolumeMeter === 'function') {
-        startVolumeMeter('a');
-        startVolumeMeter('b');
-        startVolumeMeter('c');
-        startVolumeMeter('d');
-        startVolumeMeter('mic');
-        startVolumeMeter('deck-master');
-        startVolumeMeter('stream-output');
-        console.log('🎵 Volume meters started successfully');
-      }
+      initializeVolumeMeters();
+      console.log('✅ VolumeMeters initialized successfully');
     } catch (error) {
-      console.error('⚠️ Error starting volume meters:', error);
+      console.error('⚠️ Error initializing VolumeMeters:', error);
     }
     
     return true;
   } catch (error) {
     console.error('Failed to initialize audio mixing:', error);
     return false;
+  }
+}
+
+/**
+ * Initialize VolumeMeters module for all audio sources
+ * 🎵 NEW: Phase 6 - Centralized meter management
+ */
+function initializeVolumeMeters() {
+  console.log('📊 Creating meters for all audio sources...');
+  
+  // Create meters for deck gain nodes
+  if (aPlayerGain) volumeMeters.createMeter('deck-a', aPlayerGain);
+  if (bPlayerGain) volumeMeters.createMeter('deck-b', bPlayerGain);
+  if (cPlayerGain) volumeMeters.createMeter('deck-c', cPlayerGain);
+  if (dPlayerGain) volumeMeters.createMeter('deck-d', dPlayerGain);
+  
+  // Create meter for microphone
+  if (microphoneGain) volumeMeters.createMeter('mic', microphoneGain);
+  
+  // Create meters for master/stream outputs
+  if (masterGainNode) volumeMeters.createMeter('master', masterGainNode);
+  if (streamGainNode) volumeMeters.createMeter('stream', streamGainNode);
+  
+  console.log(`📊 Created ${volumeMeters.getMeterCount()} meters`);
+  
+  // Start animation loop for UI updates
+  startVolumeMeterAnimationLoop();
+}
+
+/**
+ * Animation loop for VolumeMeters UI updates
+ * Updates all VU meter displays at 30 FPS
+ */
+let volumeMeterAnimationId: number | null = null;
+
+function startVolumeMeterAnimationLoop() {
+  if (volumeMeterAnimationId !== null) {
+    console.log('📊 VolumeMeters animation loop already running');
+    return;
+  }
+  
+  const meterMap: Record<string, string> = {
+    'deck-a': 'volume-meter-a',
+    'deck-b': 'volume-meter-b',
+    'deck-c': 'volume-meter-c',
+    'deck-d': 'volume-meter-d',
+    'mic': 'mic-volume-meter',
+    'master': 'deck-master-meter',
+    'stream': 'stream-output-meter'
+  };
+  
+  function animate() {
+    // Get all readings at once
+    const readings = volumeMeters.getAllReadings();
+    
+    // Update each meter UI
+    for (const [meterId, reading] of readings) {
+      const uiElementId = meterMap[meterId];
+      if (!uiElementId) continue;
+      
+      // Convert RMS to LED bar level (0-8)
+      // dB range: -∞ to 0, typical speech/music: -40 to -10 dB
+      const db = reading.db;
+      let ledLevel = 0;
+      
+      if (db > -60) {
+        // Map -60dB to 0dB → 0 to 8 LEDs
+        ledLevel = Math.floor(((db + 60) / 60) * 8);
+        ledLevel = Math.max(0, Math.min(8, ledLevel));
+      }
+      
+      updateVolumeMeter(uiElementId, ledLevel);
+    }
+    
+    // Continue loop
+    volumeMeterAnimationId = requestAnimationFrame(animate);
+  }
+  
+  // Start the loop
+  volumeMeterAnimationId = requestAnimationFrame(animate);
+  console.log('📊 VolumeMeters animation loop started');
+}
+
+function stopVolumeMeterAnimationLoop() {
+  if (volumeMeterAnimationId !== null) {
+    cancelAnimationFrame(volumeMeterAnimationId);
+    volumeMeterAnimationId = null;
+    console.log('📊 VolumeMeters animation loop stopped');
   }
 }
 

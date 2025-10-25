@@ -583,18 +583,18 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
     audio.pause();
     audio.currentTime = 0;
     
-    // 🔧 ELECTRON FIX: Cleanup MediaElementSourceNode when clearing deck
-    // This allows creating a fresh SourceNode for the next track
-    if (audioSourceNodes.has(audio)) {
-      const sourceNode = audioSourceNodes.get(audio);
+    // 🔧 ELECTRON FIX: Use SourceNodeCache for cleanup
+    // Import at top: import { clearCache } from './audio/SourceNodeCache';
+    // Note: SourceNodeCache uses WeakMap, so GC will handle cleanup automatically
+    // But we can disconnect the node explicitly if it exists
+    const sourceNode = getOrCreateSourceNode(audio);
+    if (sourceNode) {
       try {
-        sourceNode?.disconnect();
+        sourceNode.disconnect();
         console.log(`🔌 Disconnected MediaElementSourceNode for player ${side}`);
       } catch (e) {
         // Already disconnected
       }
-      audioSourceNodes.delete(audio);
-      console.log(`🗑️ Removed MediaElementSourceNode from cache for player ${side}`);
     }
     
     // Clear src and reset audio element
@@ -1575,21 +1575,6 @@ function setupVolumeControls() {
       }
     }
   });
-}
-
-// DEPRECATED: Legacy volume meter animation functions
-// These are replaced by WebAudio-based real-time analysis in startVolumeMeter()
-// Keeping for backwards compatibility but should not be used
-function startVolumeMeterAnimation(side: string) {
-  console.warn(`⚠️ startVolumeMeterAnimation() is deprecated - use startVolumeMeter() instead`);
-  // Intentionally disabled - meters should only be driven by WebAudio analysers
-  return;
-}
-
-function stopVolumeMeterAnimation(side: string) {
-  console.warn(`⚠️ stopVolumeMeterAnimation() is deprecated - WebAudio meters handle pause/stop automatically`);
-  // Intentionally disabled - meters should only be driven by WebAudio analysers
-  return;
 }
 
 // Consolidated Player System Initialization
@@ -10724,15 +10709,7 @@ async function loadRatingAsync(songId: string) {
   }
 }
 
-// Audio Level Monitoring für Volume Meter
-let volumeMeterIntervals: { [key: string]: NodeJS.Timeout } = {};
-
-// 🔧 ELECTRON FIX: Global Map to track MediaElementSourceNodes
-// ⚠️ DEPRECATED: This map is now managed by SourceNodeCache module
-// Kept for backwards compatibility, will be removed in Phase 2
-const audioSourceNodes = new Map<HTMLAudioElement, MediaElementAudioSourceNode>();
-
-// 🎵 NEW: Facade to new SourceNodeCache module
+// 🎵 Facade to new SourceNodeCache module
 // This ensures all calls route through the centralized cache
 function getOrCreateSourceNode(audioElement: HTMLAudioElement): MediaElementAudioSourceNode | null {
   if (!audioContext) {
@@ -10753,13 +10730,6 @@ function startVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic' | 'deck-master' | 
   console.warn(`⚠️ startVolumeMeter('${side}') is DEPRECATED - now handled by VolumeMeters module`);
   return; // No-op: All meters are initialized via initializeVolumeMeters()
 }
-/* LEGACY CODE BELOW - DISABLED AND COMMENTED OUT
-  // Stoppe vorherige Intervalle
-  if (volumeMeterIntervals[side]) {
-    clearInterval(volumeMeterIntervals[side]);
-  }
-... (432 lines of legacy code omitted) ...
-*/
 
 function updateVolumeMeter(meterId: string, level: number) {
   const meterElement = document.getElementById(meterId);
@@ -10794,14 +10764,6 @@ function updateVolumeMeter(meterId: string, level: number) {
     });
   } catch (error) {
     console.warn(`⚠️ Error updating volume meter ${meterId}:`, error);
-  }
-}
-
-function stopVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic' | 'deck-master' | 'stream-output') {
-  if (volumeMeterIntervals[side]) {
-    clearInterval(volumeMeterIntervals[side]);
-    delete volumeMeterIntervals[side];
-    console.log(`?? Volume meter stopped for ${side}`);
   }
 }
 
@@ -10877,19 +10839,6 @@ function autoStartVolumeMeters() {
   console.warn('⚠️ autoStartVolumeMeters() is DEPRECATED - now handled by initializeVolumeMeters()');
   return; // No-op: Meters are initialized in initializeAudioMixing()
 }
-/* LEGACY CODE BELOW - DISABLED AND COMMENTED OUT
-  // Auto-start volume meters when audio mixing is initialized
-  setTimeout(() => {
-    if (audioContext) {
-      console.log('🎵 Auto-starting volume meters...');
-      startVolumeMeter('a');
-      startVolumeMeter('b');
-      startVolumeMeter('c');
-      startVolumeMeter('d');
-      startVolumeMeter('mic');
-    }
-  }, 1000);
-*/
 
 // Live Streaming State
 let isLiveStreaming = false;

@@ -9631,6 +9631,9 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
   
   // Setup CRT disturbances for this player
   setupCRTDisturbances(side);
+  
+  // Setup audio mixing event listeners (only once during player setup)
+  setupAudioEventListeners(audio, side);
 }
 
 // CRT Disturbance Effects for Waveforms
@@ -9806,8 +9809,9 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   // Load new waveform using WaveSurfer (lädt automatisch neue Waveform)
   loadWaveform(side, audio.src, song.duration);
   
-  // Audio-Event-Listener werden nach allen Funktionsdefinitionen hinzugefügt
-  setupAudioEventListeners(audio, side);
+  // Audio-Event-Listener werden NICHT bei jedem Track-Load neu hinzugefügt
+  // Sie werden nur einmal beim Setup hinzugefügt (setupAudioPlayer)
+  // setupAudioEventListeners(audio, side); // REMOVED - causes duplicate listeners
   
   // Update drag functionality for this deck after loading
   setTimeout(() => {

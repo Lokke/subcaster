@@ -103,8 +103,8 @@ class UpdateChecker {
     updateBadge.style.cssText = `
       position: fixed;
       bottom: 14px;
-      right: 110px;
-      z-index: 10001;
+      right: 140px;
+      z-index: 9999;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
       padding: 6px 12px;
@@ -120,6 +120,7 @@ class UpdateChecker {
       align-items: center;
       gap: 6px;
       transition: all 0.3s ease;
+      pointer-events: auto;
     `;
 
     updateBadge.innerHTML = `

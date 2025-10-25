@@ -8620,11 +8620,7 @@ function initializeOpenSubsonicLogin() {
               const micReady = await setupMicrophone();
               if (micReady) {
                 setMicrophoneEnabled(false);
-                setTimeout(() => {
-                  if (typeof startVolumeMeter === 'function') {
-                    startVolumeMeter('mic');
-                  }
-                }, 100);
+                // Volume meter is automatically initialized via initializeVolumeMeters()
               }
             } catch (error) {
               console.warn("⚠️ Microphone auto-initialization failed:", error);
@@ -10748,343 +10744,22 @@ function getOrCreateSourceNode(audioElement: HTMLAudioElement): MediaElementAudi
   return getOrCreateSourceNodeNew(audioElement, audioContext);
 }
 
+/**
+ * @deprecated LEGACY: Replaced by VolumeMeters module (Phase 6)
+ * This function is no longer needed - meters are now managed by initializeVolumeMeters()
+ * Kept for backwards compatibility but should not be called.
+ */
 function startVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic' | 'deck-master' | 'stream-output') {
+  console.warn(`⚠️ startVolumeMeter('${side}') is DEPRECATED - now handled by VolumeMeters module`);
+  return; // No-op: All meters are initialized via initializeVolumeMeters()
+}
+/* LEGACY CODE BELOW - DISABLED AND COMMENTED OUT
   // Stoppe vorherige Intervalle
   if (volumeMeterIntervals[side]) {
     clearInterval(volumeMeterIntervals[side]);
   }
-  
-  let meterId: string;
-  if (side === 'mic') {
-    meterId = 'mic-volume-meter';
-  } else if (side === 'deck-master') {
-    meterId = 'deck-master-meter';
-  } else if (side === 'stream-output') {
-    meterId = 'stream-output-meter';
-  } else {
-    meterId = `volume-meter-${side}`;
-  }
-  
-  const meterElement = document.getElementById(meterId);
-  
-  if (!meterElement) {
-    console.warn(`⚠️ Volume meter element ${meterId} not found`);
-    return;
-  }
-  
-  if (side === 'mic') {
-    // Microphone Volume Meter
-    const analyser = (window as any).micAnalyser;
-    if (!analyser) {
-      console.warn('🎤 Microphone analyser not available yet');
-      return;
-    }
-    
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    volumeMeterIntervals[side] = setInterval(() => {
-      try {
-        if (!dataArray || bufferLength <= 0) {
-          return;
-        }
-        
-        analyser.getByteFrequencyData(dataArray);
-        
-        let sum = 0;
-        for (let i = 0; i < Math.min(bufferLength, dataArray.length); i++) {
-          const value = dataArray[i];
-          if (typeof value === 'number' && !isNaN(value)) {
-            sum += value * value;
-          }
-        }
-        const rms = Math.sqrt(sum / bufferLength);
-        const normalizedLevel = Math.floor((rms / 255) * 12);
-        const clampedLevel = Math.max(0, Math.min(8, normalizedLevel));
-        
-        updateVolumeMeter(meterId, clampedLevel);
-      } catch (error) {
-        console.warn(`⚠️ Error in microphone volume meter:`, error);
-        if (volumeMeterIntervals[side]) {
-          clearInterval(volumeMeterIntervals[side]);
-          delete volumeMeterIntervals[side];
-        }
-      }
-    }, 30); // Faster update rate: ~33 FPS for quicker response
-    
-    console.log(`🎤 Volume meter started for microphone`);
-    return;
-  }
-  
-  // Deck Master Meter - Combined output of all 4 decks
-  if (side === 'deck-master') {
-    if (!masterGainNode) {
-      console.warn('🔊 Master gain node not available yet');
-      return;
-    }
-    
-    if (!audioContext) {
-      console.warn('🔊 AudioContext not available for deck master meter');
-      return;
-    }
-    
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.3;
-    
-    masterGainNode.connect(analyser);
-    
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    volumeMeterIntervals[side] = setInterval(() => {
-      try {
-        if (!dataArray || bufferLength <= 0) {
-          return;
-        }
-        
-        analyser.getByteFrequencyData(dataArray);
-        
-        let sum = 0;
-        for (let i = 0; i < Math.min(bufferLength, dataArray.length); i++) {
-          const value = dataArray[i];
-          if (typeof value === 'number' && !isNaN(value)) {
-            sum += value * value;
-          }
-        }
-        const rms = Math.sqrt(sum / bufferLength);
-        const normalizedLevel = Math.floor((rms / 255) * 12);
-        const clampedLevel = Math.max(0, Math.min(8, normalizedLevel));
-        
-        updateVolumeMeter(meterId, clampedLevel);
-      } catch (error) {
-        console.warn(`⚠️ Error in deck master volume meter:`, error);
-        if (volumeMeterIntervals[side]) {
-          clearInterval(volumeMeterIntervals[side]);
-          delete volumeMeterIntervals[side];
-        }
-      }
-    }, 30);
-    
-    console.log(`🔊 Volume meter started for deck master`);
-    return;
-  }
-  
-  // Stream Output Meter - Combined output to stream (decks + mic)
-  if (side === 'stream-output') {
-    if (!streamGainNode) {
-      console.warn('📡 Stream gain node not available yet');
-      return;
-    }
-    
-    if (!audioContext) {
-      console.warn('📡 AudioContext not available for stream output meter');
-      return;
-    }
-    
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.3;
-    
-    streamGainNode.connect(analyser);
-    
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    volumeMeterIntervals[side] = setInterval(() => {
-      try {
-        if (!dataArray || bufferLength <= 0) {
-          return;
-        }
-        
-        analyser.getByteFrequencyData(dataArray);
-        
-        let sum = 0;
-        for (let i = 0; i < Math.min(bufferLength, dataArray.length); i++) {
-          const value = dataArray[i];
-          if (typeof value === 'number' && !isNaN(value)) {
-            sum += value * value;
-          }
-        }
-        const rms = Math.sqrt(sum / bufferLength);
-        const normalizedLevel = Math.floor((rms / 255) * 12);
-        const clampedLevel = Math.max(0, Math.min(8, normalizedLevel));
-        
-        updateVolumeMeter(meterId, clampedLevel);
-      } catch (error) {
-        console.warn(`⚠️ Error in stream output volume meter:`, error);
-        if (volumeMeterIntervals[side]) {
-          clearInterval(volumeMeterIntervals[side]);
-          delete volumeMeterIntervals[side];
-        }
-      }
-    }, 30);
-    
-    console.log(`📡 Volume meter started for stream output`);
-    return;
-  }
-  
-  // Player Volume Meter - funktioniert immer, auch ohne Streaming
-  const audioElement = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-  if (!audioElement) {
-    console.warn(`⚠️ Audio element for player ${side} not found`);
-    return;
-  }
-  
-  // Fallback: Wenn kein AudioContext oder kein Streaming aktiv ist
-  if (!audioContext) {
-    // Einfache Volume Meter basierend auf audio.volume
-    volumeMeterIntervals[side] = setInterval(() => {
-      if (audioElement.paused || audioElement.muted) {
-        updateVolumeMeter(meterId, 0);
-      } else {
-        // Simulate audio level basierend auf Volume und currentTime
-        const volume = audioElement.volume;
-        const simulatedLevel = Math.floor(volume * 6); // 0-6 Balken
-        updateVolumeMeter(meterId, simulatedLevel);
-      }
-    }, 100);
-    
-    console.log(`🔊 Simple volume meter started for player ${side} (no WebAudio)`);
-    return;
-  }
-  
-  // Web Audio API Volume Meter (wenn verfügbar)
-  let gainNode: GainNode | null = null;
-  
-  if (side === 'a') {
-    gainNode = aPlayerGain;
-  } else if (side === 'b') {
-    gainNode = bPlayerGain;
-  } else if (side === 'c') {
-    gainNode = cPlayerGain;
-  } else if (side === 'd') {
-    gainNode = dPlayerGain;
-  }
-  
-  if (!gainNode) {
-    // Fallback: Wenn GainNode nicht existiert, erstelle temporären Analyser
-    try {
-      if (audioElement.src && !audioElement.paused) {
-        // 🔧 ELECTRON FIX: Use centralized SourceNode management
-        // This prevents creating duplicate MediaElementSourceNodes which causes crashes
-        const sourceNode = getOrCreateSourceNode(audioElement);
-        if (!sourceNode) {
-          console.warn(`⚠️ Could not get SourceNode for player ${side}`);
-          return;
-        }
-        
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.8;
-        
-        sourceNode.connect(analyser);
-        analyser.connect(audioContext.destination);
-        
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        
-        volumeMeterIntervals[side] = setInterval(() => {
-          try {
-            if (!dataArray || bufferLength <= 0) {
-              return;
-            }
-            
-            analyser.getByteFrequencyData(dataArray);
-            
-            let sum = 0;
-            for (let i = 0; i < Math.min(bufferLength, dataArray.length); i++) {
-              const value = dataArray[i];
-              if (typeof value === 'number' && !isNaN(value)) {
-                sum += value * value;
-              }
-            }
-            const rms = Math.sqrt(sum / bufferLength);
-            const normalizedLevel = Math.floor((rms / 255) * 12);
-            const clampedLevel = Math.max(0, Math.min(8, normalizedLevel));
-            
-            updateVolumeMeter(meterId, clampedLevel);
-          } catch (error) {
-            console.warn(`⚠️ Error in temporary volume meter for ${side}:`, error);
-            if (volumeMeterIntervals[side]) {
-              clearInterval(volumeMeterIntervals[side]);
-              delete volumeMeterIntervals[side];
-            }
-          }
-        }, 50);
-        
-        console.log(`🔊 Temporary volume meter started for player ${side}`);
-        return;
-      }
-    } catch (error) {
-      console.warn(`⚠️ Could not create temporary analyser for ${side}:`, error);
-    }
-    
-    // Final fallback: Einfache Volume-basierte Meter
-    volumeMeterIntervals[side] = setInterval(() => {
-      if (audioElement.paused || audioElement.muted) {
-        updateVolumeMeter(meterId, 0);
-      } else {
-        const volume = audioElement.volume;
-        const simulatedLevel = Math.floor(volume * 6);
-        updateVolumeMeter(meterId, simulatedLevel);
-      }
-    }, 100);
-    
-    console.log(`🔊 Fallback volume meter started for player ${side}`);
-    return;
-  }
-  
-  // Standard Web Audio API Volume Meter
-  const analyser = audioContext.createAnalyser();
-  analyser.fftSize = 256;
-  analyser.smoothingTimeConstant = 0.3; // Lower for faster response (was 0.8)
-  
-  // Verbinde Gain Node mit Analyser (ohne Audio-Flow zu stören)
-  gainNode.connect(analyser);
-  // Analyser does NOT connect to destination - it's just for monitoring
-  
-  const bufferLength = analyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-  
-  // Update Interval
-  volumeMeterIntervals[side] = setInterval(() => {
-    try {
-      // Sicherheitscheck: Stelle sicher, dass dataArray und bufferLength gültig sind
-      if (!dataArray || bufferLength <= 0) {
-        return;
-      }
-      
-      analyser.getByteFrequencyData(dataArray);
-      
-      // Berechne RMS (Root Mean Square) für bessere Level-Anzeige
-      let sum = 0;
-      for (let i = 0; i < Math.min(bufferLength, dataArray.length); i++) {
-        const value = dataArray[i];
-        if (typeof value === 'number' && !isNaN(value)) {
-          sum += value * value;
-        }
-      }
-      const rms = Math.sqrt(sum / bufferLength);
-      
-      // Verbesserte Empfindlichkeit - direktere Umrechnung
-      // Normalisiere von 0-255 zu 0-8 Balken mit mehr Empfindlichkeit
-      const normalizedLevel = Math.floor((rms / 255) * 12); // Erhöht auf 12 für mehr Empfindlichkeit
-      const clampedLevel = Math.max(0, Math.min(8, normalizedLevel)); // Begrenze auf 8 Balken
-      
-      updateVolumeMeter(meterId, clampedLevel);
-    } catch (error) {
-      console.warn(`⚠️ Error in volume meter loop for ${side}:`, error);
-      // Stoppe das Interval bei wiederholten Fehlern
-      if (volumeMeterIntervals[side]) {
-        clearInterval(volumeMeterIntervals[side]);
-        delete volumeMeterIntervals[side];
-      }
-    }
-  }, 30); // Faster update rate: ~33 FPS (was 50ms/20fps)
-  
-  console.log(`🔊 WebAudio volume meter started for player ${side}`);
-}
+... (432 lines of legacy code omitted) ...
+*/
 
 function updateVolumeMeter(meterId: string, level: number) {
   const meterElement = document.getElementById(meterId);
@@ -11194,8 +10869,15 @@ function setupAudioEventListeners(audio: HTMLAudioElement, side: 'a' | 'b' | 'c'
   }, { once: false }); // Keep listening for each track
 }
 
-// Volume Meter Auto-Start (will be called from main initialization)
+/**
+ * @deprecated LEGACY: Replaced by initializeVolumeMeters() in AudioManager init
+ * All volume meters are now automatically initialized via VolumeMeters module.
+ */
 function autoStartVolumeMeters() {
+  console.warn('⚠️ autoStartVolumeMeters() is DEPRECATED - now handled by initializeVolumeMeters()');
+  return; // No-op: Meters are initialized in initializeAudioMixing()
+}
+/* LEGACY CODE BELOW - DISABLED AND COMMENTED OUT
   // Auto-start volume meters when audio mixing is initialized
   setTimeout(() => {
     if (audioContext) {
@@ -11207,7 +10889,7 @@ function autoStartVolumeMeters() {
       startVolumeMeter('mic');
     }
   }, 1000);
-}
+*/
 
 // Live Streaming State
 let isLiveStreaming = false;

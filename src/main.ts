@@ -9,12 +9,14 @@ import { initElectronTitlebar } from "./electron-titlebar";
 import WaveSurfer from 'wavesurfer.js';
 import * as THREE from 'three';
 
-// 🎵 NEW AUDIO SYSTEM - Phase 1, 2, 3 & 4
+// 🎵 NEW AUDIO SYSTEM - Phase 1, 2, 3, 4, 5 & 6
 import * as AudioManager from './audio/AudioManager';
 import { getOrCreateSourceNode as getOrCreateSourceNodeNew, removeSourceNode, hasSourceNode } from './audio/SourceNodeCache';
 import * as Mixer from './audio/Mixer';
 import { Deck, type DeckSide } from './audio/Deck';
 import * as MicManager from './audio/MicManager';
+import { waveformAdapter } from './audio/WaveformAdapter';
+import { volumeMeters } from './audio/VolumeMeters';
 
 console.log("SubCaster loaded!");
 
@@ -1901,8 +1903,7 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
   // 1. CREATE ZOOM WAVEFORM (top, zoomable, no seek, centered playhead)
   // 🔧 ELECTRON FIX: Use MediaElement backend to avoid renderer crash
   // WebAudio backend causes Access Violation in Electron when decoding audio
-  const wavesurferZoom = WaveSurfer.create({
-    container: containerZoom,
+  const wavesurferZoom = waveformAdapter.createWaveSurfer(containerZoom, {
     waveColor: waveColor,
     progressColor: progressColor,
     cursorColor: 'transparent', // No cursor - no seek
@@ -1910,7 +1911,7 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
     barGap: barGap,
     height: 60,
     normalize: true,
-    backend: 'MediaElement', // Use MediaElement instead of WebAudio (Electron fix)
+    // backend: 'MediaElement' - forced by WaveformAdapter
     minPxPerSec: minPxPerSec,
     interact: false, // Disable all interactions (no seek)
     hideScrollbar: true // Explicitly hide scrollbar
@@ -1921,8 +1922,7 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
 
   // 2. CREATE OVERVIEW WAVEFORM (bottom, always 1.0x, seekable)
   // 🔧 ELECTRON FIX: Use MediaElement backend to avoid renderer crash
-  const wavesurferOverview = WaveSurfer.create({
-    container: containerOverview,
+  const wavesurferOverview = waveformAdapter.createWaveSurfer(containerOverview, {
     waveColor: waveColor,
     progressColor: progressColor,
     cursorColor: '#ffffff',
@@ -1930,7 +1930,7 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
     barGap: 0,
     height: 20,
     normalize: true,
-    backend: 'MediaElement', // Use MediaElement instead of WebAudio (Electron fix)
+    // backend: 'MediaElement' - forced by WaveformAdapter
     minPxPerSec: minPxPerSec, // Always show full track
     interact: true, // Enable seek interactions
     hideScrollbar: true // Explicitly hide scrollbar
@@ -2223,14 +2223,14 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
         }
         containerOverview.style.opacity = '0.7';
         
-        // Retry loading the waveform (sequential to prevent crash)
+        // Retry loading the waveform (sequential via WaveformAdapter queue)
         console.log(`🔄 Retrying waveform load for ${side} player`);
         setTimeout(() => {
           try {
-            wavesurferZoom.load(audioUrl);
+            waveformAdapter.loadAudio(wavesurferZoom, audioUrl);
             // Wait for zoom before loading overview
             wavesurferZoom.once('ready', () => {
-              wavesurferOverview.load(audioUrl);
+              waveformAdapter.loadAudio(wavesurferOverview, audioUrl);
             });
           } catch (retryError) {
             console.error(`❌ Retry failed for ${side} waveform:`, retryError);
@@ -2241,28 +2241,28 @@ function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDurati
   });
 
   // Load the new audio file into BOTH waveforms
-  // 🔧 FIX: Load sequentially to prevent Electron renderer crash
-  // Electron's audio decoder crashes when decoding same file twice in parallel
+  // 🔧 FIX: Load sequentially via WaveformAdapter to prevent Electron renderer crash
+  // WaveformAdapter's queue ensures no parallel decoding (crashes eliminated)
   console.log(`🌊 [WAVEFORM-LOAD] Starting SEQUENTIAL waveform load for ${side} player`);
   console.log(`🌊 [WAVEFORM-LOAD] Audio URL: ${audioUrl}`);
   console.log(`🌊 [WAVEFORM-LOAD] Timestamp: ${new Date().toISOString()}`);
   
-  // Load zoom waveform first
+  // Load zoom waveform first (queued by WaveformAdapter)
   try {
     console.log(`🌊 [WAVEFORM-LOAD] Loading zoom waveform...`);
-    wavesurferZoom.load(audioUrl);
-    console.log(`🌊 [WAVEFORM-LOAD] Zoom waveform load called successfully`);
+    waveformAdapter.loadAudio(wavesurferZoom, audioUrl);
+    console.log(`🌊 [WAVEFORM-LOAD] Zoom waveform load queued successfully`);
   } catch (error) {
     console.error(`❌ [WAVEFORM-LOAD] Zoom waveform load failed:`, error);
     throw error;
   }
   
-  // Wait for zoom to finish before loading overview (prevent parallel decoding crash)
+  // Wait for zoom to finish before loading overview (additional safety layer)
   wavesurferZoom.once('ready', () => {
     console.log(`🌊 [WAVEFORM-LOAD] Zoom ready - now loading overview waveform...`);
     try {
-      wavesurferOverview.load(audioUrl);
-      console.log(`🌊 [WAVEFORM-LOAD] Overview waveform load called successfully`);
+      waveformAdapter.loadAudio(wavesurferOverview, audioUrl);
+      console.log(`🌊 [WAVEFORM-LOAD] Overview waveform load queued successfully`);
     } catch (error) {
       console.error(`❌ [WAVEFORM-LOAD] Overview waveform load failed:`, error);
     }

@@ -4,10 +4,14 @@ directories:
 appId: com.lokke.subcaster
 productName: SubCaster
 buildVersion: 1.0.0
+asarUnpack:
+  - unified-server.js
+  - dist/**/*
 files:
   - filter:
       - dist/**/*
       - electron/**/*
+      - unified-server.js
       - package.json
       - '!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}'
       - '!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}'
@@ -83,4 +87,4 @@ compression: maximum
 buildDependenciesFromSource: false
 nodeGypRebuild: false
 copyright: Copyright © 2024-2025 Felix Pielok
-electronVersion: 33.4.11
+electronVersion: 28.3.3

@@ -4,9 +4,16 @@ directories:
   buildResources: build
   output: dist-electron
 buildVersion: "1.0.0"
+
+# Don't pack these into asar - they need to be accessible by Node.js
+asarUnpack:
+  - unified-server.js
+  - dist/**/*
+
 files:
   - dist/**/*
   - electron/**/*
+  - unified-server.js
   - package.json
   - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
   - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"

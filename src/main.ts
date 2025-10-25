@@ -5,6 +5,7 @@ import { azuraCastWebSocket, type AzuraCastNowPlayingData } from "./azuracast-we
 import { SetupWizard } from "./setup-wizard";
 import { loadConfig, getConfigValue as getRuntimeConfigValue } from "../js/config-loader";
 import { updateChecker } from "./update-checker";
+import { initElectronTitlebar } from "./electron-titlebar";
 import WaveSurfer from 'wavesurfer.js';
 import * as THREE from 'three';
 
@@ -2783,6 +2784,9 @@ function initializeFullApp() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   console.log("DOM fully loaded and parsed");
+  
+  // Initialize Electron titlebar if running in Electron
+  initElectronTitlebar();
   
   // Check configuration and initialize accordingly
   await checkConfigurationAndInitialize();

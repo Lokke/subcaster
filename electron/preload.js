@@ -6,8 +6,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
   version: process.versions.electron,
   
-  // Example: Add app-specific APIs here if needed
-  // For now, SubCaster works fully through the web interface
+  // Window controls
+  minimizeWindow: () => ipcRenderer.send('window-minimize'),
+  maximizeWindow: () => ipcRenderer.send('window-maximize'),
+  closeWindow: () => ipcRenderer.send('window-close'),
+  
+  // Check if window is maximized
+  onMaximizeChange: (callback) => ipcRenderer.on('window-maximized', callback),
+  onUnmaximizeChange: (callback) => ipcRenderer.on('window-unmaximized', callback)
 });
 
 // Log that preload script has loaded

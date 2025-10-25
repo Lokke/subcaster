@@ -1,6 +1,75 @@
 /* LCD/CRT Monitor Effect Import */
 @import url(https://fonts.googleapis.com/css?family=Source+Code+Pro:400,500,600,700,900,300,200);
 
+/* Electron Custom Titlebar */
+#electron-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: #1a1a1a;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 999999;
+  border-bottom: 1px solid #333;
+  user-select: none;
+}
+
+.titlebar-drag-region {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  -webkit-app-region: drag;
+}
+
+.titlebar-title {
+  font-size: 13px;
+  color: #00ff88;
+  font-weight: 500;
+  font-family: 'Source Code Pro', monospace;
+}
+
+.titlebar-controls {
+  display: flex;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-button {
+  width: 46px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: #ccc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.titlebar-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.titlebar-button.close-btn:hover {
+  background: #e81123;
+  color: white;
+}
+
+.titlebar-button svg {
+  pointer-events: none;
+}
+
+/* Adjust main content to account for titlebar */
+body:has(#electron-titlebar) {
+  padding-top: 32px;
+}
+
 /* Material Icons Font - Local */
 @font-face {
   font-family: 'Material Icons';

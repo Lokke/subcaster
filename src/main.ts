@@ -14172,16 +14172,22 @@ function addDragScrollingToContainer(container: HTMLElement) {
     hasMoved = false;
     startX = e.pageX - container.offsetLeft;
     scrollLeft = container.scrollLeft;
-  });
+    container.style.cursor = 'grabbing';
+    container.style.userSelect = 'none';
+  }, { passive: true });
 
   container.addEventListener('mouseleave', () => {
     isDown = false;
     hasMoved = false;
     container.classList.remove('dragging');
-  });
+    container.style.cursor = 'grab';
+    container.style.userSelect = '';
+  }, { passive: true });
 
   container.addEventListener('mouseup', () => {
     isDown = false;
+    container.style.cursor = 'grab';
+    container.style.userSelect = '';
     if (hasMoved) {
       setTimeout(() => {
         container.classList.remove('dragging');
@@ -14191,22 +14197,22 @@ function addDragScrollingToContainer(container: HTMLElement) {
       container.classList.remove('dragging');
       hasMoved = false;
     }
-  });
+  }, { passive: true });
 
   container.addEventListener('mousemove', (e: MouseEvent) => {
     if (!isDown) return;
     
     e.preventDefault();
     const x = e.pageX - container.offsetLeft;
-    const walk = (x - startX) * 2;
+    const walk = (x - startX) * 2.5; // Increased multiplier for faster response
     
-    if (Math.abs(walk) > 5) {
+    if (Math.abs(walk) > 3) { // Lower threshold for faster detection
       hasMoved = true;
       container.classList.add('dragging');
     }
     
     container.scrollLeft = scrollLeft - walk;
-  });
+  }, { passive: false }); // WICHTIG: passive: false für preventDefault() in Chrome
 
   // Touch-Support für mobile Geräte
   container.addEventListener('touchstart', (e: TouchEvent) => {
@@ -14214,7 +14220,7 @@ function addDragScrollingToContainer(container: HTMLElement) {
     hasMoved = false;
     startX = e.touches[0].pageX - container.offsetLeft;
     scrollLeft = container.scrollLeft;
-  });
+  }, { passive: true });
 
   container.addEventListener('touchend', () => {
     isDown = false;
@@ -14227,21 +14233,24 @@ function addDragScrollingToContainer(container: HTMLElement) {
       container.classList.remove('dragging');
       hasMoved = false;
     }
-  });
+  }, { passive: true });
 
   container.addEventListener('touchmove', (e: TouchEvent) => {
     if (!isDown) return;
     const x = e.touches[0].pageX - container.offsetLeft;
-    const walk = (x - startX) * 2;
+    const walk = (x - startX) * 2.5; // Increased for consistency
     
-    if (Math.abs(walk) > 8) {
+    if (Math.abs(walk) > 5) {
       if (!hasMoved) {
         hasMoved = true;
         container.classList.add('dragging');
       }
       container.scrollLeft = scrollLeft - walk;
     }
-  });
+  }, { passive: true });
+  
+  // Initial cursor styling
+  container.style.cursor = 'grab';
 }
 
 // Replace old showBrowseView with new browser system

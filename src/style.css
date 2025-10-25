@@ -4519,13 +4519,17 @@ body.logged-in .wishbox-frame {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
-  /* Prevent layout shift when scrollbar appears */
-  scrollbar-gutter: stable;
+  /* Hide scrollbars completely */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
   /* Enable smooth scrolling with hardware acceleration */
   scroll-behavior: smooth;
   will-change: scroll-position;
-  /* Force overlay scrollbars in Chrome */
-  overflow: overlay;
+}
+
+/* Hide scrollbar for Chrome/Safari */
+.library-content::-webkit-scrollbar {
+  display: none;
 }
 
 /* Search Results - scrollable */
@@ -4533,10 +4537,15 @@ body.logged-in .wishbox-frame {
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-gutter: stable;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
   scroll-behavior: smooth;
   will-change: scroll-position;
-  overflow: overlay;
+}
+
+/* Hide scrollbar for Chrome/Safari */
+.search-results::-webkit-scrollbar {
+  display: none;
 }
 
 #search-content {
@@ -7655,34 +7664,22 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   border: 2px solid #00ff88;
 }
 
-/* Scrollbar Styling for Search Results */
+/* Scrollbar Styling - Completely hidden */
 .library-content::-webkit-scrollbar,
 .search-results::-webkit-scrollbar {
-  width: 8px;
-  /* Scrollbar always takes space but is transparent by default */
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .library-content::-webkit-scrollbar-track,
 .search-results::-webkit-scrollbar-track {
-  background: transparent;
-  border-radius: 4px;
+  display: none;
 }
 
 .library-content::-webkit-scrollbar-thumb,
 .search-results::-webkit-scrollbar-thumb {
-  background: rgba(74, 74, 74, 0.3);
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-
-.library-content:hover::-webkit-scrollbar-thumb,
-.search-results:hover::-webkit-scrollbar-thumb {
-  background: rgba(74, 74, 74, 0.6);
-}
-
-.library-content::-webkit-scrollbar-thumb:hover,
-.search-results::-webkit-scrollbar-thumb:hover {
-  background: #00ff88;
+  display: none;
 }
 
 /* Streaming Status Overlay */

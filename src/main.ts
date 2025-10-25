@@ -550,25 +550,16 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
     audio.pause();
     audio.currentTime = 0;
     
-    // CHROME FIX: Disconnect MediaElementSourceNode BEFORE clearing src
-    if ((audio as any)._audioSourceNode) {
-      try {
-        const sourceNode = (audio as any)._audioSourceNode;
-        sourceNode.disconnect();
-        console.log(`🔌 Disconnected MediaElementSourceNode for player ${side}`);
-      } catch (e) {
-        console.warn(`⚠️ Source node disconnect error for player ${side}:`, e);
-      }
-      // Clear connection flags
-      delete (audio as any)._audioSourceNode;
-      delete (audio as any)._isConnectedToMixer;
-      console.log(`🗑️ Removed MediaElementSourceNode references for player ${side}`);
-    }
+    // IMPORTANT: Do NOT disconnect Web Audio API nodes here
+    // They stay connected for the lifetime of the player
+    // Only reset the audio source
     
     // Clear src and reset audio element
     audio.src = '';
     audio.load(); // Force reload to clean state
     audio.removeAttribute('src');
+    
+    console.log(`🎵 Audio element cleared for player ${side}`);
   }
   
   // Clear stored song data for drag & drop
@@ -11479,6 +11470,8 @@ function setupAudioEventListeners(audio: HTMLAudioElement, side: 'a' | 'b' | 'c'
   // Audio zu Mixing-System hinzufügen für Live-Streaming
   audio.addEventListener('loadeddata', () => {
     console.log(`?? TRACK LOADED: ${side} player audio element src: ${audio.src}`);
+    
+    // Ensure Web Audio API connection when track is loaded
     setTimeout(async () => {
       if (!audioContext) {
         // Audio-Mixing automatisch initialisieren wenn erster Track geladen wird
@@ -11492,31 +11485,46 @@ function setupAudioEventListeners(audio: HTMLAudioElement, side: 'a' | 'b' | 'c'
           console.error(`? Failed to initialize audio mixing for ${side}`);
         }
       } else {
-        console.log(`?? Connecting ${side} player to mixer (track change)`);
+        // Always try to connect/reconnect on loadeddata
+        console.log(`?? Ensuring ${side} player is connected to mixer`);
         const connected = connectAudioToMixer(audio, side);
         console.log(`?? Connection result for ${side}: ${connected}`);
       }
-    }, 0);
+    }, 50); // Small delay to ensure audio element is fully ready
   });
 
   // Zusätzlich: Sicherstellen dass Verbindung bei Play-Event existiert
   audio.addEventListener('play', () => {
     console.log(`🎵 PLAY EVENT: ${side} player starting playback`);
-    // Nur verbinden wenn noch nicht verbunden
-    if (!(audio as any)._isConnectedToMixer && audioContext && (aPlayerGain || bPlayerGain || cPlayerGain || dPlayerGain)) {
-      console.log(`? ${side} player not connected - establishing connection`);
-      const connected = connectAudioToMixer(audio, side);
-      if (connected) {
-        console.log(`? ${side} player audio routing verified for stream`);
+    
+    // Always ensure connection on play
+    if (audioContext && (aPlayerGain || bPlayerGain || cPlayerGain || dPlayerGain)) {
+      if (!(audio as any)._isConnectedToMixer) {
+        console.log(`? ${side} player not connected - establishing connection NOW`);
+        const connected = connectAudioToMixer(audio, side);
+        if (connected) {
+          console.log(`? ${side} player audio routing established`);
+        } else {
+          console.error(`? ${side} player audio routing FAILED`);
+        }
       } else {
-        console.error(`? ${side} player audio routing FAILED`);
+        console.log(`? ${side} player already connected - playback ready`);
       }
-    } else if ((audio as any)._isConnectedToMixer) {
-      console.log(`? ${side} player already connected - playback ready`);
     } else {
-      console.error(`? ${side} player: audioContext or gain nodes not ready`);
+      console.warn(`? ${side} player: audioContext or gain nodes not ready yet`);
     }
   });
+  
+  // Add canplaythrough event as additional safety net
+  audio.addEventListener('canplaythrough', () => {
+    console.log(`✅ ${side} player: audio can play through`);
+    
+    // Final connection check before playback
+    if (audioContext && !(audio as any)._isConnectedToMixer) {
+      console.log(`🔧 ${side} player: Last-chance connection attempt`);
+      connectAudioToMixer(audio, side);
+    }
+  }, { once: false }); // Keep listening for each track
 }
 
 // Volume Meter Auto-Start (will be called from main initialization)

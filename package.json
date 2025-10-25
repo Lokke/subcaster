@@ -47,7 +47,6 @@
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "node-fetch": "^3.3.2",
-    "nodejs-mobile-capacitor": "^1.0.0",
     "three": "^0.180.0",
     "wavesurfer.js": "^7.10.1"
   },

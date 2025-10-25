@@ -9,11 +9,12 @@ import { initElectronTitlebar } from "./electron-titlebar";
 import WaveSurfer from 'wavesurfer.js';
 import * as THREE from 'three';
 
-// 🎵 NEW AUDIO SYSTEM - Phase 1, 2 & 3
+// 🎵 NEW AUDIO SYSTEM - Phase 1, 2, 3 & 4
 import * as AudioManager from './audio/AudioManager';
 import { getOrCreateSourceNode as getOrCreateSourceNodeNew, removeSourceNode, hasSourceNode } from './audio/SourceNodeCache';
 import * as Mixer from './audio/Mixer';
 import { Deck, type DeckSide } from './audio/Deck';
+import * as MicManager from './audio/MicManager';
 
 console.log("SubCaster loaded!");
 
@@ -282,6 +283,9 @@ function cleanupAudioResources(): void {
       });
       microphoneStream = null;
     }
+    
+    // Cleanup MicManager module (Phase 4)
+    MicManager.cleanup();
     
     // Cleanup Mixer module (Phase 3)
     Mixer.cleanup();
@@ -2811,62 +2815,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     return `🎤 ${label}`;
   }
 
-  // Function to populate microphone devices
+  // ============================================================================
+  // FACADE: Populate Microphone Devices (routes to MicManager - Phase 4)
+  // ============================================================================
   async function populateMicrophoneDevices(): Promise<void> {
-    try {
-      console.log('🎤 Loading available microphone devices...');
-      
-      // 🔧 ELECTRON FIX: Request permission first to get device labels, then properly cleanup
-      // This prevents ACCESS_VIOLATION crash when the temporary stream is garbage collected
-      let tempStream: MediaStream | null = null;
-      try {
-        tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log('🎤 Microphone permission granted for device enumeration');
-      } catch (permError) {
-        console.warn('🎤 Microphone permission denied:', permError);
-        // Continue anyway - will show device IDs instead of labels
-      }
-      
-      // Get all audio input devices
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const audioInputs = devices.filter(device => device.kind === 'audioinput');
-      
-      // 🔧 ELECTRON FIX: Properly stop and cleanup the temporary permission stream
-      // This prevents Electron crash when Chromium tries to cleanup abandoned streams
-      if (tempStream) {
-        tempStream.getTracks().forEach(track => {
-          track.stop();
-          console.log(`🎤 Stopped temporary permission track: ${track.label}`);
-        });
-        tempStream = null;
-        console.log('🎤 Temporary permission stream cleaned up successfully');
-      }
-      
-      // Clear existing options (no placeholder option)
-      micDeviceSelect.innerHTML = '';
-      
-      // Add devices to dropdown
-      audioInputs.forEach(device => {
-        const option = document.createElement('option');
-        option.value = device.deviceId;
-        const deviceLabel = device.label || `Microphone ${audioInputs.indexOf(device) + 1}`;
-        option.textContent = formatMicrophoneName(deviceLabel);
-        micDeviceSelect.appendChild(option);
-      });
-      
-      console.log(`🎤 Found ${audioInputs.length} microphone devices`);
-      
-      // Always auto-select first device
-      if (audioInputs.length > 0) {
-        selectedMicDeviceId = audioInputs[0].deviceId;
-        micDeviceSelect.value = selectedMicDeviceId;
-        console.log(`🎤 Auto-selected first microphone: ${formatMicrophoneName(audioInputs[0].label || 'Microphone 1')}`);
-      }
-      
-    } catch (error) {
-      console.error('❌ Error loading microphone devices:', error);
-      micDeviceSelect.innerHTML = '<option value="">Fehler beim Laden der Geräte</option>';
-    }
+    // Route to new MicManager module
+    await MicManager.populateMicrophoneDevices(micDeviceSelect);
   }
 
   // Device selection change handler
@@ -2875,27 +2829,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     selectedMicDeviceId = target.value;
     console.log(`🎤 Selected microphone device: ${target.options[target.selectedIndex].text}`);
     
-    // If microphone is currently active, gracefully switch devices
-    if (micActive) {
-      console.log('🎤 Gracefully switching microphone device...');
-      
-      // 1. Erste das alte Mikrofon ordentlich deaktivieren
-      if (microphoneStream) {
-        console.log('🎤 Stopping previous microphone stream...');
-        microphoneStream.getTracks().forEach(track => {
-          track.stop(); // Hardware freigeben
-          console.log(`🎤 Released track: ${track.label}`);
-        });
-        microphoneStream = null;
-      }
-      
-      // 2. Kurze Pause um Hardware-Wechsel zu ermöglichen
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // 3. Neues Mikrofon mit neuem Device aktivieren
-      console.log('🎤 Activating new microphone device...');
-      await setupMicrophone();
-    }
+    // Route device selection to MicManager
+    await MicManager.selectMicrophoneDevice(target.value);
   });
 
   // Track if microphone devices have been loaded
@@ -3661,353 +3596,28 @@ function showCORSErrorMessage() {
 }
 
 // Initialize radio broadcast processing chain
+// ============================================================================
+// FACADE: Radio Broadcast Processing (routes to MicManager - Phase 4)
+// ============================================================================
 async function initializeRadioProcessing(): Promise<void> {
-  if (!audioContext) return;
-  
-  // Processing Gain Node (acts as the processing chain input)
-  micProcessingGain = audioContext.createGain();
-  micProcessingGain.gain.setValueAtTime(1.0, audioContext.currentTime);
-  
-  // Professional Radio Compressor (broadcast-style)
-  micCompressorNode = audioContext.createDynamicsCompressor();
-  micCompressorNode.threshold.setValueAtTime(-18, audioContext.currentTime);  // -18dB threshold
-  micCompressorNode.knee.setValueAtTime(15, audioContext.currentTime);        // 15dB knee
-  micCompressorNode.ratio.setValueAtTime(8, audioContext.currentTime);        // 8:1 ratio
-  micCompressorNode.attack.setValueAtTime(0.001, audioContext.currentTime);   // 1ms attack
-  micCompressorNode.release.setValueAtTime(0.1, audioContext.currentTime);    // 100ms release
-  
-  // Note: Noise gate removed - previous implementation was just a gain reducer,
-  // not a real threshold-based gate. For true noise gating, would need 
-  // threshold detection and dynamic gain control based on signal level.
-  
-  // 3-Band EQ for Voice Optimization
-  micEqLowNode = audioContext.createBiquadFilter();
-  micEqLowNode.type = 'peaking';
-  micEqLowNode.frequency.setValueAtTime(200, audioContext.currentTime);
-  micEqLowNode.Q.setValueAtTime(1.0, audioContext.currentTime);
-  micEqLowNode.gain.setValueAtTime(-2, audioContext.currentTime); // Reduce muddiness
-  
-  micEqMidNode = audioContext.createBiquadFilter();
-  micEqMidNode.type = 'peaking';
-  micEqMidNode.frequency.setValueAtTime(2500, audioContext.currentTime);
-  micEqMidNode.Q.setValueAtTime(1.2, audioContext.currentTime);
-  micEqMidNode.gain.setValueAtTime(4, audioContext.currentTime); // Presence boost
-  
-  micEqHighNode = audioContext.createBiquadFilter();
-  micEqHighNode.type = 'peaking';
-  micEqHighNode.frequency.setValueAtTime(8000, audioContext.currentTime);
-  micEqHighNode.Q.setValueAtTime(0.8, audioContext.currentTime);
-  micEqHighNode.gain.setValueAtTime(2, audioContext.currentTime); // Air/brightness
-  
-  // Broadcast Limiter (prevents clipping)
-  micLimiterNode = audioContext.createDynamicsCompressor();
-  micLimiterNode.threshold.setValueAtTime(-3, audioContext.currentTime);      // -3dB threshold
-  micLimiterNode.knee.setValueAtTime(0, audioContext.currentTime);            // Hard knee
-  micLimiterNode.ratio.setValueAtTime(20, audioContext.currentTime);          // 20:1 ratio
-  micLimiterNode.attack.setValueAtTime(0.0001, audioContext.currentTime);     // 0.1ms attack
-  micLimiterNode.release.setValueAtTime(0.05, audioContext.currentTime);      // 50ms release
-  
-  // De-Esser (frequency-specific compressor)
-  micDeEsserNode = audioContext.createDynamicsCompressor();
-  micDeEsserNode.threshold.setValueAtTime(-20, audioContext.currentTime);
-  micDeEsserNode.knee.setValueAtTime(5, audioContext.currentTime);
-  micDeEsserNode.ratio.setValueAtTime(6, audioContext.currentTime);
-  micDeEsserNode.attack.setValueAtTime(0.001, audioContext.currentTime);
-  micDeEsserNode.release.setValueAtTime(0.1, audioContext.currentTime);
-  
-  console.log('📻 Radio broadcast processing initialized');
+  // Radio processing is now initialized automatically by MicManager.setupMicrophone()
+  console.log('📻 Radio processing will be initialized by MicManager');
 }
 
-
-
-// Toggle radio broadcast processing
+// ============================================================================
+// FACADE: Toggle Radio Processing (routes to MicManager - Phase 4)
+// ============================================================================
 function toggleRadioProcessing(process: 'compressor' | 'eq' | 'limiter' | 'deesser'): void {
-  if (!audioContext) return;
-  
-  micProcessingState[process] = !micProcessingState[process];
-  const isActive = micProcessingState[process];
-  
-  switch (process) {
-    case 'compressor':
-      if (micCompressorNode) {
-        // Bypass by setting ratio to 1:1 or enable aggressive compression
-        micCompressorNode.ratio.setValueAtTime(isActive ? 8 : 1, audioContext.currentTime);
-        console.log(`📻 COMPRESSOR: ${isActive ? 'ON (8:1 ratio)' : 'OFF (1:1 ratio)'}`);
-      }
-      break;
-      
-    case 'eq':
-      if (micEqLowNode && micEqMidNode && micEqHighNode) {
-        // Enable/disable EQ by setting gains to 0 or target values
-        micEqLowNode.gain.setValueAtTime(isActive ? -2 : 0, audioContext.currentTime);
-        micEqMidNode.gain.setValueAtTime(isActive ? 4 : 0, audioContext.currentTime);
-        micEqHighNode.gain.setValueAtTime(isActive ? 2 : 0, audioContext.currentTime);
-        console.log(`📻 EQ: ${isActive ? 'ON (voice optimized)' : 'OFF (flat response)'}`);
-      }
-      break;
-      
-    case 'limiter':
-      if (micLimiterNode) {
-        // Bypass by setting high threshold or enable limiting
-        micLimiterNode.threshold.setValueAtTime(isActive ? -3 : 0, audioContext.currentTime);
-        console.log(`📻 LIMITER: ${isActive ? 'ON (-3dB threshold)' : 'OFF (0dB threshold)'}`);
-      }
-      break;
-      
-    case 'deesser':
-      if (micDeEsserNode) {
-        // Enable/disable de-esser by adjusting ratio
-        micDeEsserNode.ratio.setValueAtTime(isActive ? 6 : 1, audioContext.currentTime);
-        console.log(`📻 DE-ESSER: ${isActive ? 'ON (6:1 ratio)' : 'OFF (1:1 ratio)'}`);
-      }
-      break;
-  }
+  // Route to new MicManager module
+  MicManager.toggleProcessing(process);
 }
 
-// Mikrofon zum Mixing-System hinzufügen
+// ============================================================================
+// FACADE: Setup Microphone (routes to MicManager - Phase 4)
+// ============================================================================
 async function setupMicrophone() {
-  if (!audioContext || !microphoneGain) return false;
-  
-  try {
-    // Clean up any existing microphone stream first
-    if (microphoneStream) {
-      microphoneStream.getTracks().forEach(track => {
-        track.stop();
-        console.log('🎤 Previous microphone track stopped');
-      });
-      microphoneStream = null;
-    }
-    
-    // DYNAMISCHE SAMPLE RATE: Verwende AudioContext Sample Rate für Kompatibilität
-    const contextSampleRate = audioContext.sampleRate;
-    console.log(`🎤 Setting up fresh microphone with dynamic sample rate: ${contextSampleRate} Hz`);
-
-    // Mikrofon-Konfiguration für DJ-Anwendung (ALLE Audio-Effekte deaktiviert für beste Verständlichkeit)
-    const audioConstraints: MediaTrackConstraints = {
-      // Device Selection - use selected device if available
-      ...(selectedMicDeviceId && { deviceId: { exact: selectedMicDeviceId } }),
-
-      // Basis-Audio-Einstellungen - ALLE Effekte AUS für natürliche Stimme
-      echoCancellation: false,          // Echo-Cancel AUS - verschlechtert oft DJ-Mikrofone
-      noiseSuppression: false,          // Noise-Suppress AUS - kann Stimme verzerren
-      autoGainControl: false,           // AGC aus für manuelle Lautstärke-Kontrolle
-
-      // DYNAMISCHE Sample Rate - passt sich an AudioContext an
-      sampleRate: { 
-          ideal: contextSampleRate,       // Verwende AudioContext Sample Rate
-          min: 8000,                      // Minimum für Fallback
-          max: 192000                     // Maximum für High-End Mikrofone
-      },
-      sampleSize: { ideal: 16 },        // 16-bit Audio
-      channelCount: { ideal: 1 },       // Mono für geringere Bandbreite
-        
-      // Browser-spezifische Verbesserungen - ALLE AUS für natürliche Stimme
-      // @ts-ignore - Browser-spezifische Eigenschaften
-      googEchoCancellation: false,      // Google Echo-Cancel AUS
-      // @ts-ignore
-      googAutoGainControl: false,       // Google AGC AUS
-      // @ts-ignore
-      googNoiseSuppression: false,      // Google Noise-Suppress AUS
-      // @ts-ignore
-      googHighpassFilter: false,        // Highpass-Filter AUS
-      // @ts-ignore
-      googTypingNoiseDetection: false,  // Typing-Detection AUS
-      // @ts-ignore
-      googAudioMirroring: false
-    };
-    
-    // BROWSER-FREUNDLICHER MIKROFON-ZUGRIFF
-    // Minimale Rechte anfordern um andere Browser-Audio nicht zu blockieren
-    const minimalAudioConstraints = {
-      ...audioConstraints,
-      // Browser-freundliche Optionen
-      // @ts-ignore
-      echoCancellation: false,  // Weniger invasiv
-      // @ts-ignore  
-      noiseSuppression: false,  // Weniger Verarbeitung
-      // @ts-ignore
-      autoGainControl: false,   // Manuelle Kontrolle
-      // @ts-ignore
-      googEchoCancellation: false,
-      // @ts-ignore
-      googAutoGainControl: false,
-      // @ts-ignore
-      googNoiseSuppression: false
-    };
-
-    microphoneStream = await navigator.mediaDevices.getUserMedia({ 
-      audio: minimalAudioConstraints
-    });
-    
-    // BROWSER-FREUNDLICHES TRACK MANAGEMENT
-    // Tracks so konfigurieren, dass sie andere Browser-Audio minimal beeinträchtigen
-    microphoneStream.getAudioTracks().forEach((track, index) => {
-      track.enabled = true; // Track ist aktiv für Aufnahme
-      
-      // BROWSER-KOMPATIBILITÄT: Setze Track-Constraints für bessere Koexistenz
-      if (track.applyConstraints) {
-        track.applyConstraints({
-          echoCancellation: false,    // Weniger CPU-Last
-          noiseSuppression: false,    // Weniger Verarbeitung  
-          autoGainControl: false,     // Weniger Interferenz
-        }).catch(err => {
-          console.warn('⚠️ Could not apply track constraints:', err);
-        });
-      }
-      
-      const settings = track.getSettings();
-      console.log(`🎙️ Microphone Track ${index + 1} Settings:`);
-      console.log(`   - Sample Rate: ${settings.sampleRate || 'unknown'} Hz`);
-      console.log(`   - Channels: ${settings.channelCount || 'unknown'}`);
-      console.log(`   - Sample Size: ${settings.sampleSize || 'unknown'} bit`);
-      console.log(`   - Echo Cancellation: ${settings.echoCancellation ? '✅' : '❌'}`);
-      console.log(`   - Noise Suppression: ${settings.noiseSuppression ? '✅' : '❌'}`);
-      console.log(`   - Auto Gain Control: ${settings.autoGainControl ? '✅' : '❌'}`);
-      
-      // Sample Rate Kompatibilität prüfen
-      if (settings.sampleRate && settings.sampleRate !== contextSampleRate) {
-        console.warn(`⚠️  Sample Rate Mismatch: Microphone=${settings.sampleRate}Hz, AudioContext=${contextSampleRate}Hz`);
-        console.log(`🔄 Browser will automatically resample: ${settings.sampleRate}Hz → ${contextSampleRate}Hz`);
-      } else {
-        console.log(`✅ Perfect Sample Rate Match: ${contextSampleRate}Hz`);
-      }
-      
-      // BROWSER-AUDIO-KOMPATIBILITÄT: Prüfe Audio-Policy-Konformität
-      if (audioContext?.state === 'running' && audioContext.baseLatency) {
-        console.log(`🔊 Audio Policy Status:`, {
-          contextState: audioContext.state,
-          baseLatency: audioContext.baseLatency,
-          outputLatency: audioContext.outputLatency,
-          sampleRate: audioContext.sampleRate,
-          renderingMode: 'playback-optimized'
-        });
-      }
-      
-      // Erweiterte Track-Einstellungen - ALLE Audio-Effekte deaktiviert für natürliche Stimme
-      if (track.applyConstraints) {
-        track.applyConstraints({
-          echoCancellation: false,      // Echo-Cancel AUS für DJ-Mikrofon
-          noiseSuppression: false,      // Noise-Suppress AUS für natürliche Stimme
-          autoGainControl: false,       // AGC AUS für manuelle Kontrolle
-          sampleRate: contextSampleRate // Dynamische Sample Rate
-        }).catch(e => console.warn('Could not apply advanced mic constraints:', e));
-      }
-    });
-    
-    // MediaStreamAudioSourceNode erstellen
-    const micSourceNode = audioContext.createMediaStreamSource(microphoneStream);
-    
-    // AnalyserNode für Volume Meter erstellen
-    const micAnalyser = audioContext.createAnalyser();
-    micAnalyser.fftSize = 256;
-    micAnalyser.smoothingTimeConstant = 0.3;
-    
-    // Analyser global speichern für Volume Meter
-    (window as any).micAnalyser = micAnalyser;
-    
-    // 🎙️ PROFESSIONELLE BROADCAST AUDIO-PROCESSING CHAIN 🎙️
-    console.log('🔧 Setting up professional microphone processing chain...');
-    
-    // 1. HIGH-PASS FILTER - Entfernt Rumpeln und Low-End-Probleme
-    const highPassFilter = audioContext.createBiquadFilter();
-    highPassFilter.type = 'highpass';
-    highPassFilter.frequency.setValueAtTime(85, audioContext.currentTime); // 85Hz cutoff für Stimme
-    highPassFilter.Q.setValueAtTime(0.7, audioContext.currentTime);
-    console.log('🔧 High-pass filter: 85Hz cutoff');
-    
-    // 2. PREAMP/INPUT GAIN - Boost vor Kompressor
-    const preAmp = audioContext.createGain();
-    preAmp.gain.setValueAtTime(2.5, audioContext.currentTime); // +8dB Input Gain
-    console.log('🔧 PreAmp: +8dB input gain');
-    
-    // 3. KOMPRESSOR - Aggressiv für Broadcast-Lautheit
-    const compressor = audioContext.createDynamicsCompressor();
-    compressor.threshold.setValueAtTime(-18, audioContext.currentTime);  // -18dB threshold (aggressiver)
-    compressor.knee.setValueAtTime(15, audioContext.currentTime);        // 15dB knee (sanfter Übergang)
-    compressor.ratio.setValueAtTime(8, audioContext.currentTime);        // 8:1 ratio (stark komprimiert)
-    compressor.attack.setValueAtTime(0.001, audioContext.currentTime);   // 1ms attack (sehr schnell)
-    compressor.release.setValueAtTime(0.1, audioContext.currentTime);    // 100ms release (schnell)
-    console.log('🔧 Compressor: -18dB threshold, 8:1 ratio, fast attack');
-    
-    // 4. EQ - SPEECH OPTIMIZATION (Präsenz-Boost)
-    const eqLowMid = audioContext.createBiquadFilter();
-    eqLowMid.type = 'peaking';
-    eqLowMid.frequency.setValueAtTime(200, audioContext.currentTime);    // 200Hz
-    eqLowMid.Q.setValueAtTime(1.0, audioContext.currentTime);
-    eqLowMid.gain.setValueAtTime(-2, audioContext.currentTime);          // -2dB (reduziert Wummern)
-    
-    const eqPresence = audioContext.createBiquadFilter();
-    eqPresence.type = 'peaking';
-    eqPresence.frequency.setValueAtTime(2500, audioContext.currentTime);  // 2.5kHz Präsenz
-    eqPresence.Q.setValueAtTime(1.2, audioContext.currentTime);
-    eqPresence.gain.setValueAtTime(4, audioContext.currentTime);          // +4dB Boost für Klarheit
-    
-    const eqBrilliance = audioContext.createBiquadFilter();
-    eqBrilliance.type = 'peaking';
-    eqBrilliance.frequency.setValueAtTime(8000, audioContext.currentTime); // 8kHz Brillanz
-    eqBrilliance.Q.setValueAtTime(0.8, audioContext.currentTime);
-    eqBrilliance.gain.setValueAtTime(2, audioContext.currentTime);          // +2dB für Luftigkeit
-    console.log('🔧 EQ: Low-mid cut (-2dB@200Hz), Presence boost (+4dB@2.5kHz), Brilliance (+2dB@8kHz)');
-    
-    // 5. LIMITER - Verhindert Clipping
-    const limiter = audioContext.createDynamicsCompressor();
-    limiter.threshold.setValueAtTime(-3, audioContext.currentTime);      // -3dB threshold (sehr hoch)
-    limiter.knee.setValueAtTime(0, audioContext.currentTime);            // Hard knee (0dB)
-    limiter.ratio.setValueAtTime(20, audioContext.currentTime);          // 20:1 ratio (Brickwall)
-    limiter.attack.setValueAtTime(0.0001, audioContext.currentTime);     // 0.1ms attack (instant)
-    limiter.release.setValueAtTime(0.05, audioContext.currentTime);      // 50ms release (schnell)
-    console.log('🔧 Limiter: -3dB threshold, 20:1 ratio, brickwall limiting');
-    
-    // 6. OUTPUT GAIN - Finale Lautstärke-Kontrolle
-    const outputGain = audioContext.createGain();
-    outputGain.gain.setValueAtTime(1.8, audioContext.currentTime);       // +5dB Output für Broadcast-Level
-    console.log('🔧 Output gain: +5dB final boost');
-    
-    // Create radio processing nodes
-    await initializeRadioProcessing();
-    
-    // 📻 PROFESSIONAL RADIO BROADCAST CHAIN 📻
-    // Mic -> High-Pass -> PreAmp -> Compressor -> EQ (3-band) -> De-Esser -> Limiter -> Output Gain -> Analyser (Meter) -> Master Gain
-    // Note: Analyser positioned AFTER all processing to show final output level
-    // Note: Gate removed (was ineffective - just reduced gain instead of true threshold-based gating)
-    micSourceNode.connect(highPassFilter);
-    highPassFilter.connect(preAmp);
-    preAmp.connect(micCompressorNode!);        // Compression for consistent level
-    micCompressorNode!.connect(micEqLowNode!); // EQ chain for voice optimization
-    micEqLowNode!.connect(micEqMidNode!);
-    micEqMidNode!.connect(micEqHighNode!);
-    micEqHighNode!.connect(micDeEsserNode!);   // De-esser before limiter
-    micDeEsserNode!.connect(micLimiterNode!);  // Final limiter prevents clipping
-    micLimiterNode!.connect(outputGain);       // Output gain control
-    outputGain.connect(micAnalyser);           // Analyser AFTER processing (shows final output)
-    micAnalyser.connect(microphoneGain);       // Master microphone gain
-    
-    console.log(`?? Microphone connected with enhanced audio processing (${contextSampleRate}Hz, compression, dynamic compatibility)`);
-    return true;
-  } catch (error) {
-    console.error('Failed to setup microphone:', error);
-    // Fallback mit einfacheren Einstellungen versuchen
-    try {
-      console.log('?? Trying microphone fallback with browser defaults...');
-      microphoneStream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: false
-          // Keine Sample Rate Constraints ? Browser wählt automatisch
-        } 
-      });
-      
-      const micSourceNode = audioContext.createMediaStreamSource(microphoneStream);
-      micSourceNode.connect(microphoneGain);
-      
-      console.log('?? Microphone connected with basic settings (fallback)');
-      return true;
-    } catch (fallbackError) {
-      console.error('Failed to setup microphone even with basic settings:', fallbackError);
-      return false;
-    }
-  }
+  // Route to new MicManager module
+  return await MicManager.setupMicrophone();
 }
 
 // Crossfader-Position setzen (0 = A, 0.25 = B, 0.5 = C, 0.75 = D, 1 = alle)

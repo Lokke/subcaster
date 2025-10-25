@@ -73,5 +73,18 @@ export function initElectronTitlebar() {
     }
   });
   
-  console.log('✅ Electron titlebar initialized');
+  // Add double-click to maximize/restore on drag regions
+  document.addEventListener('dblclick', (e) => {
+    const target = e.target as HTMLElement;
+    const computedStyle = window.getComputedStyle(target);
+    const appRegion = computedStyle.getPropertyValue('-webkit-app-region');
+    
+    // Only maximize if clicking on a drag region (not on buttons, inputs, etc.)
+    if (appRegion === 'drag') {
+      electronAPI.maximizeWindow();
+      e.preventDefault();
+    }
+  });
+  
+  console.log('✅ Electron titlebar initialized with drag regions and double-click maximize');
 }

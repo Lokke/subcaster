@@ -70,6 +70,42 @@ body:has(#electron-titlebar) {
   padding-top: 32px;
 }
 
+/* Electron Window Drag Regions */
+body:has(#electron-titlebar) .player-deck,
+body:has(#electron-titlebar) .deck-container,
+body:has(#electron-titlebar) .mixer-section,
+body:has(#electron-titlebar) .library-header,
+body:has(#electron-titlebar) .stream-status,
+body:has(#electron-titlebar) .visualizer-container,
+body:has(#electron-titlebar) .deck-header,
+body:has(#electron-titlebar) .waveform-container {
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Make interactive elements non-draggable */
+body:has(#electron-titlebar) button,
+body:has(#electron-titlebar) input,
+body:has(#electron-titlebar) select,
+body:has(#electron-titlebar) textarea,
+body:has(#electron-titlebar) a,
+body:has(#electron-titlebar) .slider,
+body:has(#electron-titlebar) canvas,
+body:has(#electron-titlebar) .waveform,
+body:has(#electron-titlebar) .album-card,
+body:has(#electron-titlebar) .track-item,
+body:has(#electron-titlebar) .artist-card,
+body:has(#electron-titlebar) .scrollable,
+body:has(#electron-titlebar) .library-content,
+body:has(#electron-titlebar) .albums-grid,
+body:has(#electron-titlebar) .artists-grid,
+body:has(#electron-titlebar) .tracks-list {
+  -webkit-app-region: no-drag;
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
 /* Material Icons Font - Local */
 @font-face {
   font-family: 'Material Icons';

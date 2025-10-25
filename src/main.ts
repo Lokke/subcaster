@@ -548,9 +548,9 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
   // Clear audio
   if (audio) {
     audio.pause();
+    audio.currentTime = 0;
     
-    // CHROME FIX: Disconnect and remove MediaElementSourceNode BEFORE clearing src
-    // This prevents "HTMLMediaElement already connected" errors in Chrome
+    // CHROME FIX: Disconnect MediaElementSourceNode BEFORE clearing src
     if ((audio as any)._audioSourceNode) {
       try {
         const sourceNode = (audio as any)._audioSourceNode;
@@ -559,35 +559,16 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
       } catch (e) {
         console.warn(`⚠️ Source node disconnect error for player ${side}:`, e);
       }
-      // Clear ALL references completely
+      // Clear connection flags
       delete (audio as any)._audioSourceNode;
       delete (audio as any)._isConnectedToMixer;
       console.log(`🗑️ Removed MediaElementSourceNode references for player ${side}`);
     }
     
-    // CHROME FIX: Clone the audio element to completely reset its Web Audio API state
-    // This is necessary because Chrome maintains internal connections even after disconnect()
-    const newAudio = audio.cloneNode(false) as HTMLAudioElement; // false = shallow clone without children
-    newAudio.id = audio.id;
-    newAudio.className = audio.className;
-    newAudio.crossOrigin = 'anonymous'; // Important for Web Audio API
-    newAudio.preload = 'auto';
-    newAudio.preservesPitch = false;
-    
-    // Replace the old audio element with the fresh clone
-    if (audio.parentNode) {
-      audio.parentNode.replaceChild(newAudio, audio);
-      console.log(`🔄 Replaced audio element for player ${side} (Chrome Web Audio API reset)`);
-    }
-    
-    // Clear the new audio element (it should already be empty from cloning)
-    newAudio.src = '';
-    newAudio.load(); // Force reload to ensure clean state
-    
-    // Re-setup the essential event listeners that were lost in cloning
-    // Note: Most event listeners will be re-added when a new track is loaded via setupAudioEventListeners()
-    // But we need to re-add the critical 'play' event listener for Web Audio API connection
-    setupAudioEventListeners(newAudio, side);
+    // Clear src and reset audio element
+    audio.src = '';
+    audio.load(); // Force reload to clean state
+    audio.removeAttribute('src');
   }
   
   // Clear stored song data for drag & drop
@@ -9750,10 +9731,6 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
     return;
   }
   
-  const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-  
-  if (!audio) return;
-  
   console.log(`Loading "${song.title}" to Player ${side.toUpperCase()}${autoPlay ? ' (auto-play)' : ''}`);
   
   // ✅ CLEAR DECK COMPLETELY before loading new track
@@ -9762,6 +9739,14 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   
   // 📊 Reset play history tracking for this deck
   songsMarkedAsPlayed[side].clear();
+  
+  // Get audio element AFTER clearing (in case it was replaced)
+  const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+  
+  if (!audio) {
+    console.error(`Audio element not found for player ${side}`);
+    return;
+  }
   
   // Get UI elements (after clearing to ensure they exist)
   const titleElement = document.getElementById(`track-title-${side}`);

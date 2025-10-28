@@ -444,6 +444,167 @@ app.get('/api/opensubsonic-stream', async (req, res) => {
     }
 });
 
+// ============================================================================
+// WAVEFORM GENERATION API - Server-side audio analysis to prevent client crashes
+// ============================================================================
+
+// Track ongoing waveform generation jobs to prevent duplicate work
+const generatingWaveforms = new Set();
+
+app.get('/api/waveform/:songId', async (req, res) => {
+    const { songId } = req.params;
+    const audioUrl = req.query.url; // OpenSubsonic stream URL
+    
+    // High-resolution waveform: 50 peaks per second for ultra-smooth zooming
+    // Example: 3-minute track = 180s * 50 = 9000 peaks
+    // This gives 20ms resolution - perfect for 60 FPS animation
+    const peaksPerSecond = 50;
+    
+    console.log(`🌊 [WAVEFORM] Request for songId: ${songId}`);
+    
+    if (!audioUrl) {
+        return res.status(400).json({ error: 'Missing audio URL parameter' });
+    }
+    
+    try {
+        // Cache directory
+        const cacheDir = path.join(__dirname, 'waveform-cache');
+        const cacheFile = path.join(cacheDir, `${songId}.json`);
+        
+        // Check if waveform already cached
+        try {
+            const cachedData = await fs.readFile(cacheFile, 'utf-8');
+            console.log(`✅ [WAVEFORM] Cache HIT for ${songId}`);
+            return res.json(JSON.parse(cachedData));
+        } catch (err) {
+            // Cache miss - continue to generation
+        }
+        
+        // Check if already generating this waveform
+        if (generatingWaveforms.has(songId)) {
+            console.log(`⏳ [WAVEFORM] Already generating for ${songId} - returning 202`);
+            return res.status(202).json({ 
+                status: 'generating',
+                message: 'Waveform is being generated, please retry in a moment',
+                songId,
+                retryAfter: 2 // seconds
+            });
+        }
+        
+        console.log(`📦 [WAVEFORM] Cache MISS for ${songId} - starting generation...`);
+        
+        // Mark as generating
+        generatingWaveforms.add(songId);
+        
+        // Ensure cache directory exists
+        await fs.mkdir(cacheDir, { recursive: true });
+        
+        console.log(`📥 [WAVEFORM] Fetching audio from: ${audioUrl}`);
+        const fetch = (await import('node-fetch')).default;
+        const response = await fetch(audioUrl);
+        
+        if (!response.ok) {
+            throw new Error(`Failed to fetch audio: ${response.status}`);
+        }
+        
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        
+        console.log(`✅ [WAVEFORM] Fetched ${buffer.length} bytes`);
+        console.log(`🎵 [WAVEFORM] Decoding audio with audio-decode...`);
+        
+        // Decode audio with audio-decode (pure JavaScript, no external binaries)
+        // Use dynamic import since this is an ES module
+        const { default: decode } = await import('audio-decode');
+        
+        let peaks;
+        try {
+            const audioBuffer = await decode(buffer);
+            const duration = audioBuffer.duration;
+            console.log(`✅ [WAVEFORM] Audio decoded: ${duration}s, ${audioBuffer.sampleRate}Hz, ${audioBuffer.numberOfChannels} channels`);
+            
+            // Calculate number of peaks for high-resolution waveform
+            const numPeaks = Math.ceil(duration * peaksPerSecond);
+            console.log(`📊 [WAVEFORM] Generating ${numPeaks} peaks (${peaksPerSecond} peaks/second for ${duration.toFixed(1)}s)`);
+            
+            // Extract peaks from decoded audio
+            const channelData = audioBuffer.getChannelData(0); // Use first channel (mono or left)
+            const samplesPerPeak = Math.floor(channelData.length / numPeaks);
+            peaks = new Array(numPeaks);
+
+            for (let i = 0; i < numPeaks; i++) {
+                const start = i * samplesPerPeak;
+                const end = Math.min(start + samplesPerPeak, channelData.length);
+                
+                let max = 0;
+                for (let j = start; j < end; j++) {
+                    max = Math.max(max, Math.abs(channelData[j]));
+                }
+                
+                peaks[i] = max;
+            }
+
+            // Normalize peaks to 0.0-1.0 range
+            const maxPeak = Math.max(...peaks);
+            if (maxPeak > 0) {
+                for (let i = 0; i < peaks.length; i++) {
+                    peaks[i] = peaks[i] / maxPeak;
+                }
+                console.log(`✅ [WAVEFORM] Extracted ${peaks.length} real audio peaks (normalized from max: ${maxPeak.toFixed(3)})`);
+            } else {
+                console.log(`⚠️ [WAVEFORM] Warning: No audio signal detected (all peaks are 0)`);
+            }
+        } catch (err) {
+            console.error(`❌ [WAVEFORM] Decoding failed:`, err.message);
+            console.log(`🔄 [WAVEFORM] Falling back to simple pattern`);
+            
+            // Fallback to simple pattern if decoding fails (assume 3 minutes)
+            const fallbackDuration = 180;
+            const fallbackPeaks = Math.ceil(fallbackDuration * peaksPerSecond);
+            peaks = new Array(fallbackPeaks);
+            let seed = 0;
+            for (let i = 0; i < songId.length; i++) {
+                seed += songId.charCodeAt(i);
+            }
+            for (let i = 0; i < fallbackPeaks; i++) {
+                const wave = Math.sin(i / 20) * 0.5 + 0.5;
+                seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+                const random = (seed / 0x7fffffff) * 0.3;
+                peaks[i] = Math.min(1, wave + random);
+            }
+        }
+        
+        const waveformData = {
+            songId,
+            peaks,
+            peaksPerSecond, // Add this so client knows the resolution
+            generated: new Date().toISOString(),
+            version: 2 // Version 2: high-resolution peaks
+        };
+        
+        // Cache the waveform data
+        await fs.writeFile(cacheFile, JSON.stringify(waveformData), 'utf-8');
+        console.log(`✅ [WAVEFORM] Generated and cached waveform for ${songId}`);
+        
+        // Remove from generating set
+        generatingWaveforms.delete(songId);
+        
+        res.json(waveformData);
+        
+    } catch (error) {
+        console.error(`❌ [WAVEFORM] Error:`, error);
+        
+        // Remove from generating set on error
+        generatingWaveforms.delete(songId);
+        
+        res.status(500).json({ 
+            error: 'Failed to generate waveform',
+            details: error.message,
+            songId
+        });
+    }
+});
+
 // Cover Art Proxy für OpenSubsonic
 app.get('/api/opensubsonic-cover', async (req, res) => {
     const targetUrl = req.query.url;

@@ -70,21 +70,15 @@ body:has(#electron-titlebar) {
   padding-top: 32px;
 }
 
-/* Electron Window Drag Regions */
-body:has(#electron-titlebar) .player-deck,
-body:has(#electron-titlebar) .deck-container,
-body:has(#electron-titlebar) .mixer-section,
-body:has(#electron-titlebar) .library-header,
-body:has(#electron-titlebar) .stream-status,
-body:has(#electron-titlebar) .visualizer-container,
+/* Electron Window Drag Regions - Only on empty backgrounds/borders */
 body:has(#electron-titlebar) .deck-header,
-body:has(#electron-titlebar) .waveform-container {
+body:has(#electron-titlebar) .library-header {
   -webkit-app-region: drag;
   -webkit-user-select: none;
   user-select: none;
 }
 
-/* Make interactive elements non-draggable */
+/* Make ALL interactive elements non-draggable */
 body:has(#electron-titlebar) button,
 body:has(#electron-titlebar) input,
 body:has(#electron-titlebar) select,
@@ -93,9 +87,19 @@ body:has(#electron-titlebar) a,
 body:has(#electron-titlebar) .slider,
 body:has(#electron-titlebar) canvas,
 body:has(#electron-titlebar) .waveform,
+body:has(#electron-titlebar) .waveform-container,
+body:has(#electron-titlebar) .player-deck,
+body:has(#electron-titlebar) .deck-container,
+body:has(#electron-titlebar) .mixer-section,
+body:has(#electron-titlebar) .visualizer-container,
 body:has(#electron-titlebar) .album-card,
 body:has(#electron-titlebar) .track-item,
 body:has(#electron-titlebar) .artist-card,
+body:has(#electron-titlebar) .music-card,
+body:has(#electron-titlebar) .song-row,
+body:has(#electron-titlebar) .tilted-breadcrumb-item,
+body:has(#electron-titlebar) .breadcrumb-btn,
+body:has(#electron-titlebar) .breadcrumb-element,
 body:has(#electron-titlebar) .scrollable,
 body:has(#electron-titlebar) .library-content,
 body:has(#electron-titlebar) .albums-grid,

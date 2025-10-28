@@ -8,8 +8,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'three': ['three'],
-          'wavesurfer': ['wavesurfer.js']
+          'three': ['three']
         }
       }
     }

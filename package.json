@@ -43,12 +43,12 @@
     "@capacitor/cli": "^7.4.3",
     "@capacitor/core": "^7.4.3",
     "@types/three": "^0.180.0",
+    "audio-decode": "^2.2.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "node-fetch": "^3.3.2",
-    "three": "^0.180.0",
-    "wavesurfer.js": "^7.10.1"
+    "three": "^0.180.0"
   },
   "main": "electron/main.js"
 }

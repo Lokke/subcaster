@@ -6,8 +6,16 @@ import { SetupWizard } from "./setup-wizard";
 import { loadConfig, getConfigValue as getRuntimeConfigValue } from "../js/config-loader";
 import { updateChecker } from "./update-checker";
 import { initElectronTitlebar } from "./electron-titlebar";
-import WaveSurfer from 'wavesurfer.js';
 import * as THREE from 'three';
+
+// 🎵 NEW AUDIO SYSTEM - Phase 1, 2, 3, 4, 5 & 6
+import * as AudioManager from './audio/AudioManager';
+import { getOrCreateSourceNode as getOrCreateSourceNodeNew, removeSourceNode, hasSourceNode } from './audio/SourceNodeCache';
+import * as Mixer from './audio/Mixer';
+import { Deck, type DeckSide } from './audio/Deck';
+import * as MicManager from './audio/MicManager';
+import { volumeMeters } from './audio/VolumeMeters';
+import { CustomWaveform, createCustomWaveform } from './audio/CustomWaveform';
 
 console.log("SubCaster loaded!");
 
@@ -196,6 +204,14 @@ function updateUserStatus(service: 'opensubsonic' | 'stream', username: string, 
 let libraryBrowser: any; // Wird später als LibraryBrowser initialisiert
 // let volumeMeterIntervals: { [key: string]: NodeJS.Timeout }; // Wird später definiert
 
+// 🆕 NEW: Deck instances for managing player decks (imported above)
+const deckInstances: Map<DeckSide, Deck> = new Map();
+
+// Helper to get or create a Deck instance
+function getDeck(side: DeckSide): Deck | null {
+  return deckInstances.get(side) || null;
+}
+
 // Global flag to track if we're in setup-only mode
 let isSetupOnlyMode = false;
 
@@ -233,7 +249,7 @@ let bPlayerGain: GainNode | null = null;
 let cPlayerGain: GainNode | null = null;
 let dPlayerGain: GainNode | null = null;
 let microphoneGain: GainNode | null = null;
-let crossfaderGain: { a: GainNode; b: GainNode; c: GainNode; d: GainNode } | null = null;
+// REMOVED: crossfaderGain - now handled by Mixer module with direct routing (no crossfading)
 let microphoneStream: MediaStream | null = null;
 
 // Radio Broadcast Processing Nodes
@@ -260,6 +276,12 @@ function cleanupAudioResources(): void {
   console.log('🧹 Cleaning up audio resources...');
   
   try {
+    // Stop volume meter animation loop (Phase 6)
+    stopVolumeMeterAnimationLoop();
+    
+    // Cleanup VolumeMeters module (Phase 6)
+    volumeMeters.disposeAll();
+    
     // Stop microphone stream and all tracks
     if (microphoneStream) {
       microphoneStream.getTracks().forEach(track => {
@@ -269,12 +291,21 @@ function cleanupAudioResources(): void {
       microphoneStream = null;
     }
     
-    // Close AudioContext to release audio hardware
+    // Cleanup MicManager module (Phase 4)
+    MicManager.cleanup();
+    
+    // Cleanup Mixer module (Phase 3)
+    Mixer.cleanup();
+    
+    // Close AudioManager (includes AudioContext and SourceNodeCache cleanup)
+    AudioManager.close();
+    
+    // Close legacy AudioContext (will be removed once migration complete)
     if (audioContext && audioContext.state !== 'closed') {
       audioContext.close().then(() => {
-        console.log('🔊 AudioContext closed successfully');
+        console.log('🔊 Legacy AudioContext closed successfully');
       }).catch((error) => {
-        console.warn('⚠️ AudioContext close error:', error);
+        console.warn('⚠️ Legacy AudioContext close error:', error);
       });
       audioContext = null;
     }
@@ -288,7 +319,7 @@ function cleanupAudioResources(): void {
     cPlayerGain = null;
     dPlayerGain = null;
     microphoneGain = null;
-    crossfaderGain = null;
+    // REMOVED: crossfaderGain - no longer needed (direct routing)
     
     console.log('✅ Audio resources cleaned up successfully');
   } catch (error) {
@@ -523,7 +554,7 @@ function setPlayerState(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong | nu
 
 // Get currently loaded song from player
 function getCurrentLoadedSong(side: 'a' | 'b' | 'c' | 'd'): OpenSubsonicSong | null {
-  const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+  const audio = getAudioElement(side);
   if (!audio || !audio.dataset.songId) return null;
   
   // Find song by ID in current songs or player state
@@ -536,7 +567,7 @@ function getCurrentLoadedSong(side: 'a' | 'b' | 'c' | 'd'): OpenSubsonicSong | n
 function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
   console.log(`🔄 Clearing Player ${side.toUpperCase()} deck completely`);
   
-  const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+  const audio = getAudioElement(side);
   const titleElement = document.getElementById(`track-title-${side}`);
   const artistElement = document.getElementById(`track-artist-${side}`);
   const albumCover = document.getElementById(`album-cover-${side}`) as HTMLElement;
@@ -551,9 +582,19 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
     audio.pause();
     audio.currentTime = 0;
     
-    // IMPORTANT: Do NOT disconnect Web Audio API nodes here
-    // They stay connected for the lifetime of the player
-    // Only reset the audio source
+    // 🔧 ELECTRON FIX: Use SourceNodeCache for cleanup
+    // Import at top: import { clearCache } from './audio/SourceNodeCache';
+    // Note: SourceNodeCache uses WeakMap, so GC will handle cleanup automatically
+    // But we can disconnect the node explicitly if it exists
+    const sourceNode = getOrCreateSourceNode(audio);
+    if (sourceNode) {
+      try {
+        sourceNode.disconnect();
+        console.log(`🔌 Disconnected MediaElementSourceNode for player ${side}`);
+      } catch (e) {
+        // Already disconnected
+      }
+    }
     
     // Clear src and reset audio element
     audio.src = '';
@@ -689,7 +730,7 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
 
 // Get comprehensive deck state information
 function getDeckState(side: 'a' | 'b' | 'c' | 'd'): 'empty' | 'loading' | 'ready' | 'playing' | 'paused' | 'ended' | 'error' {
-  const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+  const audio = getAudioElement(side);
   
   if (!audio || !audio.src || audio.src === '') {
     return 'empty';
@@ -726,8 +767,8 @@ function getDeckState(side: 'a' | 'b' | 'c' | 'd'): 'empty' | 'loading' | 'ready
 
 // Check if a deck is currently playing
 function isDeckPlaying(side: 'a' | 'b' | 'c' | 'd'): boolean {
-  const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-  return audio && !audio.paused && audio.currentTime > 0 && !audio.ended;
+  const audio = getAudioElement(side);
+  return !!audio && !audio.paused && audio.currentTime > 0 && !audio.ended;
 }
 
 // Check if deck is truly available for new content
@@ -777,186 +818,143 @@ let streamConfig: StreamConfig = {
 // AUDIO MIXING FUNCTIONS (Moved up for proper scoping)
 
 // Audio-Mixing-System initialisieren
+// 🎵 NEW: Facade to AudioManager + Mixer modules (Phase 1 & 3)
 async function initializeAudioMixing() {
   try {
-    // AudioContext mit Browser-freundlichen Optionen für minimale Interferenz
-    const audioContextOptions: AudioContextOptions = {
-      latencyHint: 'playback', // Optimiert für Playback statt Interaktion - weniger invasiv
-      // sampleRate bewusst weggelassen → Browser wählt optimale Sample Rate
-      // Keine Hardware-Exklusivität anfordern
-    };
+    console.log('🎵 Initializing audio mixing (routing to new AudioManager + Mixer)...');
     
-    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)(audioContextOptions);
+    // Initialize AudioManager first
+    await AudioManager.init();
     
-    // AudioContext Policy: Koexistenz mit anderen Browser-Audio
-    console.log('🎵 AudioContext created with non-exclusive playback policy');
+    // Initialize Mixer (direct routing, no crossfader)
+    Mixer.init();
     
-    // BROWSER-KOMPATIBILITÄT: Audio Policy Compliance
-    // Diese Einstellungen helfen, andere Browser-Audio nicht zu beeinträchtigen
+    // Get references to nodes for backwards compatibility
+    const ctx = AudioManager.getContext();
+    audioContext = ctx;
+    
+    // Get gain nodes from AudioManager
+    masterGainNode = AudioManager.getMasterGain();
+    streamGainNode = AudioManager.getStreamGain(); // Now properly exposed
+    
+    const streamDest = AudioManager.getStreamDestination();
+    if (streamDest) {
+      masterAudioDestination = streamDest;
+    }
+    
+    // Get per-deck gains
+    aPlayerGain = AudioManager.getDeckGain('a');
+    bPlayerGain = AudioManager.getDeckGain('b');
+    cPlayerGain = AudioManager.getDeckGain('c');
+    dPlayerGain = AudioManager.getDeckGain('d');
+    microphoneGain = AudioManager.getMicrophoneGain();
+    
+    // REMOVED: crossfaderGain - no longer needed (direct routing)
+    
+    console.log('✅ Audio mixing initialized via AudioManager + Mixer');
+    console.log('🎛️ Routing: Decks → Direct → [Master + Stream] (no crossfader)');
+    
+    // Initialize VolumeMeters (NEW Phase 6 integration)
+    console.log('📊 Initializing VolumeMeters module...');
     try {
-      // Setze Audio Context auf "playback" Modus für bessere Koexistenz
-      if ('audioWorklet' in audioContext) {
-        console.log('🎵 Using modern AudioWorklet for better browser compatibility');
-      }
-      
-      // Reduziere Buffer-Größe für weniger Audio-Latenz und bessere Koexistenz
-      const bufferSize = audioContext.sampleRate * 0.1; // 100ms buffer
-      console.log(`🎵 Using buffer size: ${bufferSize} samples (${100}ms) for better responsiveness`);
-      
+      initializeVolumeMeters();
+      console.log('✅ VolumeMeters initialized successfully');
     } catch (error) {
-      console.warn('⚠️ Advanced audio features not available:', error);
+      console.error('⚠️ Error initializing VolumeMeters:', error);
     }
-
-    // Log der tatsächlich verwendeten Sample Rate
-    console.log(`?? AudioContext created with dynamic sample rate: ${audioContext.sampleRate} Hz`);
-    console.log(`?? AudioContext state: ${audioContext.state}`);
-
-    // Sample Rate Kompatibilität prüfen
-    const supportedRates = [8000, 16000, 22050, 44100, 48000, 96000, 192000];
-    const currentRate = audioContext.sampleRate;
-    const isStandardRate = supportedRates.includes(currentRate);
-    
-    console.log(`?? Sample Rate Analysis:`);
-    console.log(`   - Current: ${currentRate} Hz`);
-    console.log(`   - Is Standard: ${isStandardRate ? '?' : '??'}`);
-    console.log(`   - Browser optimized for: ${currentRate >= 48000 ? 'High Quality' : 'Standard Quality'}`);
-    
-    // BROWSER AUDIO KOMPATIBILITÄT: AudioContext aktiv lassen für Player
-    // AudioContext muss aktiv bleiben, damit die Player funktionieren
-    console.log(`🎵 AudioContext active: ${audioContext.state} - Players can now use audio`);
-    
-    // Ensure AudioContext is running for players to work
-    if (audioContext.state === 'suspended') {
-      await audioContext.resume();
-      console.log('🎵 AudioContext resumed for player functionality');
-    }
-    
-    // Audio Context Policy: Andere Audio-Quellen nicht beeinträchtigen
-    if ('audioWorklet' in audioContext) {
-      console.log('?? Audio Context supports advanced features - using isolated mode');
-    }
-    
-    // Master Gain Node für Monitor-Ausgabe (Kopfhörer/Lautsprecher) - NUR PLAYER DECKS
-    masterGainNode = audioContext.createGain();
-    masterGainNode.gain.value = 0.99; // 99% Monitor-Volume
-    masterGainNode.connect(audioContext.destination);
-    
-    // Stream Gain Node for Live-Stream (separate output) - PLAYER DECKS + MICROPHONE
-    streamGainNode = audioContext.createGain();
-    streamGainNode.gain.value = 0.99; // 99% Stream-Volume
-    
-    // Master Audio Destination for streaming (MediaStreamDestination)
-    masterAudioDestination = audioContext.createMediaStreamDestination();
-    streamGainNode.connect(masterAudioDestination);
-    
-    // Separate Gain Nodes für alle 4 Player
-    aPlayerGain = audioContext.createGain();
-    aPlayerGain.gain.value = 1.0; // 100% Initial volume
-    bPlayerGain = audioContext.createGain();
-    bPlayerGain.gain.value = 1.0; // 100% Initial volume
-    cPlayerGain = audioContext.createGain();
-    cPlayerGain.gain.value = 1.0; // 100% Initial volume
-    dPlayerGain = audioContext.createGain();
-    dPlayerGain.gain.value = 1.0; // 100% Initial volume
-    
-    // Crossfader Gain Nodes für Monitor-Ausgabe (Kopfhörer) - alle 4 Player
-    crossfaderGain = {
-      a: audioContext.createGain(),
-      b: audioContext.createGain(),
-      c: audioContext.createGain(),
-      d: audioContext.createGain()
-    };
-    
-    // Initial Crossfader in der Mitte (alle Kanäle gleichlaut)
-    const initialGain = Math.cos(0.5 * Math.PI / 2); // ~0.707 für 50% Position
-    if (crossfaderGain) {
-      crossfaderGain.a.gain.value = initialGain;
-      crossfaderGain.b.gain.value = initialGain;
-      crossfaderGain.c.gain.value = initialGain;
-      crossfaderGain.d.gain.value = initialGain;
-    }
-    
-    // Microphone Gain Nodes
-    microphoneGain = audioContext.createGain();
-    microphoneGain.gain.value = 1.0; // Start at 100% (matches slider default)
-    
-    // Microphone Monitor Gain (separate switch for self-monitoring)
-    const microphoneMonitorGain = audioContext.createGain();
-    microphoneMonitorGain.gain.value = 0; // Standardmäßig aus (kein Selbsthören)
-
-    // MONITOR-ROUTING (Kopfhörer): Alle 4 Player Decks, KEIN Mikrofon standardmäßig
-    if (crossfaderGain && masterGainNode) {
-      crossfaderGain.a.connect(masterGainNode);
-      crossfaderGain.b.connect(masterGainNode);
-      crossfaderGain.c.connect(masterGainNode);
-      crossfaderGain.d.connect(masterGainNode);
-    }
-    
-    // MONITOR-ROUTING: Alle 4 Player Decks + Mikrofon (direkt für Kopfhörer/Monitor)
-    if (crossfaderGain && streamGainNode) {
-      crossfaderGain.a.connect(streamGainNode);
-      crossfaderGain.b.connect(streamGainNode);
-      crossfaderGain.c.connect(streamGainNode);
-      crossfaderGain.d.connect(streamGainNode);
-      microphoneGain.connect(streamGainNode); // Mikrofon zum Monitor
-    }
-    
-    // Alle 4 Player Gains mit Crossfader verbinden
-    if (crossfaderGain) {
-      aPlayerGain.connect(crossfaderGain.a);
-      bPlayerGain.connect(crossfaderGain.b);
-      cPlayerGain.connect(crossfaderGain.c);
-      dPlayerGain.connect(crossfaderGain.d);
-    }
-    
-    // Mikrofon Monitor (separater Schalter für Selbstabhörung)
-    // Wird später mit separatem Button gesteuert
-
-    console.log('??? Audio mixing system initialized with separated monitor and stream routing');
-    console.log('?? MONITOR (Kopfhörer): Nur Player Decks');
-    console.log('?? STREAM (AzuraCast): Player Decks + Mikrofon (wenn Button an)');
-
-    // Speichere microphoneMonitorGain global für spätere Kontrolle
-    (window as any).microphoneMonitorGain = microphoneMonitorGain;
-    
-    // Volume Meter sofort nach Audio-Initialisierung starten
-    setTimeout(() => {
-      console.log('🎵 Starting volume meters...');
-      try {
-        if (typeof startVolumeMeter === 'function') {
-          startVolumeMeter('a');
-          startVolumeMeter('b');
-          startVolumeMeter('c');
-          startVolumeMeter('d');
-          startVolumeMeter('mic');
-          startVolumeMeter('deck-master');
-          startVolumeMeter('stream-output');
-          console.log('🎵 Volume meters started successfully for all players');
-        } else {
-          console.warn('🎵 startVolumeMeter function not available yet');
-          // Retry later when function is available
-          setTimeout(() => {
-            if (typeof startVolumeMeter === 'function') {
-              startVolumeMeter('a');
-              startVolumeMeter('b');
-              startVolumeMeter('c');
-              startVolumeMeter('d');
-              startVolumeMeter('mic');
-              startVolumeMeter('deck-master');
-              startVolumeMeter('stream-output');
-              console.log('🎵 Volume meters started on retry for all players');
-            }
-          }, 2000);
-        }
-      } catch (error) {
-        console.error('🎵 Error starting volume meters:', error);
-      }
-    }, 500); // Kurze Verzögerung für Audio-Kontext Stabilität
     
     return true;
   } catch (error) {
     console.error('Failed to initialize audio mixing:', error);
     return false;
+  }
+}
+
+/**
+ * Initialize VolumeMeters module for all audio sources
+ * 🎵 NEW: Phase 6 - Centralized meter management
+ */
+function initializeVolumeMeters() {
+  console.log('📊 Creating meters for all audio sources...');
+  
+  // Create meters for deck gain nodes
+  if (aPlayerGain) volumeMeters.createMeter('deck-a', aPlayerGain);
+  if (bPlayerGain) volumeMeters.createMeter('deck-b', bPlayerGain);
+  if (cPlayerGain) volumeMeters.createMeter('deck-c', cPlayerGain);
+  if (dPlayerGain) volumeMeters.createMeter('deck-d', dPlayerGain);
+  
+  // Create meter for microphone
+  if (microphoneGain) volumeMeters.createMeter('mic', microphoneGain);
+  
+  // Create meters for master/stream outputs
+  if (masterGainNode) volumeMeters.createMeter('master', masterGainNode);
+  if (streamGainNode) volumeMeters.createMeter('stream', streamGainNode);
+  
+  console.log(`📊 Created ${volumeMeters.getMeterCount()} meters`);
+  
+  // Start animation loop for UI updates
+  startVolumeMeterAnimationLoop();
+}
+
+/**
+ * Animation loop for VolumeMeters UI updates
+ * Updates all VU meter displays at 30 FPS
+ */
+let volumeMeterAnimationId: number | null = null;
+
+function startVolumeMeterAnimationLoop() {
+  if (volumeMeterAnimationId !== null) {
+    console.log('📊 VolumeMeters animation loop already running');
+    return;
+  }
+  
+  const meterMap: Record<string, string> = {
+    'deck-a': 'volume-meter-a',
+    'deck-b': 'volume-meter-b',
+    'deck-c': 'volume-meter-c',
+    'deck-d': 'volume-meter-d',
+    'mic': 'mic-volume-meter',
+    'master': 'deck-master-meter',
+    'stream': 'stream-output-meter'
+  };
+  
+  function animate() {
+    // Get all readings at once
+    const readings = volumeMeters.getAllReadings();
+    
+    // Update each meter UI
+    for (const [meterId, reading] of readings) {
+      const uiElementId = meterMap[meterId];
+      if (!uiElementId) continue;
+      
+      // Convert RMS to LED bar level (0-8)
+      // dB range: -∞ to 0, typical speech/music: -40 to -10 dB
+      const db = reading.db;
+      let ledLevel = 0;
+      
+      if (db > -60) {
+        // Map -60dB to 0dB → 0 to 8 LEDs
+        ledLevel = Math.floor(((db + 60) / 60) * 8);
+        ledLevel = Math.max(0, Math.min(8, ledLevel));
+      }
+      
+      updateVolumeMeter(uiElementId, ledLevel);
+    }
+    
+    // Continue loop
+    volumeMeterAnimationId = requestAnimationFrame(animate);
+  }
+  
+  // Start the loop
+  volumeMeterAnimationId = requestAnimationFrame(animate);
+  console.log('📊 VolumeMeters animation loop started');
+}
+
+function stopVolumeMeterAnimationLoop() {
+  if (volumeMeterAnimationId !== null) {
+    cancelAnimationFrame(volumeMeterAnimationId);
+    volumeMeterAnimationId = null;
+    console.log('📊 VolumeMeters animation loop stopped');
   }
 }
 
@@ -974,6 +972,16 @@ function connectAudioToMixer(audioElement: HTMLAudioElement, side: 'a' | 'b' | '
   }
   
   try {
+    // 🔧 ELECTRON FIX: Delay Web Audio API connection until audio is actually playing
+    // This prevents ACCESS_VIOLATION crash (0xC0000005) in Electron when connecting
+    // a loaded-but-not-playing audio element to the Web Audio API
+    if (audioElement.paused && audioElement.currentTime === 0) {
+      console.log(`⏸️ ${side} player: audio not yet playing - deferring Web Audio connection`);
+      // Mark as ready to connect when play event fires
+      (audioElement as any)._pendingMixerConnection = true;
+      return false; // Not connected yet, but will connect on play
+    }
+    
     // FEHLERFIX: Ensure AudioContext is running before creating connections (non-blocking)
     if (audioContext.state === 'suspended') {
       audioContext.resume().then(() => {
@@ -981,23 +989,6 @@ function connectAudioToMixer(audioElement: HTMLAudioElement, side: 'a' | 'b' | '
       }).catch(err => {
         console.warn(`⚠️ AudioContext resume failed:`, err);
       });
-    }
-    
-    // Check if audio source is already properly connected
-    if ((audioElement as any)._audioSourceNode && (audioElement as any)._isConnectedToMixer) {
-      console.log(`? ${side} player already connected to mixer - skipping reconnection`);
-      return true;
-    }
-    
-    // Entferne vorherige AudioSource-Verbindung falls vorhanden
-    if ((audioElement as any)._audioSourceNode) {
-      try {
-        (audioElement as any)._audioSourceNode.disconnect();
-        console.log(`?? Disconnected previous ${side} audio source`);
-      } catch (e) {
-        // Source node already disconnected
-      }
-      delete (audioElement as any)._isConnectedToMixer;
     }
     
     // Audio routing always through Web Audio API for monitoring and mixing
@@ -1008,18 +999,14 @@ function connectAudioToMixer(audioElement: HTMLAudioElement, side: 'a' | 'b' | '
     audioElement.crossOrigin = 'anonymous';
     audioElement.preservesPitch = false; // Weniger CPU-intensiv
     
-    // FEHLERFIX: Prüfe ob MediaElementSourceNode bereits existiert
-    let sourceNode: MediaElementAudioSourceNode;
-    if ((audioElement as any)._audioSourceNode) {
-      // Verwende existierenden Source Node
-      sourceNode = (audioElement as any)._audioSourceNode;
-      console.log(`🔄 ${side} player: reusing existing MediaElementSourceNode`);
-    } else {
-      // Erstelle neuen MediaElementAudioSourceNode
-      sourceNode = audioContext.createMediaElementSource(audioElement);
-      (audioElement as any)._audioSourceNode = sourceNode;
-      console.log(`🆕 ${side} player: created new MediaElementSourceNode`);
+    // 🔧 ELECTRON FIX: Use centralized SourceNode management
+    // This prevents creating duplicate MediaElementSourceNodes which causes crashes
+    const sourceNode = getOrCreateSourceNode(audioElement);
+    if (!sourceNode) {
+      console.error(`❌ ${side} player: Failed to get MediaElementSourceNode`);
+      return false;
     }
+    console.log(`✅ ${side} player: MediaElementSourceNode ready`);
     
     // Mit entsprechendem Player Gain verbinden
     if (side === 'a' && aPlayerGain) {
@@ -1043,11 +1030,8 @@ function connectAudioToMixer(audioElement: HTMLAudioElement, side: 'a' | 'b' | '
       return false;
     }
     
-    console.log(`??? Audio Flow when STREAMING: ${side} Player ? Web Audio API ? [Monitor + Stream]`);
-    console.log(`??? Audio Flow when NOT streaming: ${side} Player ? Browser Audio ? Headphones`);
-    
-    // Mark as successfully connected to prevent unnecessary reconnections
-    (audioElement as any)._isConnectedToMixer = true;
+    console.log(`💡 Audio Flow when STREAMING: ${side} Player → Web Audio API → [Monitor + Stream]`);
+    console.log(`💡 Audio Flow when NOT streaming: ${side} Player → Browser Audio → Headphones`);
     
     return true;
   } catch (error) {
@@ -1074,7 +1058,7 @@ function createPlayerDeckHTML(side: 'a' | 'b' | 'c' | 'd'): string {
     <div class="player-label ${labelClass}">
       <div class="player-label-dot"></div>
       <span class="player-label-text">Player ${playerLetter}</span>
-      <audio id="audio-${side}" preload="metadata"></audio>
+      <!-- Audio element will be created by WaveSurfer -->
       <!-- Hidden track info elements for JavaScript -->
       <div style="display: none;">
         <div class="track-title" id="track-title-${side}">No Track Loaded</div>
@@ -1592,47 +1576,27 @@ function setupVolumeControls() {
   });
 }
 
-// DEPRECATED: Legacy volume meter animation functions
-// These are replaced by WebAudio-based real-time analysis in startVolumeMeter()
-// Keeping for backwards compatibility but should not be used
-function startVolumeMeterAnimation(side: string) {
-  console.warn(`⚠️ startVolumeMeterAnimation() is deprecated - use startVolumeMeter() instead`);
-  // Intentionally disabled - meters should only be driven by WebAudio analysers
-  return;
-}
-
-function stopVolumeMeterAnimation(side: string) {
-  console.warn(`⚠️ stopVolumeMeterAnimation() is deprecated - WebAudio meters handle pause/stop automatically`);
-  // Intentionally disabled - meters should only be driven by WebAudio analysers
-  return;
-}
-
 // Consolidated Player System Initialization
 function initializePlayerSystem() {
   // 1. Initialize deck HTML first
   initializePlayerDecks();
   
-  // 2. Setup audio elements for all 4 players
-  const audioA = document.getElementById('audio-a') as HTMLAudioElement;
-  const audioB = document.getElementById('audio-b') as HTMLAudioElement;
-  const audioC = document.getElementById('audio-c') as HTMLAudioElement;
-  const audioD = document.getElementById('audio-d') as HTMLAudioElement;
+  // 2. Create CustomWaveform instances (which create the audio elements)
+  console.log('🎵 Creating CustomWaveform instances and audio elements...');
   
-  if (audioA) {
-    setupAudioPlayer('a', audioA);
-  }
+  const sides: Array<'a' | 'b' | 'c' | 'd'> = ['a', 'b', 'c', 'd'];
+  sides.forEach(side => {
+    // Initialize CustomWaveforms (creates the shared audio element)
+    const audioElement = initializeWaveforms(side);
+    
+    // Now create Deck instance with CustomWaveform's audio element
+    deckInstances.set(side, new Deck(side, audioElement));
+    setupAudioPlayer(side, audioElement);
+    
+    console.log(`✅ Deck ${side.toUpperCase()} ready with CustomWaveform audio element`);
+  });
   
-  if (audioB) {
-    setupAudioPlayer('b', audioB);
-  }
-  
-  if (audioC) {
-    setupAudioPlayer('c', audioC);
-  }
-  
-  if (audioD) {
-    setupAudioPlayer('d', audioD);
-  }
+  console.log('🎵 All deck instances created:', deckInstances.size);
   
   // 3. Setup drop zones for drag & drop (with delay to ensure DOM is ready)
   setTimeout(() => {
@@ -1653,7 +1617,7 @@ function initializePlayerSystem() {
   // 5. Setup auto-queue controls
   setupAutoQueueControls();
   
-  console.log('Complete player system initialized');
+  console.log('✅ Complete player system initialized with WaveSurfer audio elements');
 }
 
 // Update Album Cover Function
@@ -1935,9 +1899,20 @@ function formatTime(seconds: number): string {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
-// WaveSurfer instances for both players (zoom + overview per deck)
-const waveSurfersZoom: { [key in 'a' | 'b' | 'c' | 'd']?: WaveSurfer } = {};
-const waveSurfersOverview: { [key in 'a' | 'b' | 'c' | 'd']?: WaveSurfer } = {};
+// Custom Waveform instances for both players (zoom + overview per deck)
+const waveformsZoom: { [key in 'a' | 'b' | 'c' | 'd']?: CustomWaveform } = {};
+const waveformsOverview: { [key in 'a' | 'b' | 'c' | 'd']?: CustomWaveform } = {};
+
+// Audio elements for each deck (shared with waveform visualization)
+const deckAudioElements: { [key in 'a' | 'b' | 'c' | 'd']?: HTMLAudioElement } = {};
+
+/**
+ * Helper function to get audio element for a deck
+ * Replaces document.getElementById('audio-${side}') throughout the codebase
+ */
+function getAudioElement(side: 'a' | 'b' | 'c' | 'd'): HTMLAudioElement | null {
+  return deckAudioElements[side] || null;
+}
 
 // Waveform zoom levels for each deck (8.0 = 800% default zoom for detail)
 const waveformZoom: { [key in 'a' | 'b' | 'c' | 'd']: number } = {
@@ -1947,8 +1922,9 @@ const waveformZoom: { [key in 'a' | 'b' | 'c' | 'd']: number } = {
   d: 8.0
 };
 
-// Initialize WaveSurfer for a player with dual waveforms (zoom + overview)
-function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: number): WaveSurfer {
+// Initialize Custom Waveforms for a player with dual waveforms (zoom + overview)
+// Returns the audio element
+function initializeWaveforms(side: 'a' | 'b' | 'c' | 'd', trackDuration?: number): HTMLAudioElement {
   const containerZoom = document.getElementById(`waveform-${side}-zoom`);
   const containerOverview = document.getElementById(`waveform-${side}-overview`);
   
@@ -1956,12 +1932,12 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
     throw new Error(`Waveform containers not found for ${side} player`);
   }
 
-  // Destroy existing wavesurfers if they exist
-  if (waveSurfersZoom[side]) {
-    waveSurfersZoom[side]!.destroy();
+  // Destroy existing waveforms if they exist
+  if (waveformsZoom[side]) {
+    waveformsZoom[side]!.destroy();
   }
-  if (waveSurfersOverview[side]) {
-    waveSurfersOverview[side]!.destroy();
+  if (waveformsOverview[side]) {
+    waveformsOverview[side]!.destroy();
   }
 
   // Adaptive settings based on track duration
@@ -1989,32 +1965,37 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
   const waveColor = getPlayerColor(side);
   const progressColor = getPlayerColor(side, 'dark');
 
-  // Calculate default pixels per second for zoom level 1.0
-  const containerWidth = containerZoom.clientWidth || 500; // Fallback
-  const estimatedDuration = trackDuration || 180; // Fallback to 3 minutes
-  const minPxPerSec = containerWidth / estimatedDuration;
+  // Create or reuse audio element
+  let audioElement = deckAudioElements[side];
+  if (!audioElement) {
+    audioElement = document.createElement('audio');
+    audioElement.id = `audio-${side}`;
+    audioElement.preload = 'metadata';
+    audioElement.crossOrigin = 'anonymous'; // For CORS
+    deckAudioElements[side] = audioElement;
+  }
 
-  // 1. CREATE ZOOM WAVEFORM (top, zoomable, no seek, centered playhead)
-  const wavesurferZoom = WaveSurfer.create({
+  // Get AudioContext from AudioManager
+  const audioContext = AudioManager.getContext();
+
+  // 1. CREATE ZOOM WAVEFORM (top, 5-second window, no seek, centered playhead)
+  const waveformZoomInstance = createCustomWaveform({
     container: containerZoom,
     waveColor: waveColor,
     progressColor: progressColor,
-    cursorColor: 'transparent', // No cursor - no seek
+    cursorColor: '#ffffff', // White cursor in center
     barWidth: barWidth,
     barGap: barGap,
     height: 60,
     normalize: true,
-    backend: 'WebAudio',
-    minPxPerSec: minPxPerSec,
     interact: false, // Disable all interactions (no seek)
-    hideScrollbar: true // Explicitly hide scrollbar
-  });
+    responsive: true
+  }, audioElement, audioContext, 5); // 5 seconds zoom window
   
-  wavesurferZoom.setVolume(0);
-  console.log(`🎨 WaveSurfer Zoom ${side} created (no seek)`);
+  console.log(`🎨 CustomWaveform Zoom ${side} created (5s window, centered cursor)`);
 
   // 2. CREATE OVERVIEW WAVEFORM (bottom, always 1.0x, seekable)
-  const wavesurferOverview = WaveSurfer.create({
+  const waveformOverviewInstance = createCustomWaveform({
     container: containerOverview,
     waveColor: waveColor,
     progressColor: progressColor,
@@ -2023,53 +2004,28 @@ function initializeWaveSurfer(side: 'a' | 'b' | 'c' | 'd', trackDuration?: numbe
     barGap: 0,
     height: 20,
     normalize: true,
-    backend: 'WebAudio',
-    minPxPerSec: minPxPerSec, // Always show full track
     interact: true, // Enable seek interactions
-    hideScrollbar: true // Explicitly hide scrollbar
-  });
+    responsive: true
+  }, audioElement, audioContext); // SAME audio element - shared!
   
-  wavesurferOverview.setVolume(0);
-  console.log(`🎨 WaveSurfer Overview ${side} created (seekable)`);
+  console.log(`🎨 CustomWaveform Overview ${side} created (seekable, SHARED audio element)`);
 
-  // Add mouse wheel zoom handler ONLY to zoom waveform container
-  containerZoom.addEventListener('wheel', (e: WheelEvent) => {
-    e.preventDefault();
-    
-    const zoomDelta = -e.deltaY * 0.001;
-    waveformZoom[side] = Math.max(1.0, Math.min(8.0, waveformZoom[side] + zoomDelta));
-    
-    const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-    const actualDuration = audio?.duration || estimatedDuration;
-    const basePxPerSec = containerWidth / actualDuration;
-    const zoomedPxPerSec = basePxPerSec * waveformZoom[side];
-    
-    wavesurferZoom.zoom(zoomedPxPerSec);
-    showZoomIndicator(side, waveformZoom[side]);
-    
-    console.log(`🔍 Deck ${side.toUpperCase()}: Zoom ${waveformZoom[side].toFixed(2)}x`);
-  }, { passive: false });
-
-  waveSurfersZoom[side] = wavesurferZoom;
-  waveSurfersOverview[side] = wavesurferOverview;
+  // Store waveform instances
+  waveformsZoom[side] = waveformZoomInstance;
+  waveformsOverview[side] = waveformOverviewInstance;
   
-  return wavesurferZoom; // Return zoom waveform as primary
+  console.log(`✅ Deck ${side.toUpperCase()} initialized: CustomWaveform + shared audio element`);
+  console.log(`🎵 CustomWaveform initialized for deck ${side} with shared audio element`);
+  
+  return audioElement;
 }
 
-// Reset WaveSurfer for a new track
+// Reset waveforms for a new track
 function resetWaveform(side: 'a' | 'b' | 'c' | 'd') {
-  const wavesurferZoom = waveSurfersZoom[side];
-  const wavesurferOverview = waveSurfersOverview[side];
+  const waveformZoom = waveformsZoom[side];
+  const waveformOverview = waveformsOverview[side];
   
-  if (wavesurferZoom) {
-    wavesurferZoom.stop();
-    wavesurferZoom.seekTo(0);
-  }
-  if (wavesurferOverview) {
-    wavesurferOverview.stop();
-    wavesurferOverview.seekTo(0);
-  }
-  
+  // CustomWaveform doesn't need explicit reset - it will be updated on next load
   console.log(`Waveform reset for ${side} player`);
   
   // Hide loading indicator if it's visible
@@ -2113,18 +2069,18 @@ function showZoomIndicator(side: 'a' | 'b' | 'c' | 'd', zoomLevel: number) {
   }, 1000);
 }
 
-// Completely clear WaveSurfer (for eject)
+// Completely clear waveforms (for eject)
 function clearWaveform(side: 'a' | 'b' | 'c' | 'd') {
-  const wavesurferZoom = waveSurfersZoom[side];
-  const wavesurferOverview = waveSurfersOverview[side];
+  const waveformZoom = waveformsZoom[side];
+  const waveformOverview = waveformsOverview[side];
   
-  if (wavesurferZoom) {
-    wavesurferZoom.destroy();
-    delete waveSurfersZoom[side];
+  if (waveformZoom) {
+    waveformZoom.destroy();
+    delete waveformsZoom[side];
   }
-  if (wavesurferOverview) {
-    wavesurferOverview.destroy();
-    delete waveSurfersOverview[side];
+  if (waveformOverview) {
+    waveformOverview.destroy();
+    delete waveformsOverview[side];
   }
   
   // Clear the containers visually
@@ -2155,252 +2111,59 @@ function clearWaveform(side: 'a' | 'b' | 'c' | 'd') {
   console.log(`🗑️ Waveform completely cleared for ${side} player`);
 }
 
-// Load audio file into WaveSurfer for a player
-function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDuration?: number) {
-  console.log(`Loading new waveform for ${side} player from: ${audioUrl}`);
+// Load audio file into CustomWaveform for a player
+async function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDuration?: number) {
+  console.log(`🌊 [CustomWaveform] Loading waveform for ${side} player from: ${audioUrl}`);
   
   // Reset existing waveform first
   resetWaveform(side);
   
-  // Initialize WaveSurfer if not exists (with adaptive settings)
-  if (!waveSurfersZoom[side] || !waveSurfersOverview[side]) {
-    initializeWaveSurfer(side, trackDuration);
+  // Initialize waveforms if not exists
+  if (!waveformsZoom[side] || !waveformsOverview[side]) {
+    const audioElement = initializeWaveforms(side, trackDuration);
+    console.log(`🎵 CustomWaveform initialized for deck ${side} with audio element`);
   }
 
-  const wavesurferZoom = waveSurfersZoom[side]!;
-  const wavesurferOverview = waveSurfersOverview[side]!;
+  const waveformZoom = waveformsZoom[side]!;
+  const waveformOverview = waveformsOverview[side]!;
   
-  // Get container elements for direct event handling
-  const containerZoom = document.getElementById(`waveform-${side}-zoom`);
-  const containerOverview = document.getElementById(`waveform-${side}-overview`);
-  
-  // Show the existing loading indicator and update it
+  // Show loading indicator
   const loadingIndicator = document.getElementById(`waveform-loading-${side}`);
   if (loadingIndicator) {
     loadingIndicator.classList.add('visible');
     loadingIndicator.textContent = 'Loading waveform...';
   }
 
-  // Progressive loading events (use overview for progress tracking)
-  wavesurferOverview.on('loading', (percent: number) => {
-    const loadingElement = document.getElementById(`waveform-loading-${side}`);
-    if (loadingElement) {
-      loadingElement.textContent = `Loading waveform... ${Math.round(percent)}%`;
-    }
+  try {
+    // Load audio into both waveforms (they share the same audio element)
+    console.log(`🌊 [CustomWaveform] Loading audio into waveforms...`);
+    await Promise.all([
+      waveformZoom.load(audioUrl),
+      waveformOverview.load(audioUrl)
+    ]);
     
-    // Show partial waveform as it loads (visual feedback)
-    if (percent > 10) {
-      const containerZoom = document.getElementById(`waveform-${side}-zoom`);
-      const containerOverview = document.getElementById(`waveform-${side}-overview`);
-      const opacity = Math.min(percent / 100 + 0.3, 1);
-      if (containerZoom) containerZoom.style.opacity = `${opacity}`;
-      if (containerOverview) containerOverview.style.opacity = `${opacity}`;
-    }
-  });
-
-  // Zoom waveform ready event - apply initial zoom
-  wavesurferZoom.on('ready', () => {
-    console.log(`✅ Zoom Waveform ready for ${side} player`);
-    
-    // Set zoom to 8.0x (default for detailed view) and recalculate with actual track duration
-    waveformZoom[side] = 8.0;
-    const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-    const actualDuration = audio?.duration || wavesurferZoom.getDuration();
-    
-    if (actualDuration > 0) {
-      const containerZoom = document.getElementById(`waveform-${side}-zoom`);
-      const containerWidth = containerZoom?.clientWidth || 500;
-      const correctMinPxPerSec = containerWidth / actualDuration;
-      const zoomedPxPerSec = correctMinPxPerSec * 8.0; // Apply 8.0x zoom
-      
-      try {
-        wavesurferZoom.zoom(zoomedPxPerSec);
-        showZoomIndicator(side, 8.0); // Show initial zoom level
-        console.log(`🔍 Deck ${side.toUpperCase()}: Initial zoom to 8.0x (${zoomedPxPerSec.toFixed(2)} px/s for ${actualDuration.toFixed(1)}s track)`);
-      } catch (e) {
-        console.warn(`⚠️ Could not apply initial zoom to ${side}:`, e);
-      }
-    }
-    
-    // Ensure at the beginning
-    wavesurferZoom.seekTo(0);
-  });
-
-  wavesurferOverview.on('ready', () => {
-    console.log(`✅ Overview Waveform ready for ${side} player`);
+    console.log(`✅ [CustomWaveform] Waveforms loaded for ${side} player`);
     
     // Hide loading indicator
-    const loadingElement = document.getElementById(`waveform-loading-${side}`);
-    if (loadingElement) {
-      loadingElement.classList.remove('visible');
+    if (loadingIndicator) {
+      loadingIndicator.classList.remove('visible');
     }
     
     // Ensure full opacity
     const containerZoom = document.getElementById(`waveform-${side}-zoom`);
     const containerOverview = document.getElementById(`waveform-${side}-overview`);
     if (containerZoom) containerZoom.style.opacity = '1';
-    if (containerOverview) containerOverview.style.opacity = '0.7'; // Slightly dimmed
+    if (containerOverview) containerOverview.style.opacity = '0.7';
     
-    // Ensure overview is at the beginning
-    wavesurferOverview.seekTo(0);
-  });
-
-  // Sync overview waveform click-to-seek with audio element
-  // Use click event directly for more reliable seek
-  if (containerOverview) {
-    containerOverview.addEventListener('click', (e: MouseEvent) => {
-      const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-      if (!audio || !audio.duration) return;
-      
-      // Calculate click position relative to container
-      const rect = containerOverview.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const progress = clickX / rect.width;
-      
-      // Clamp progress between 0 and 1
-      const clampedProgress = Math.max(0, Math.min(1, progress));
-      const seekTime = clampedProgress * audio.duration;
-      
-      // Update audio position
-      audio.currentTime = seekTime;
-      
-      // Update both waveforms
-      wavesurferZoom.seekTo(clampedProgress);
-      wavesurferOverview.seekTo(clampedProgress);
-      
-      console.log(`🎯 Deck ${side.toUpperCase()}: Overview click-to-seek → ${seekTime.toFixed(2)}s (${(clampedProgress * 100).toFixed(1)}%)`);
-    });
-  }
-
-  wavesurferOverview.on('error', (error: any) => {
-    console.error(`❌ Overview waveform error for ${side} player:`, error);
+  } catch (error) {
+    console.error(`❌ [CustomWaveform] Failed to load waveform for ${side}:`, error);
     
-    // Hide loading indicator on error
-    const loadingElement = document.getElementById(`waveform-loading-${side}`);
-    if (loadingElement) {
-      loadingElement.classList.remove('visible');
+    // Hide loading indicator
+    if (loadingIndicator) {
+      loadingIndicator.classList.remove('visible');
     }
     
-    // Show temporary error state (2 seconds)
-    const containerOverview = document.getElementById(`waveform-${side}-overview`);
-    if (containerOverview) {
-      containerOverview.style.opacity = '0.5';
-      const errorIndicator = document.createElement('div');
-      errorIndicator.id = `waveform-error-${side}`;
-      errorIndicator.style.cssText = `
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        color: #ff4444;
-        font-size: 12px;
-        z-index: 10;
-        font-weight: bold;
-      `;
-      errorIndicator.textContent = 'Waveform load failed - retrying...';
-      containerOverview.appendChild(errorIndicator);
-      
-      // Remove error message after 2 seconds and retry
-      setTimeout(() => {
-        if (errorIndicator && errorIndicator.parentNode) {
-          errorIndicator.remove();
-        }
-        containerOverview.style.opacity = '0.7';
-        
-        // Retry loading the waveform
-        console.log(`🔄 Retrying waveform load for ${side} player`);
-        setTimeout(() => {
-          try {
-            wavesurferZoom.load(audioUrl);
-            wavesurferOverview.load(audioUrl);
-          } catch (retryError) {
-            console.error(`❌ Retry failed for ${side} waveform:`, retryError);
-          }
-        }, 500); // Small delay before retry
-      }, 2000);
-    }
-  });
-
-  // Load the new audio file into BOTH waveforms
-  wavesurferZoom.load(audioUrl);
-  wavesurferOverview.load(audioUrl);
-}
-
-// Sync WaveSurfer with HTML audio element
-// WaveSurfer Synchronisation (currently unused, but kept for future enhancement)
-function syncWaveSurferWithAudio(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) {
-  const wavesurferZoom = waveSurfersZoom[side];
-  const wavesurferOverview = waveSurfersOverview[side];
-  if (!wavesurferZoom || !wavesurferOverview) return;
-  
-  // Flag to prevent sync loops
-  let syncing = false;
-  
-  // Store event handlers to properly remove them later
-  const eventHandlers = {
-    play: () => {
-      if (syncing) return;
-      syncing = true;
-      // Sync both waveforms
-      if (!wavesurferZoom.isPlaying()) {
-        wavesurferZoom.play();
-      }
-      if (!wavesurferOverview.isPlaying()) {
-        wavesurferOverview.play();
-      }
-      syncing = false;
-    },
-    pause: () => {
-      if (syncing) return;
-      syncing = true;
-      if (wavesurferZoom.isPlaying()) {
-        wavesurferZoom.pause();
-      }
-      if (wavesurferOverview.isPlaying()) {
-        wavesurferOverview.pause();
-      }
-      syncing = false;
-    },
-    seeked: () => {
-      if (syncing) return;
-      const progress = audio.currentTime / audio.duration;
-      wavesurferZoom.seekTo(progress || 0);
-      wavesurferOverview.seekTo(progress || 0);
-    },
-    loadstart: () => {
-      resetWaveform(side);
-    }
-  };
-  
-  // Remove any existing listeners first
-  if ((audio as any)._wavesurferHandlers) {
-    const oldHandlers = (audio as any)._wavesurferHandlers;
-    audio.removeEventListener('play', oldHandlers.play);
-    audio.removeEventListener('pause', oldHandlers.pause);
-    audio.removeEventListener('seeked', oldHandlers.seeked);
-    audio.removeEventListener('loadstart', oldHandlers.loadstart);
-  }
-  
-  // Add fresh event listeners
-  audio.addEventListener('play', eventHandlers.play);
-  audio.addEventListener('pause', eventHandlers.pause);
-  audio.addEventListener('seeked', eventHandlers.seeked);
-  audio.addEventListener('loadstart', eventHandlers.loadstart);
-  
-  // Store handlers for later cleanup
-  (audio as any)._wavesurferHandlers = eventHandlers;
-}
-
-// Clean up WaveSurfer sync for a player
-function cleanupWaveSurferSync(side: 'a' | 'b' | 'c' | 'd') {
-  const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-  if (audio && (audio as any)._wavesurferHandlers) {
-    const handlers = (audio as any)._wavesurferHandlers;
-    audio.removeEventListener('play', handlers.play);
-    audio.removeEventListener('pause', handlers.pause);
-    audio.removeEventListener('seeked', handlers.seeked);
-    audio.removeEventListener('loadstart', handlers.loadstart);
-    delete (audio as any)._wavesurferHandlers;
+    throw error;
   }
 }
 
@@ -2767,10 +2530,12 @@ function initializeFullApp() {
   // 6. Initialize rating system
   initializeRatingListeners();
   
-  // 7. Auto-start volume meters after everything is ready
-  setTimeout(() => {
-    autoStartVolumeMeters();
-  }, 1000);
+  // 7. 🔧 ELECTRON FIX: Volume meters are started immediately after login
+  // Don't auto-start them here - they're already running!
+  // Starting them twice creates two Audio Output Controllers → CRASH
+  // setTimeout(() => {
+  //   autoStartVolumeMeters();
+  // }, 1000);
   
   // 8. Initialize Discord Gateway after config is loaded
   console.log('🔧 Setting up Discord Gateway...');
@@ -2822,6 +2587,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   const micRefreshBtn = document.getElementById("mic-refresh-btn") as HTMLButtonElement;
   let selectedMicDeviceId: string | null = null;
 
+  // 🔧 ELECTRON FIX: Add placeholder option for on-demand loading
+  if (micDeviceSelect) {
+    const placeholderOption = document.createElement('option');
+    placeholderOption.value = '';
+    placeholderOption.textContent = '🎤 Click to load microphone devices...';
+    placeholderOption.disabled = false;
+    placeholderOption.selected = true;
+    micDeviceSelect.appendChild(placeholderOption);
+  }
+
   // Helper function to format microphone device names
   function formatMicrophoneName(label: string): string {
     // Common prefixes in different languages that should be replaced with mic icon
@@ -2851,43 +2626,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     return `🎤 ${label}`;
   }
 
-  // Function to populate microphone devices
+  // ============================================================================
+  // FACADE: Populate Microphone Devices (routes to MicManager - Phase 4)
+  // ============================================================================
   async function populateMicrophoneDevices(): Promise<void> {
-    try {
-      console.log('🎤 Loading available microphone devices...');
-      
-      // Request permission first to get device labels
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      // Get all audio input devices
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const audioInputs = devices.filter(device => device.kind === 'audioinput');
-      
-      // Clear existing options (no placeholder option)
-      micDeviceSelect.innerHTML = '';
-      
-      // Add devices to dropdown
-      audioInputs.forEach(device => {
-        const option = document.createElement('option');
-        option.value = device.deviceId;
-        const deviceLabel = device.label || `Microphone ${audioInputs.indexOf(device) + 1}`;
-        option.textContent = formatMicrophoneName(deviceLabel);
-        micDeviceSelect.appendChild(option);
-      });
-      
-      console.log(`🎤 Found ${audioInputs.length} microphone devices`);
-      
-      // Always auto-select first device
-      if (audioInputs.length > 0) {
-        selectedMicDeviceId = audioInputs[0].deviceId;
-        micDeviceSelect.value = selectedMicDeviceId;
-        console.log(`🎤 Auto-selected first microphone: ${formatMicrophoneName(audioInputs[0].label || 'Microphone 1')}`);
-      }
-      
-    } catch (error) {
-      console.error('❌ Error loading microphone devices:', error);
-      micDeviceSelect.innerHTML = '<option value="">Fehler beim Laden der Geräte</option>';
-    }
+    // Route to new MicManager module
+    await MicManager.populateMicrophoneDevices(micDeviceSelect);
   }
 
   // Device selection change handler
@@ -2896,37 +2640,39 @@ document.addEventListener("DOMContentLoaded", async () => {
     selectedMicDeviceId = target.value;
     console.log(`🎤 Selected microphone device: ${target.options[target.selectedIndex].text}`);
     
-    // If microphone is currently active, gracefully switch devices
-    if (micActive) {
-      console.log('🎤 Gracefully switching microphone device...');
-      
-      // 1. Erste das alte Mikrofon ordentlich deaktivieren
-      if (microphoneStream) {
-        console.log('🎤 Stopping previous microphone stream...');
-        microphoneStream.getTracks().forEach(track => {
-          track.stop(); // Hardware freigeben
-          console.log(`🎤 Released track: ${track.label}`);
-        });
-        microphoneStream = null;
-      }
-      
-      // 2. Kurze Pause um Hardware-Wechsel zu ermöglichen
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // 3. Neues Mikrofon mit neuem Device aktivieren
-      console.log('🎤 Activating new microphone device...');
-      await setupMicrophone();
+    // Route device selection to MicManager
+    await MicManager.selectMicrophoneDevice(target.value);
+  });
+
+  // Track if microphone devices have been loaded
+  let micDevicesLoaded = false;
+  
+  // 🔧 ELECTRON FIX: Load microphone devices on-demand to prevent crash
+  // Calling getUserMedia() at startup triggers a stream that crashes Electron when closed
+  async function loadMicrophoneDevicesOnDemand() {
+    if (!micDevicesLoaded) {
+      console.log('🎤 Loading microphone devices on-demand...');
+      await populateMicrophoneDevices();
+      micDevicesLoaded = true;
     }
-  });
-
+  }
+  
   // Refresh button handler
-  micRefreshBtn.addEventListener('click', () => {
+  micRefreshBtn.addEventListener('click', async () => {
     console.log('🎤 Refreshing microphone device list...');
-    populateMicrophoneDevices();
+    await populateMicrophoneDevices();
+    micDevicesLoaded = true;
   });
-
-  // Initialize microphone device list on startup
-  populateMicrophoneDevices();
+  
+  // Load devices when dropdown is opened (on-demand loading)
+  micDeviceSelect.addEventListener('focus', async () => {
+    await loadMicrophoneDevicesOnDemand();
+  }, { once: true }); // Only load once on first focus
+  
+  // 🔧 ELECTRON FIX: Don't load microphone devices at startup
+  // This prevents the crash caused by getUserMedia permission stream cleanup
+  // Devices will be loaded when user opens the dropdown or clicks refresh
+  console.log('🎤 Microphone devices will be loaded on-demand (when dropdown is opened)');
 
   // Deck C+D Toggle Button Event Handler
   const deckToggleBtn = document.getElementById('deck-toggle-btn') as HTMLButtonElement;
@@ -3661,390 +3407,45 @@ function showCORSErrorMessage() {
 }
 
 // Initialize radio broadcast processing chain
+// ============================================================================
+// FACADE: Radio Broadcast Processing (routes to MicManager - Phase 4)
+// ============================================================================
 async function initializeRadioProcessing(): Promise<void> {
-  if (!audioContext) return;
-  
-  // Processing Gain Node (acts as the processing chain input)
-  micProcessingGain = audioContext.createGain();
-  micProcessingGain.gain.setValueAtTime(1.0, audioContext.currentTime);
-  
-  // Professional Radio Compressor (broadcast-style)
-  micCompressorNode = audioContext.createDynamicsCompressor();
-  micCompressorNode.threshold.setValueAtTime(-18, audioContext.currentTime);  // -18dB threshold
-  micCompressorNode.knee.setValueAtTime(15, audioContext.currentTime);        // 15dB knee
-  micCompressorNode.ratio.setValueAtTime(8, audioContext.currentTime);        // 8:1 ratio
-  micCompressorNode.attack.setValueAtTime(0.001, audioContext.currentTime);   // 1ms attack
-  micCompressorNode.release.setValueAtTime(0.1, audioContext.currentTime);    // 100ms release
-  
-  // Note: Noise gate removed - previous implementation was just a gain reducer,
-  // not a real threshold-based gate. For true noise gating, would need 
-  // threshold detection and dynamic gain control based on signal level.
-  
-  // 3-Band EQ for Voice Optimization
-  micEqLowNode = audioContext.createBiquadFilter();
-  micEqLowNode.type = 'peaking';
-  micEqLowNode.frequency.setValueAtTime(200, audioContext.currentTime);
-  micEqLowNode.Q.setValueAtTime(1.0, audioContext.currentTime);
-  micEqLowNode.gain.setValueAtTime(-2, audioContext.currentTime); // Reduce muddiness
-  
-  micEqMidNode = audioContext.createBiquadFilter();
-  micEqMidNode.type = 'peaking';
-  micEqMidNode.frequency.setValueAtTime(2500, audioContext.currentTime);
-  micEqMidNode.Q.setValueAtTime(1.2, audioContext.currentTime);
-  micEqMidNode.gain.setValueAtTime(4, audioContext.currentTime); // Presence boost
-  
-  micEqHighNode = audioContext.createBiquadFilter();
-  micEqHighNode.type = 'peaking';
-  micEqHighNode.frequency.setValueAtTime(8000, audioContext.currentTime);
-  micEqHighNode.Q.setValueAtTime(0.8, audioContext.currentTime);
-  micEqHighNode.gain.setValueAtTime(2, audioContext.currentTime); // Air/brightness
-  
-  // Broadcast Limiter (prevents clipping)
-  micLimiterNode = audioContext.createDynamicsCompressor();
-  micLimiterNode.threshold.setValueAtTime(-3, audioContext.currentTime);      // -3dB threshold
-  micLimiterNode.knee.setValueAtTime(0, audioContext.currentTime);            // Hard knee
-  micLimiterNode.ratio.setValueAtTime(20, audioContext.currentTime);          // 20:1 ratio
-  micLimiterNode.attack.setValueAtTime(0.0001, audioContext.currentTime);     // 0.1ms attack
-  micLimiterNode.release.setValueAtTime(0.05, audioContext.currentTime);      // 50ms release
-  
-  // De-Esser (frequency-specific compressor)
-  micDeEsserNode = audioContext.createDynamicsCompressor();
-  micDeEsserNode.threshold.setValueAtTime(-20, audioContext.currentTime);
-  micDeEsserNode.knee.setValueAtTime(5, audioContext.currentTime);
-  micDeEsserNode.ratio.setValueAtTime(6, audioContext.currentTime);
-  micDeEsserNode.attack.setValueAtTime(0.001, audioContext.currentTime);
-  micDeEsserNode.release.setValueAtTime(0.1, audioContext.currentTime);
-  
-  console.log('📻 Radio broadcast processing initialized');
+  // Radio processing is now initialized automatically by MicManager.setupMicrophone()
+  console.log('📻 Radio processing will be initialized by MicManager');
 }
 
-
-
-// Toggle radio broadcast processing
+// ============================================================================
+// FACADE: Toggle Radio Processing (routes to MicManager - Phase 4)
+// ============================================================================
 function toggleRadioProcessing(process: 'compressor' | 'eq' | 'limiter' | 'deesser'): void {
-  if (!audioContext) return;
-  
-  micProcessingState[process] = !micProcessingState[process];
-  const isActive = micProcessingState[process];
-  
-  switch (process) {
-    case 'compressor':
-      if (micCompressorNode) {
-        // Bypass by setting ratio to 1:1 or enable aggressive compression
-        micCompressorNode.ratio.setValueAtTime(isActive ? 8 : 1, audioContext.currentTime);
-        console.log(`📻 COMPRESSOR: ${isActive ? 'ON (8:1 ratio)' : 'OFF (1:1 ratio)'}`);
-      }
-      break;
-      
-    case 'eq':
-      if (micEqLowNode && micEqMidNode && micEqHighNode) {
-        // Enable/disable EQ by setting gains to 0 or target values
-        micEqLowNode.gain.setValueAtTime(isActive ? -2 : 0, audioContext.currentTime);
-        micEqMidNode.gain.setValueAtTime(isActive ? 4 : 0, audioContext.currentTime);
-        micEqHighNode.gain.setValueAtTime(isActive ? 2 : 0, audioContext.currentTime);
-        console.log(`📻 EQ: ${isActive ? 'ON (voice optimized)' : 'OFF (flat response)'}`);
-      }
-      break;
-      
-    case 'limiter':
-      if (micLimiterNode) {
-        // Bypass by setting high threshold or enable limiting
-        micLimiterNode.threshold.setValueAtTime(isActive ? -3 : 0, audioContext.currentTime);
-        console.log(`📻 LIMITER: ${isActive ? 'ON (-3dB threshold)' : 'OFF (0dB threshold)'}`);
-      }
-      break;
-      
-    case 'deesser':
-      if (micDeEsserNode) {
-        // Enable/disable de-esser by adjusting ratio
-        micDeEsserNode.ratio.setValueAtTime(isActive ? 6 : 1, audioContext.currentTime);
-        console.log(`📻 DE-ESSER: ${isActive ? 'ON (6:1 ratio)' : 'OFF (1:1 ratio)'}`);
-      }
-      break;
-  }
+  // Route to new MicManager module
+  MicManager.toggleProcessing(process);
 }
 
-// Mikrofon zum Mixing-System hinzufügen
+// ============================================================================
+// FACADE: Setup Microphone (routes to MicManager - Phase 4)
+// ============================================================================
 async function setupMicrophone() {
-  if (!audioContext || !microphoneGain) return false;
-  
-  try {
-    // Clean up any existing microphone stream first
-    if (microphoneStream) {
-      microphoneStream.getTracks().forEach(track => {
-        track.stop();
-        console.log('🎤 Previous microphone track stopped');
-      });
-      microphoneStream = null;
-    }
-    
-    // DYNAMISCHE SAMPLE RATE: Verwende AudioContext Sample Rate für Kompatibilität
-    const contextSampleRate = audioContext.sampleRate;
-    console.log(`🎤 Setting up fresh microphone with dynamic sample rate: ${contextSampleRate} Hz`);
-
-    // Mikrofon-Konfiguration für DJ-Anwendung (ALLE Audio-Effekte deaktiviert für beste Verständlichkeit)
-    const audioConstraints: MediaTrackConstraints = {
-      // Device Selection - use selected device if available
-      ...(selectedMicDeviceId && { deviceId: { exact: selectedMicDeviceId } }),
-
-      // Basis-Audio-Einstellungen - ALLE Effekte AUS für natürliche Stimme
-      echoCancellation: false,          // Echo-Cancel AUS - verschlechtert oft DJ-Mikrofone
-      noiseSuppression: false,          // Noise-Suppress AUS - kann Stimme verzerren
-      autoGainControl: false,           // AGC aus für manuelle Lautstärke-Kontrolle
-
-      // DYNAMISCHE Sample Rate - passt sich an AudioContext an
-      sampleRate: { 
-          ideal: contextSampleRate,       // Verwende AudioContext Sample Rate
-          min: 8000,                      // Minimum für Fallback
-          max: 192000                     // Maximum für High-End Mikrofone
-      },
-      sampleSize: { ideal: 16 },        // 16-bit Audio
-      channelCount: { ideal: 1 },       // Mono für geringere Bandbreite
-        
-      // Browser-spezifische Verbesserungen - ALLE AUS für natürliche Stimme
-      // @ts-ignore - Browser-spezifische Eigenschaften
-      googEchoCancellation: false,      // Google Echo-Cancel AUS
-      // @ts-ignore
-      googAutoGainControl: false,       // Google AGC AUS
-      // @ts-ignore
-      googNoiseSuppression: false,      // Google Noise-Suppress AUS
-      // @ts-ignore
-      googHighpassFilter: false,        // Highpass-Filter AUS
-      // @ts-ignore
-      googTypingNoiseDetection: false,  // Typing-Detection AUS
-      // @ts-ignore
-      googAudioMirroring: false
-    };
-    
-    // BROWSER-FREUNDLICHER MIKROFON-ZUGRIFF
-    // Minimale Rechte anfordern um andere Browser-Audio nicht zu blockieren
-    const minimalAudioConstraints = {
-      ...audioConstraints,
-      // Browser-freundliche Optionen
-      // @ts-ignore
-      echoCancellation: false,  // Weniger invasiv
-      // @ts-ignore  
-      noiseSuppression: false,  // Weniger Verarbeitung
-      // @ts-ignore
-      autoGainControl: false,   // Manuelle Kontrolle
-      // @ts-ignore
-      googEchoCancellation: false,
-      // @ts-ignore
-      googAutoGainControl: false,
-      // @ts-ignore
-      googNoiseSuppression: false
-    };
-
-    microphoneStream = await navigator.mediaDevices.getUserMedia({ 
-      audio: minimalAudioConstraints
-    });
-    
-    // BROWSER-FREUNDLICHES TRACK MANAGEMENT
-    // Tracks so konfigurieren, dass sie andere Browser-Audio minimal beeinträchtigen
-    microphoneStream.getAudioTracks().forEach((track, index) => {
-      track.enabled = true; // Track ist aktiv für Aufnahme
-      
-      // BROWSER-KOMPATIBILITÄT: Setze Track-Constraints für bessere Koexistenz
-      if (track.applyConstraints) {
-        track.applyConstraints({
-          echoCancellation: false,    // Weniger CPU-Last
-          noiseSuppression: false,    // Weniger Verarbeitung  
-          autoGainControl: false,     // Weniger Interferenz
-        }).catch(err => {
-          console.warn('⚠️ Could not apply track constraints:', err);
-        });
-      }
-      
-      const settings = track.getSettings();
-      console.log(`🎙️ Microphone Track ${index + 1} Settings:`);
-      console.log(`   - Sample Rate: ${settings.sampleRate || 'unknown'} Hz`);
-      console.log(`   - Channels: ${settings.channelCount || 'unknown'}`);
-      console.log(`   - Sample Size: ${settings.sampleSize || 'unknown'} bit`);
-      console.log(`   - Echo Cancellation: ${settings.echoCancellation ? '✅' : '❌'}`);
-      console.log(`   - Noise Suppression: ${settings.noiseSuppression ? '✅' : '❌'}`);
-      console.log(`   - Auto Gain Control: ${settings.autoGainControl ? '✅' : '❌'}`);
-      
-      // Sample Rate Kompatibilität prüfen
-      if (settings.sampleRate && settings.sampleRate !== contextSampleRate) {
-        console.warn(`⚠️  Sample Rate Mismatch: Microphone=${settings.sampleRate}Hz, AudioContext=${contextSampleRate}Hz`);
-        console.log(`🔄 Browser will automatically resample: ${settings.sampleRate}Hz → ${contextSampleRate}Hz`);
-      } else {
-        console.log(`✅ Perfect Sample Rate Match: ${contextSampleRate}Hz`);
-      }
-      
-      // BROWSER-AUDIO-KOMPATIBILITÄT: Prüfe Audio-Policy-Konformität
-      if (audioContext?.state === 'running' && audioContext.baseLatency) {
-        console.log(`🔊 Audio Policy Status:`, {
-          contextState: audioContext.state,
-          baseLatency: audioContext.baseLatency,
-          outputLatency: audioContext.outputLatency,
-          sampleRate: audioContext.sampleRate,
-          renderingMode: 'playback-optimized'
-        });
-      }
-      
-      // Erweiterte Track-Einstellungen - ALLE Audio-Effekte deaktiviert für natürliche Stimme
-      if (track.applyConstraints) {
-        track.applyConstraints({
-          echoCancellation: false,      // Echo-Cancel AUS für DJ-Mikrofon
-          noiseSuppression: false,      // Noise-Suppress AUS für natürliche Stimme
-          autoGainControl: false,       // AGC AUS für manuelle Kontrolle
-          sampleRate: contextSampleRate // Dynamische Sample Rate
-        }).catch(e => console.warn('Could not apply advanced mic constraints:', e));
-      }
-    });
-    
-    // MediaStreamAudioSourceNode erstellen
-    const micSourceNode = audioContext.createMediaStreamSource(microphoneStream);
-    
-    // AnalyserNode für Volume Meter erstellen
-    const micAnalyser = audioContext.createAnalyser();
-    micAnalyser.fftSize = 256;
-    micAnalyser.smoothingTimeConstant = 0.3;
-    
-    // Analyser global speichern für Volume Meter
-    (window as any).micAnalyser = micAnalyser;
-    
-    // 🎙️ PROFESSIONELLE BROADCAST AUDIO-PROCESSING CHAIN 🎙️
-    console.log('🔧 Setting up professional microphone processing chain...');
-    
-    // 1. HIGH-PASS FILTER - Entfernt Rumpeln und Low-End-Probleme
-    const highPassFilter = audioContext.createBiquadFilter();
-    highPassFilter.type = 'highpass';
-    highPassFilter.frequency.setValueAtTime(85, audioContext.currentTime); // 85Hz cutoff für Stimme
-    highPassFilter.Q.setValueAtTime(0.7, audioContext.currentTime);
-    console.log('🔧 High-pass filter: 85Hz cutoff');
-    
-    // 2. PREAMP/INPUT GAIN - Boost vor Kompressor
-    const preAmp = audioContext.createGain();
-    preAmp.gain.setValueAtTime(2.5, audioContext.currentTime); // +8dB Input Gain
-    console.log('🔧 PreAmp: +8dB input gain');
-    
-    // 3. KOMPRESSOR - Aggressiv für Broadcast-Lautheit
-    const compressor = audioContext.createDynamicsCompressor();
-    compressor.threshold.setValueAtTime(-18, audioContext.currentTime);  // -18dB threshold (aggressiver)
-    compressor.knee.setValueAtTime(15, audioContext.currentTime);        // 15dB knee (sanfter Übergang)
-    compressor.ratio.setValueAtTime(8, audioContext.currentTime);        // 8:1 ratio (stark komprimiert)
-    compressor.attack.setValueAtTime(0.001, audioContext.currentTime);   // 1ms attack (sehr schnell)
-    compressor.release.setValueAtTime(0.1, audioContext.currentTime);    // 100ms release (schnell)
-    console.log('🔧 Compressor: -18dB threshold, 8:1 ratio, fast attack');
-    
-    // 4. EQ - SPEECH OPTIMIZATION (Präsenz-Boost)
-    const eqLowMid = audioContext.createBiquadFilter();
-    eqLowMid.type = 'peaking';
-    eqLowMid.frequency.setValueAtTime(200, audioContext.currentTime);    // 200Hz
-    eqLowMid.Q.setValueAtTime(1.0, audioContext.currentTime);
-    eqLowMid.gain.setValueAtTime(-2, audioContext.currentTime);          // -2dB (reduziert Wummern)
-    
-    const eqPresence = audioContext.createBiquadFilter();
-    eqPresence.type = 'peaking';
-    eqPresence.frequency.setValueAtTime(2500, audioContext.currentTime);  // 2.5kHz Präsenz
-    eqPresence.Q.setValueAtTime(1.2, audioContext.currentTime);
-    eqPresence.gain.setValueAtTime(4, audioContext.currentTime);          // +4dB Boost für Klarheit
-    
-    const eqBrilliance = audioContext.createBiquadFilter();
-    eqBrilliance.type = 'peaking';
-    eqBrilliance.frequency.setValueAtTime(8000, audioContext.currentTime); // 8kHz Brillanz
-    eqBrilliance.Q.setValueAtTime(0.8, audioContext.currentTime);
-    eqBrilliance.gain.setValueAtTime(2, audioContext.currentTime);          // +2dB für Luftigkeit
-    console.log('🔧 EQ: Low-mid cut (-2dB@200Hz), Presence boost (+4dB@2.5kHz), Brilliance (+2dB@8kHz)');
-    
-    // 5. LIMITER - Verhindert Clipping
-    const limiter = audioContext.createDynamicsCompressor();
-    limiter.threshold.setValueAtTime(-3, audioContext.currentTime);      // -3dB threshold (sehr hoch)
-    limiter.knee.setValueAtTime(0, audioContext.currentTime);            // Hard knee (0dB)
-    limiter.ratio.setValueAtTime(20, audioContext.currentTime);          // 20:1 ratio (Brickwall)
-    limiter.attack.setValueAtTime(0.0001, audioContext.currentTime);     // 0.1ms attack (instant)
-    limiter.release.setValueAtTime(0.05, audioContext.currentTime);      // 50ms release (schnell)
-    console.log('🔧 Limiter: -3dB threshold, 20:1 ratio, brickwall limiting');
-    
-    // 6. OUTPUT GAIN - Finale Lautstärke-Kontrolle
-    const outputGain = audioContext.createGain();
-    outputGain.gain.setValueAtTime(1.8, audioContext.currentTime);       // +5dB Output für Broadcast-Level
-    console.log('🔧 Output gain: +5dB final boost');
-    
-    // Create radio processing nodes
-    await initializeRadioProcessing();
-    
-    // 📻 PROFESSIONAL RADIO BROADCAST CHAIN 📻
-    // Mic -> High-Pass -> PreAmp -> Compressor -> EQ (3-band) -> De-Esser -> Limiter -> Output Gain -> Analyser (Meter) -> Master Gain
-    // Note: Analyser positioned AFTER all processing to show final output level
-    // Note: Gate removed (was ineffective - just reduced gain instead of true threshold-based gating)
-    micSourceNode.connect(highPassFilter);
-    highPassFilter.connect(preAmp);
-    preAmp.connect(micCompressorNode!);        // Compression for consistent level
-    micCompressorNode!.connect(micEqLowNode!); // EQ chain for voice optimization
-    micEqLowNode!.connect(micEqMidNode!);
-    micEqMidNode!.connect(micEqHighNode!);
-    micEqHighNode!.connect(micDeEsserNode!);   // De-esser before limiter
-    micDeEsserNode!.connect(micLimiterNode!);  // Final limiter prevents clipping
-    micLimiterNode!.connect(outputGain);       // Output gain control
-    outputGain.connect(micAnalyser);           // Analyser AFTER processing (shows final output)
-    micAnalyser.connect(microphoneGain);       // Master microphone gain
-    
-    console.log(`?? Microphone connected with enhanced audio processing (${contextSampleRate}Hz, compression, dynamic compatibility)`);
-    return true;
-  } catch (error) {
-    console.error('Failed to setup microphone:', error);
-    // Fallback mit einfacheren Einstellungen versuchen
-    try {
-      console.log('?? Trying microphone fallback with browser defaults...');
-      microphoneStream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: false
-          // Keine Sample Rate Constraints ? Browser wählt automatisch
-        } 
-      });
-      
-      const micSourceNode = audioContext.createMediaStreamSource(microphoneStream);
-      micSourceNode.connect(microphoneGain);
-      
-      console.log('?? Microphone connected with basic settings (fallback)');
-      return true;
-    } catch (fallbackError) {
-      console.error('Failed to setup microphone even with basic settings:', fallbackError);
-      return false;
-    }
-  }
+  // Route to new MicManager module
+  return await MicManager.setupMicrophone();
 }
 
 // Crossfader-Position setzen (0 = A, 0.25 = B, 0.5 = C, 0.75 = D, 1 = alle)
+// ============================================================================
+// FACADE: Crossfader Position (routes to Mixer module - Phase 3)
+// ============================================================================
 function setCrossfaderPosition(position: number) {
-  if (!crossfaderGain) return;
-  
-  // Position zwischen 0 und 1 begrenzen
-  position = Math.max(0, Math.min(1, position));
-  
-  // Gleichmäßige Verteilung für 4 Decks
-  const aGain = position < 0.25 ? 1.0 : 1.0 - (position - 0.25) * 4;
-  const bGain = position < 0.25 ? position * 4 : (position < 0.5 ? 1.0 : 1.0 - (position - 0.5) * 4);
-  const cGain = position < 0.5 ? 0 : (position < 0.75 ? (position - 0.5) * 4 : 1.0 - (position - 0.75) * 4);
-  const dGain = position < 0.75 ? 0 : (position - 0.75) * 4;
-  
-  // Monitor-Crossfader (für Speaker/Kopfhörer)
-  crossfaderGain.a.gain.value = Math.max(0, Math.min(1, aGain));
-  crossfaderGain.b.gain.value = Math.max(0, Math.min(1, bGain));
-  crossfaderGain.c.gain.value = Math.max(0, Math.min(1, cGain));
-  crossfaderGain.d.gain.value = Math.max(0, Math.min(1, dGain));
-  
-  console.log(`🎚️ Crossfader position: ${position}, A: ${aGain.toFixed(2)}, B: ${bGain.toFixed(2)}, C: ${cGain.toFixed(2)}, D: ${dGain.toFixed(2)}`);
+  // Route to new Mixer module
+  Mixer.setCrossfaderPosition(position);
 }
 
-// Mikrofon Lautstärke steuern (Stream bleibt immer aktiv)
+// ============================================================================
+// FACADE: Microphone Control (routes to Mixer module - Phase 3)
+// ============================================================================
 function setMicrophoneEnabled(enabled: boolean, volume: number = 1) {
-  if (!microphoneGain) return;
-  
-  if (enabled) {
-    microphoneGain.gain.value = volume;
-    console.log(`🎤 Microphone volume set to ${Math.round(volume * 100)}%`);
-  } else {
-    // Mute but keep stream alive for consistent behavior
-    microphoneGain.gain.value = 0;
-    console.log(`🎤 Microphone muted (stream still recording)`);
-    // Note: Stream stays active for consistent meter display and instant activation
-  }
+  // Route to new Mixer module
+  Mixer.setMicrophoneEnabled(enabled, volume);
 }
 
 
@@ -4093,6 +3494,11 @@ async function initializeMusicLibrary() {
   console.log("📚 initializeMusicLibrary started");
   
   try {
+    // Initialize player system FIRST (creates audio elements and WaveSurfer)
+    console.log("🎵 Initializing player system...");
+    initializePlayerSystem();
+    console.log("✅ Player system initialized");
+    
     // Lade initial Songs
     console.log("🎵 Loading songs...");
     await loadSongs();
@@ -8951,11 +8357,7 @@ function initializeOpenSubsonicLogin() {
               const micReady = await setupMicrophone();
               if (micReady) {
                 setMicrophoneEnabled(false);
-                setTimeout(() => {
-                  if (typeof startVolumeMeter === 'function') {
-                    startVolumeMeter('mic');
-                  }
-                }, 100);
+                // Volume meter is automatically initialized via initializeVolumeMeters()
               }
             } catch (error) {
               console.warn("⚠️ Microphone auto-initialization failed:", error);
@@ -9064,37 +8466,28 @@ function initializeOpenSubsonicLogin() {
         loginForm.style.display = 'none';
         djControls.style.display = 'flex';
         
-        // Initialize Live Streaming functionality (after DJ controls are visible)
-        initializeLiveStreaming();
-        
-        // Auto-initialize microphone after successful login
-        console.log("🎤 Auto-initializing microphone...");
+        // 🔧 ELECTRON FIX: Initialize AudioContext BEFORE any track loading
+        // This prevents the race condition crash that occurs when AudioContext is created
+        // at the same time as audio streams are being loaded
+        console.log("🎵 Pre-initializing AudioContext to prevent Electron crash...");
         try {
           if (!audioContext) {
             await initializeAudioMixing();
-          }
-          
-          if (audioContext && audioContext.state === 'suspended') {
-            await audioContext.resume();
-          }
-          
-          const micReady = await setupMicrophone();
-          if (micReady) {
-            console.log("🎤 Microphone auto-initialized successfully (muted by default)");
-            // Microphone is now always recording but muted by default
-            setMicrophoneEnabled(false); // Start muted
-            
-            // Start microphone volume meter immediately
-            setTimeout(() => {
-              if (typeof startVolumeMeter === 'function') {
-                startVolumeMeter('mic');
-                console.log("🎤 Microphone volume meter started");
-              }
-            }, 100);
+            console.log("✅ AudioContext pre-initialized successfully");
           }
         } catch (error) {
-          console.warn("⚠️ Microphone auto-initialization failed:", error);
+          console.error("⚠️ AudioContext pre-initialization failed:", error);
         }
+        
+        // Initialize Live Streaming functionality (after DJ controls are visible)
+        initializeLiveStreaming();
+        
+        // 🔧 ELECTRON FIX: Don't auto-initialize microphone after login
+        // The getUserMedia() call crashes Electron when combined with track loading
+        // User must manually activate microphone by clicking the microphone button
+        console.log("🎤 Microphone initialization deferred - user must activate manually");
+        console.log("🎤 Click the microphone button to activate microphone input");
+        // The microphone setup button handler will call setupMicrophone() when clicked
         
         // Initialize music library
         console.log("🎵 About to call initializeMusicLibrary...");
@@ -9282,8 +8675,8 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
       }
       
       // ⭐ CENTER WAVEFORM: Keep playhead centered in zoom view (DJ mode)
-      const wavesurferZoom = waveSurfersZoom[side];
-      if (wavesurferZoom && waveformZoom[side] > 1.0) {
+      const waveformZoomInstance = waveformsZoom[side];
+      if (waveformZoomInstance && waveformZoom[side] > 1.0) {
         const progress = audio.currentTime / audio.duration;
         const containerZoom = document.getElementById(`waveform-${side}-zoom`);
         
@@ -9422,8 +8815,8 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
   
   // Control Button Event Listeners
   playPauseBtn?.addEventListener('click', () => {
-    const wavesurferZoom = waveSurfersZoom[side];
-    const wavesurferOverview = waveSurfersOverview[side];
+    const wavesurferZoom = waveformsZoom[side];
+    const wavesurferOverview = waveformsOverview[side];
     
     // HTML Audio controls playback, WaveSurfer follows for visualization
     if (audio.paused) {
@@ -9441,19 +8834,22 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
           showError(`Cannot play on Player ${side.toUpperCase()}: ${e.message}`);
         });
         
-        // Sync both WaveSurfer visualizations if available
-        if (wavesurferZoom) {
+        // Sync both waveform visualizations if available
+        const waveformZoomInstance = waveformsZoom[side];
+        const waveformOverviewInstance = waveformsOverview[side];
+        
+        if (waveformZoomInstance) {
           try {
-            wavesurferZoom.play();
+            waveformZoomInstance.play();
           } catch (e) {
-            console.warn(`?? WaveSurfer sync error on Player ${side}:`, e);
+            console.warn(`⚠️ Waveform sync error on Player ${side}:`, e);
           }
         }
-        if (wavesurferOverview) {
+        if (waveformOverviewInstance) {
           try {
-            wavesurferOverview.play();
+            waveformOverviewInstance.play();
           } catch (e) {
-            console.warn(`?? WaveSurfer Overview sync error on Player ${side}:`, e);
+            console.warn(`⚠️ Waveform Overview sync error on Player ${side}:`, e);
           }
         }
         
@@ -9467,19 +8863,22 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
     } else {
       audio.pause();
       
-      // Sync both WaveSurfer visualizations if available
-      if (wavesurferZoom) {
+      // Sync both waveform visualizations if available
+      const waveformZoomInstance = waveformsZoom[side];
+      const waveformOverviewInstance = waveformsOverview[side];
+      
+      if (waveformZoomInstance) {
         try {
-          wavesurferZoom.pause();
+          waveformZoomInstance.pause();
         } catch (e) {
-          console.warn(`?? WaveSurfer sync error on Player ${side}:`, e);
+          console.warn(`⚠️ Waveform sync error on Player ${side}:`, e);
         }
       }
-      if (wavesurferOverview) {
+      if (waveformOverviewInstance) {
         try {
-          wavesurferOverview.pause();
+          waveformOverviewInstance.pause();
         } catch (e) {
-          console.warn(`?? WaveSurfer Overview sync error on Player ${side}:`, e);
+          console.warn(`⚠️ Waveform Overview sync error on Player ${side}:`, e);
         }
       }
       
@@ -9524,24 +8923,24 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
     if (audio.src) {
       audio.currentTime = 0;
       
-      // WaveSurfer Progressbar auch zurücksetzen für beide Waveforms
-      const wavesurferZoom = waveSurfersZoom[side];
-      const wavesurferOverview = waveSurfersOverview[side];
+      // Reset both waveform visualizations
+      const waveformZoomInstance = waveformsZoom[side];
+      const waveformOverviewInstance = waveformsOverview[side];
       
-      if (wavesurferZoom) {
+      if (waveformZoomInstance) {
         try {
-          wavesurferZoom.seekTo(0);
-          console.log(`🌊 WaveSurfer Zoom ${side.toUpperCase()} reset to position 0`);
+          waveformZoomInstance.seekTo(0);
+          console.log(`🌊 Waveform Zoom ${side.toUpperCase()} reset to position 0`);
         } catch (e) {
-          console.warn(`⚠️ WaveSurfer Zoom reset error on Player ${side}:`, e);
+          console.warn(`⚠️ Waveform Zoom reset error on Player ${side}:`, e);
         }
       }
-      if (wavesurferOverview) {
+      if (waveformOverviewInstance) {
         try {
-          wavesurferOverview.seekTo(0);
-          console.log(`🌊 WaveSurfer Overview ${side.toUpperCase()} reset to position 0`);
+          waveformOverviewInstance.seekTo(0);
+          console.log(`🌊 Waveform Overview ${side.toUpperCase()} reset to position 0`);
         } catch (e) {
-          console.warn(`⚠️ WaveSurfer Overview reset error on Player ${side}:`, e);
+          console.warn(`⚠️ Waveform Overview reset error on Player ${side}:`, e);
         }
       }
       
@@ -9736,7 +9135,7 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   songsMarkedAsPlayed[side].clear();
   
   // Get audio element AFTER clearing (in case it was replaced)
-  const audio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+  const audio = getAudioElement(side);
   
   if (!audio) {
     console.error(`Audio element not found for player ${side}`);
@@ -9831,27 +9230,14 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
     }, { once: true }); // Event listener nur einmal ausführen
   }
   
-  // Crossfader anwenden falls aktiv
-  applyCrossfader();
-  
+  // REMOVED: applyCrossfader() - Crossfader removed, all decks route directly at full volume
   console.log(`Player ${side.toUpperCase()}: "${song.title}" loaded successfully`);
   
   // Update library markers to show song is now on deck
   markSongsInLibrary();
 }
 
-// Apply full volume to all decks (no crossfader)
-function applyCrossfader() {
-  // Set all deck gains to 100% (1.0)
-  if (crossfaderGain) {
-    crossfaderGain.a.gain.value = 1.0;
-    crossfaderGain.b.gain.value = 1.0;
-    crossfaderGain.c.gain.value = 1.0;
-    crossfaderGain.d.gain.value = 1.0;
-    
-    console.log(`🎚️ All decks at 100% volume`);
-  }
-}
+// REMOVED: applyCrossfader() - Crossfader removed, all decks now route directly at full volume via Mixer.ts
 
 // Player Drop Zones initialisieren
 function initializePlayerDropZones() {
@@ -10518,7 +9904,7 @@ function initializePlayerDropZone(side: 'a' | 'b' | 'c' | 'd') {
     console.log(`🎯 Dragover on player ${side}`);
     
     // Block drops only on THIS deck if it's playing
-    const thisAudio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+    const thisAudio = getAudioElement(side);
     const thisPlayerIsPlaying = thisAudio && !thisAudio.paused && thisAudio.currentTime > 0;
     
     if (thisPlayerIsPlaying) {
@@ -10597,7 +9983,7 @@ function initializePlayerDropZone(side: 'a' | 'b' | 'c' | 'd') {
     const dragEvent = e as DragEvent;
     
     // Block drops only on THIS deck if it's playing
-    const thisAudio = document.getElementById(`audio-${side}`) as HTMLAudioElement;
+    const thisAudio = getAudioElement(side);
     const thisPlayerIsPlaying = thisAudio && !thisAudio.paused && thisAudio.currentTime > 0;
     
     if (thisPlayerIsPlaying) {
@@ -11015,8 +10401,8 @@ function highlightStars(songId: string, rating: number) {
   playerRatings.forEach(playerRating => {
     const stars = playerRating.querySelectorAll('.star, .rating-star');
     // Prüfen ob dieser Player den Song hat
-    const playerId = playerRating.id.split('-')[2]; // z.B. "a" aus "player-rating-a"
-    const audio = document.getElementById(`audio-${playerId}`) as HTMLAudioElement;
+    const playerId = playerRating.id.split('-')[2] as 'a' | 'b' | 'c' | 'd'; // z.B. "a" aus "player-rating-a"
+    const audio = getAudioElement(playerId);
     
     if (audio && audio.dataset.songId === songId) {
       stars.forEach((star, index) => {
@@ -11056,8 +10442,8 @@ function resetStarHighlight(songId: string) {
   playerRatings.forEach(playerRating => {
     const stars = playerRating.querySelectorAll('.star, .rating-star');
     // Prüfen ob dieser Player den Song hat
-    const playerId = playerRating.id.split('-')[2]; // z.B. "a" aus "player-rating-a"
-    const audio = document.getElementById(`audio-${playerId}`) as HTMLAudioElement;
+    const playerId = playerRating.id.split('-')[2] as 'a' | 'b' | 'c' | 'd'; // z.B. "a" aus "player-rating-a"
+    const audio = getAudioElement(playerId);
     
     if (audio && audio.dataset.songId === songId) {
       stars.forEach(star => {
@@ -11081,348 +10467,26 @@ async function loadRatingAsync(songId: string) {
   }
 }
 
-// Audio Level Monitoring für Volume Meter
-let volumeMeterIntervals: { [key: string]: NodeJS.Timeout } = {};
-
-function startVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic' | 'deck-master' | 'stream-output') {
-  // Stoppe vorherige Intervalle
-  if (volumeMeterIntervals[side]) {
-    clearInterval(volumeMeterIntervals[side]);
-  }
-  
-  let meterId: string;
-  if (side === 'mic') {
-    meterId = 'mic-volume-meter';
-  } else if (side === 'deck-master') {
-    meterId = 'deck-master-meter';
-  } else if (side === 'stream-output') {
-    meterId = 'stream-output-meter';
-  } else {
-    meterId = `volume-meter-${side}`;
-  }
-  
-  const meterElement = document.getElementById(meterId);
-  
-  if (!meterElement) {
-    console.warn(`⚠️ Volume meter element ${meterId} not found`);
-    return;
-  }
-  
-  if (side === 'mic') {
-    // Microphone Volume Meter
-    const analyser = (window as any).micAnalyser;
-    if (!analyser) {
-      console.warn('🎤 Microphone analyser not available yet');
-      return;
-    }
-    
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    volumeMeterIntervals[side] = setInterval(() => {
-      try {
-        if (!dataArray || bufferLength <= 0) {
-          return;
-        }
-        
-        analyser.getByteFrequencyData(dataArray);
-        
-        let sum = 0;
-        for (let i = 0; i < Math.min(bufferLength, dataArray.length); i++) {
-          const value = dataArray[i];
-          if (typeof value === 'number' && !isNaN(value)) {
-            sum += value * value;
-          }
-        }
-        const rms = Math.sqrt(sum / bufferLength);
-        const normalizedLevel = Math.floor((rms / 255) * 12);
-        const clampedLevel = Math.max(0, Math.min(8, normalizedLevel));
-        
-        updateVolumeMeter(meterId, clampedLevel);
-      } catch (error) {
-        console.warn(`⚠️ Error in microphone volume meter:`, error);
-        if (volumeMeterIntervals[side]) {
-          clearInterval(volumeMeterIntervals[side]);
-          delete volumeMeterIntervals[side];
-        }
-      }
-    }, 30); // Faster update rate: ~33 FPS for quicker response
-    
-    console.log(`🎤 Volume meter started for microphone`);
-    return;
-  }
-  
-  // Deck Master Meter - Combined output of all 4 decks
-  if (side === 'deck-master') {
-    if (!masterGainNode) {
-      console.warn('🔊 Master gain node not available yet');
-      return;
-    }
-    
-    if (!audioContext) {
-      console.warn('🔊 AudioContext not available for deck master meter');
-      return;
-    }
-    
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.3;
-    
-    masterGainNode.connect(analyser);
-    
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    volumeMeterIntervals[side] = setInterval(() => {
-      try {
-        if (!dataArray || bufferLength <= 0) {
-          return;
-        }
-        
-        analyser.getByteFrequencyData(dataArray);
-        
-        let sum = 0;
-        for (let i = 0; i < Math.min(bufferLength, dataArray.length); i++) {
-          const value = dataArray[i];
-          if (typeof value === 'number' && !isNaN(value)) {
-            sum += value * value;
-          }
-        }
-        const rms = Math.sqrt(sum / bufferLength);
-        const normalizedLevel = Math.floor((rms / 255) * 12);
-        const clampedLevel = Math.max(0, Math.min(8, normalizedLevel));
-        
-        updateVolumeMeter(meterId, clampedLevel);
-      } catch (error) {
-        console.warn(`⚠️ Error in deck master volume meter:`, error);
-        if (volumeMeterIntervals[side]) {
-          clearInterval(volumeMeterIntervals[side]);
-          delete volumeMeterIntervals[side];
-        }
-      }
-    }, 30);
-    
-    console.log(`🔊 Volume meter started for deck master`);
-    return;
-  }
-  
-  // Stream Output Meter - Combined output to stream (decks + mic)
-  if (side === 'stream-output') {
-    if (!streamGainNode) {
-      console.warn('📡 Stream gain node not available yet');
-      return;
-    }
-    
-    if (!audioContext) {
-      console.warn('📡 AudioContext not available for stream output meter');
-      return;
-    }
-    
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.3;
-    
-    streamGainNode.connect(analyser);
-    
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    volumeMeterIntervals[side] = setInterval(() => {
-      try {
-        if (!dataArray || bufferLength <= 0) {
-          return;
-        }
-        
-        analyser.getByteFrequencyData(dataArray);
-        
-        let sum = 0;
-        for (let i = 0; i < Math.min(bufferLength, dataArray.length); i++) {
-          const value = dataArray[i];
-          if (typeof value === 'number' && !isNaN(value)) {
-            sum += value * value;
-          }
-        }
-        const rms = Math.sqrt(sum / bufferLength);
-        const normalizedLevel = Math.floor((rms / 255) * 12);
-        const clampedLevel = Math.max(0, Math.min(8, normalizedLevel));
-        
-        updateVolumeMeter(meterId, clampedLevel);
-      } catch (error) {
-        console.warn(`⚠️ Error in stream output volume meter:`, error);
-        if (volumeMeterIntervals[side]) {
-          clearInterval(volumeMeterIntervals[side]);
-          delete volumeMeterIntervals[side];
-        }
-      }
-    }, 30);
-    
-    console.log(`📡 Volume meter started for stream output`);
-    return;
-  }
-  
-  // Player Volume Meter - funktioniert immer, auch ohne Streaming
-  const audioElement = document.getElementById(`audio-${side}`) as HTMLAudioElement;
-  if (!audioElement) {
-    console.warn(`⚠️ Audio element for player ${side} not found`);
-    return;
-  }
-  
-  // Fallback: Wenn kein AudioContext oder kein Streaming aktiv ist
+// 🎵 Facade to new SourceNodeCache module
+// This ensures all calls route through the centralized cache
+function getOrCreateSourceNode(audioElement: HTMLAudioElement): MediaElementAudioSourceNode | null {
   if (!audioContext) {
-    // Einfache Volume Meter basierend auf audio.volume
-    volumeMeterIntervals[side] = setInterval(() => {
-      if (audioElement.paused || audioElement.muted) {
-        updateVolumeMeter(meterId, 0);
-      } else {
-        // Simulate audio level basierend auf Volume und currentTime
-        const volume = audioElement.volume;
-        const simulatedLevel = Math.floor(volume * 6); // 0-6 Balken
-        updateVolumeMeter(meterId, simulatedLevel);
-      }
-    }, 100);
-    
-    console.log(`🔊 Simple volume meter started for player ${side} (no WebAudio)`);
-    return;
+    console.warn('⚠️ AudioContext not available');
+    return null;
   }
   
-  // Web Audio API Volume Meter (wenn verfügbar)
-  let gainNode: GainNode | null = null;
-  
-  if (side === 'a') {
-    gainNode = aPlayerGain;
-  } else if (side === 'b') {
-    gainNode = bPlayerGain;
-  } else if (side === 'c') {
-    gainNode = cPlayerGain;
-  } else if (side === 'd') {
-    gainNode = dPlayerGain;
-  }
-  
-  if (!gainNode) {
-    // Fallback: Wenn GainNode nicht existiert, erstelle temporären Analyser
-    try {
-      if (audioElement.src && !audioElement.paused) {
-        // FEHLERFIX: Prüfe ob MediaElementSourceNode bereits existiert
-        let sourceNode: MediaElementAudioSourceNode;
-        if ((audioElement as any)._audioSourceNode) {
-          sourceNode = (audioElement as any)._audioSourceNode;
-          console.log(`🔄 Volume meter: reusing existing MediaElementSourceNode for ${side}`);
-        } else {
-          sourceNode = audioContext.createMediaElementSource(audioElement);
-          (audioElement as any)._audioSourceNode = sourceNode;
-          console.log(`🆕 Volume meter: created new MediaElementSourceNode for ${side}`);
-        }
-        
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.8;
-        
-        sourceNode.connect(analyser);
-        analyser.connect(audioContext.destination);
-        
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        
-        volumeMeterIntervals[side] = setInterval(() => {
-          try {
-            if (!dataArray || bufferLength <= 0) {
-              return;
-            }
-            
-            analyser.getByteFrequencyData(dataArray);
-            
-            let sum = 0;
-            for (let i = 0; i < Math.min(bufferLength, dataArray.length); i++) {
-              const value = dataArray[i];
-              if (typeof value === 'number' && !isNaN(value)) {
-                sum += value * value;
-              }
-            }
-            const rms = Math.sqrt(sum / bufferLength);
-            const normalizedLevel = Math.floor((rms / 255) * 12);
-            const clampedLevel = Math.max(0, Math.min(8, normalizedLevel));
-            
-            updateVolumeMeter(meterId, clampedLevel);
-          } catch (error) {
-            console.warn(`⚠️ Error in temporary volume meter for ${side}:`, error);
-            if (volumeMeterIntervals[side]) {
-              clearInterval(volumeMeterIntervals[side]);
-              delete volumeMeterIntervals[side];
-            }
-          }
-        }, 50);
-        
-        console.log(`🔊 Temporary volume meter started for player ${side}`);
-        return;
-      }
-    } catch (error) {
-      console.warn(`⚠️ Could not create temporary analyser for ${side}:`, error);
-    }
-    
-    // Final fallback: Einfache Volume-basierte Meter
-    volumeMeterIntervals[side] = setInterval(() => {
-      if (audioElement.paused || audioElement.muted) {
-        updateVolumeMeter(meterId, 0);
-      } else {
-        const volume = audioElement.volume;
-        const simulatedLevel = Math.floor(volume * 6);
-        updateVolumeMeter(meterId, simulatedLevel);
-      }
-    }, 100);
-    
-    console.log(`🔊 Fallback volume meter started for player ${side}`);
-    return;
-  }
-  
-  // Standard Web Audio API Volume Meter
-  const analyser = audioContext.createAnalyser();
-  analyser.fftSize = 256;
-  analyser.smoothingTimeConstant = 0.3; // Lower for faster response (was 0.8)
-  
-  // Verbinde Gain Node mit Analyser (ohne Audio-Flow zu stören)
-  gainNode.connect(analyser);
-  // Analyser does NOT connect to destination - it's just for monitoring
-  
-  const bufferLength = analyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-  
-  // Update Interval
-  volumeMeterIntervals[side] = setInterval(() => {
-    try {
-      // Sicherheitscheck: Stelle sicher, dass dataArray und bufferLength gültig sind
-      if (!dataArray || bufferLength <= 0) {
-        return;
-      }
-      
-      analyser.getByteFrequencyData(dataArray);
-      
-      // Berechne RMS (Root Mean Square) für bessere Level-Anzeige
-      let sum = 0;
-      for (let i = 0; i < Math.min(bufferLength, dataArray.length); i++) {
-        const value = dataArray[i];
-        if (typeof value === 'number' && !isNaN(value)) {
-          sum += value * value;
-        }
-      }
-      const rms = Math.sqrt(sum / bufferLength);
-      
-      // Verbesserte Empfindlichkeit - direktere Umrechnung
-      // Normalisiere von 0-255 zu 0-8 Balken mit mehr Empfindlichkeit
-      const normalizedLevel = Math.floor((rms / 255) * 12); // Erhöht auf 12 für mehr Empfindlichkeit
-      const clampedLevel = Math.max(0, Math.min(8, normalizedLevel)); // Begrenze auf 8 Balken
-      
-      updateVolumeMeter(meterId, clampedLevel);
-    } catch (error) {
-      console.warn(`⚠️ Error in volume meter loop for ${side}:`, error);
-      // Stoppe das Interval bei wiederholten Fehlern
-      if (volumeMeterIntervals[side]) {
-        clearInterval(volumeMeterIntervals[side]);
-        delete volumeMeterIntervals[side];
-      }
-    }
-  }, 30); // Faster update rate: ~33 FPS (was 50ms/20fps)
-  
-  console.log(`🔊 WebAudio volume meter started for player ${side}`);
+  // Route to new SourceNodeCache module
+  return getOrCreateSourceNodeNew(audioElement, audioContext);
+}
+
+/**
+ * @deprecated LEGACY: Replaced by VolumeMeters module (Phase 6)
+ * This function is no longer needed - meters are now managed by initializeVolumeMeters()
+ * Kept for backwards compatibility but should not be called.
+ */
+function startVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic' | 'deck-master' | 'stream-output') {
+  console.warn(`⚠️ startVolumeMeter('${side}') is DEPRECATED - now handled by VolumeMeters module`);
+  return; // No-op: All meters are initialized via initializeVolumeMeters()
 }
 
 function updateVolumeMeter(meterId: string, level: number) {
@@ -11461,14 +10525,6 @@ function updateVolumeMeter(meterId: string, level: number) {
   }
 }
 
-function stopVolumeMeter(side: 'a' | 'b' | 'c' | 'd' | 'mic' | 'deck-master' | 'stream-output') {
-  if (volumeMeterIntervals[side]) {
-    clearInterval(volumeMeterIntervals[side]);
-    delete volumeMeterIntervals[side];
-    console.log(`?? Volume meter stopped for ${side}`);
-  }
-}
-
 // Audio Event Listeners Setup
 function setupAudioEventListeners(audio: HTMLAudioElement, side: 'a' | 'b' | 'c' | 'd') {
   // Audio zu Mixing-System hinzufügen für Live-Streaming
@@ -11503,8 +10559,10 @@ function setupAudioEventListeners(audio: HTMLAudioElement, side: 'a' | 'b' | 'c'
     
     // Always ensure connection on play
     if (audioContext && (aPlayerGain || bPlayerGain || cPlayerGain || dPlayerGain)) {
-      if (!(audio as any)._isConnectedToMixer) {
+      if (!(audio as any)._isConnectedToMixer || (audio as any)._pendingMixerConnection) {
         console.log(`? ${side} player not connected - establishing connection NOW`);
+        // Clear pending flag
+        delete (audio as any)._pendingMixerConnection;
         const connected = connectAudioToMixer(audio, side);
         if (connected) {
           console.log(`? ${side} player audio routing established`);
@@ -11531,19 +10589,13 @@ function setupAudioEventListeners(audio: HTMLAudioElement, side: 'a' | 'b' | 'c'
   }, { once: false }); // Keep listening for each track
 }
 
-// Volume Meter Auto-Start (will be called from main initialization)
+/**
+ * @deprecated LEGACY: Replaced by initializeVolumeMeters() in AudioManager init
+ * All volume meters are now automatically initialized via VolumeMeters module.
+ */
 function autoStartVolumeMeters() {
-  // Auto-start volume meters when audio mixing is initialized
-  setTimeout(() => {
-    if (audioContext) {
-      console.log('🎵 Auto-starting volume meters...');
-      startVolumeMeter('a');
-      startVolumeMeter('b');
-      startVolumeMeter('c');
-      startVolumeMeter('d');
-      startVolumeMeter('mic');
-    }
-  }, 1000);
+  console.warn('⚠️ autoStartVolumeMeters() is DEPRECATED - now handled by initializeVolumeMeters()');
+  return; // No-op: Meters are initialized in initializeAudioMixing()
 }
 
 // Live Streaming State
@@ -16115,4 +15167,5 @@ function initializeDiscordClient() {
 }
 
 (window as any).githubCat = githubCat;
+
 

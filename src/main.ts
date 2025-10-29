@@ -568,6 +568,10 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
   console.log(`🔄 Clearing Player ${side.toUpperCase()} deck completely`);
   
   const audio = getAudioElement(side);
+  
+  // Get song ID BEFORE clearing (for library update later)
+  const clearedSongId = audio?.dataset.songId || playerStates[side]?.song?.id;
+  
   const titleElement = document.getElementById(`track-title-${side}`);
   const artistElement = document.getElementById(`track-artist-${side}`);
   const albumCover = document.getElementById(`album-cover-${side}`) as HTMLElement;
@@ -724,8 +728,10 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
   
   console.log(`✅ Player ${side.toUpperCase()} deck cleared completely`);
   
-  // Update library markers to remove deck indicator
-  markSongsInLibrary();
+  // Update only the cleared song's status in library
+  if (clearedSongId) {
+    updateSongStatus(clearedSongId);
+  }
 }
 
 // Get comprehensive deck state information

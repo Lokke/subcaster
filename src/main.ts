@@ -2241,14 +2241,14 @@ function startWaveformPolling() {
 
 /**
  * Analyze waveform data to detect intro/outro silence
- * Returns timing information for optimal crossfade
+ * Returns timing information for optimal track transition
  */
 interface WaveformAnalysis {
   introSilence: number;    // Seconds of silence/quietness at start
   outroSilence: number;    // Seconds of silence/quietness at end
   introEnd: number;        // When the actual music starts (in seconds)
   outroStart: number;      // When the music starts fading out (in seconds)
-  optimalCrossfadeStart: number; // Best time to start crossfade (in seconds)
+  optimalCueInPoint: number; // Best time to cue in next track (in seconds before outro)
   duration: number;        // Total track duration
 }
 
@@ -2309,19 +2309,19 @@ function analyzeWaveformForCrossfade(waveformData: { peaks: number[], duration: 
   const introSilence = introEnd;
   const outroSilence = duration - outroStart;
   
-  // Optimal crossfade start: 5-10 seconds before outro starts fading
+  // Optimal cue-in point: 5-10 seconds before outro starts fading
   // This allows for smooth mixing while music is still playing
-  const crossfadeLeadTime = Math.min(8, outroSilence * 0.5); // 8 seconds or half the outro
-  const optimalCrossfadeStart = Math.max(0, outroStart - crossfadeLeadTime);
+  const cueInLeadTime = Math.min(8, outroSilence * 0.5); // 8 seconds or half the outro
+  const optimalCueInPoint = Math.max(0, outroStart - cueInLeadTime);
   
-  console.log(`🎵 [WaveformAnalysis] Intro: ${introSilence.toFixed(1)}s, Outro: ${outroSilence.toFixed(1)}s, Crossfade at: ${optimalCrossfadeStart.toFixed(1)}s`);
+  console.log(`🎵 [WaveformAnalysis] Intro: ${introSilence.toFixed(1)}s, Outro: ${outroSilence.toFixed(1)}s, Cue-In at: ${optimalCueInPoint.toFixed(1)}s`);
   
   return {
     introSilence,
     outroSilence,
     introEnd,
     outroStart,
-    optimalCrossfadeStart,
+    optimalCueInPoint,
     duration
   };
 }
@@ -2370,11 +2370,11 @@ async function getWaveformAnalysis(songId: string, streamUrl: string): Promise<W
   }
 }
 
-// Track which songs have triggered crossfade (to avoid multiple triggers)
-const crossfadeTriggered = new Set<string>();
+// Track which songs have triggered smart cue-in (to avoid multiple triggers)
+const smartCueInTriggered = new Set<string>();
 
 /**
- * Check if we should trigger smart crossfade based on waveform analysis
+ * Check if we should trigger smart cue-in based on waveform analysis
  * Called from timeupdate event
  */
 async function checkAndTriggerSmartCrossfade(side: 'a' | 'b' | 'c' | 'd', currentTime: number) {
@@ -2383,7 +2383,7 @@ async function checkAndTriggerSmartCrossfade(side: 'a' | 'b' | 'c' | 'd', curren
   
   // Check if already triggered for this song
   const triggerKey = `${side}-${currentSong.id}`;
-  if (crossfadeTriggered.has(triggerKey)) return;
+  if (smartCueInTriggered.has(triggerKey)) return;
   
   // Get waveform analysis
   const audio = getAudioElement(side);
@@ -2396,20 +2396,20 @@ async function checkAndTriggerSmartCrossfade(side: 'a' | 'b' | 'c' | 'd', curren
     // Fallback: Use simple time-based trigger (10 seconds before end)
     const timeRemaining = audio.duration - currentTime;
     if (timeRemaining <= 10 && timeRemaining > 0) {
-      crossfadeTriggered.add(triggerKey);
+      smartCueInTriggered.add(triggerKey);
       triggerNextTrackForCrossfade(side);
     }
     return;
   }
   
-  // Smart crossfade: trigger at optimal crossfade point
-  if (currentTime >= analysis.optimalCrossfadeStart) {
-    console.log(`🎵 [SmartCrossfade] Triggering at ${currentTime.toFixed(1)}s (optimal: ${analysis.optimalCrossfadeStart.toFixed(1)}s)`);
-    crossfadeTriggered.add(triggerKey);
+  // Smart cue-in: trigger at optimal point
+  if (currentTime >= analysis.optimalCueInPoint) {
+    console.log(`🎵 [SmartCueIn] Triggering at ${currentTime.toFixed(1)}s (optimal: ${analysis.optimalCueInPoint.toFixed(1)}s)`);
+    smartCueInTriggered.add(triggerKey);
     
     // Remove trigger key when song ends (for reuse)
     const clearTrigger = () => {
-      crossfadeTriggered.delete(triggerKey);
+      smartCueInTriggered.delete(triggerKey);
       audio.removeEventListener('ended', clearTrigger);
     };
     audio.addEventListener('ended', clearTrigger, { once: true });
@@ -2419,16 +2419,16 @@ async function checkAndTriggerSmartCrossfade(side: 'a' | 'b' | 'c' | 'd', curren
 }
 
 /**
- * Trigger next track to start playing for smooth crossfade
+ * Trigger next track to start playing for smooth transition
  * This is different from handleAutoQueue - it starts BEFORE current track ends
  */
 function triggerNextTrackForCrossfade(currentDeck: 'a' | 'b' | 'c' | 'd') {
-  console.log(`🔄 [SmartCrossfade] Starting next track while ${currentDeck.toUpperCase()} is still playing`);
+  console.log(`🔄 [SmartCueIn] Starting next track while ${currentDeck.toUpperCase()} is still playing`);
   
   // Determine next deck
   const nextDeck = getNextDeck(currentDeck);
   if (!nextDeck) {
-    console.log('⏸️ No valid next deck for crossfade');
+    console.log('⏸️ No valid next deck for cue-in');
     return;
   }
   
@@ -2437,14 +2437,14 @@ function triggerNextTrackForCrossfade(currentDeck: 'a' | 'b' | 'c' | 'd') {
   
   if (nextDeckState === 'ready') {
     // Deck has a track loaded and ready - start it!
-    console.log(`▶️ [SmartCrossfade] Starting prepared track on ${nextDeck.toUpperCase()}`);
+    console.log(`▶️ [SmartCueIn] Starting prepared track on ${nextDeck.toUpperCase()}`);
     simulatePlayButtonClick(nextDeck);
   } else if (nextDeckState === 'empty') {
     // Deck is empty - load next track from queue
-    console.log(`🔄 [SmartCrossfade] Loading next track to ${nextDeck.toUpperCase()}`);
+    console.log(`🔄 [SmartCueIn] Loading next track to ${nextDeck.toUpperCase()}`);
     startNextDeckWithNewTrack(nextDeck); // Will auto-play
   } else {
-    console.log(`⚠️ [SmartCrossfade] Next deck ${nextDeck.toUpperCase()} is not ready (state: ${nextDeckState})`);
+    console.log(`⚠️ [SmartCueIn] Next deck ${nextDeck.toUpperCase()} is not ready (state: ${nextDeckState})`);
   }
   
   // Prepare the deck after next deck (for next transition)
@@ -9393,7 +9393,7 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
         }
       }
       
-      // 🎵 INTELLIGENT CROSSFADE: Check if we should start next track based on waveform analysis
+      // 🎵 INTELLIGENT CUE-IN: Check if we should start next track based on waveform analysis
       if (!audio.paused && isAutoQueueActiveForDeck(side)) {
         checkAndTriggerSmartCrossfade(side, audio.currentTime);
       }

@@ -2219,6 +2219,220 @@ function startWaveformPolling() {
   }, 2000); // Check every 2 seconds
 }
 
+/**
+ * Analyze waveform data to detect intro/outro silence
+ * Returns timing information for optimal crossfade
+ */
+interface WaveformAnalysis {
+  introSilence: number;    // Seconds of silence/quietness at start
+  outroSilence: number;    // Seconds of silence/quietness at end
+  introEnd: number;        // When the actual music starts (in seconds)
+  outroStart: number;      // When the music starts fading out (in seconds)
+  optimalCrossfadeStart: number; // Best time to start crossfade (in seconds)
+  duration: number;        // Total track duration
+}
+
+function analyzeWaveformForCrossfade(waveformData: { peaks: number[], duration: number }, silenceThreshold = 0.15): WaveformAnalysis {
+  const { peaks, duration } = waveformData;
+  const totalPeaks = peaks.length;
+  
+  // Calculate time per peak
+  const secondsPerPeak = duration / totalPeaks;
+  
+  // Find intro end (first significant peak)
+  let introEndIndex = 0;
+  for (let i = 0; i < totalPeaks; i++) {
+    const peak = Math.abs(peaks[i]);
+    if (peak > silenceThreshold) {
+      introEndIndex = i;
+      break;
+    }
+  }
+  
+  // Find outro start (last significant peak)
+  let outroStartIndex = totalPeaks - 1;
+  for (let i = totalPeaks - 1; i >= 0; i--) {
+    const peak = Math.abs(peaks[i]);
+    if (peak > silenceThreshold) {
+      outroStartIndex = i;
+      break;
+    }
+  }
+  
+  // Calculate average peak level in the middle section (for better threshold)
+  const middleStart = Math.floor(totalPeaks * 0.25);
+  const middleEnd = Math.floor(totalPeaks * 0.75);
+  let middleSum = 0;
+  let middleCount = 0;
+  
+  for (let i = middleStart; i < middleEnd; i++) {
+    middleSum += Math.abs(peaks[i]);
+    middleCount++;
+  }
+  
+  const averageMidLevel = middleSum / middleCount;
+  const fadeThreshold = averageMidLevel * 0.3; // 30% of average level
+  
+  // Find better outro start (when volume drops below 30% of average)
+  for (let i = outroStartIndex; i >= Math.floor(totalPeaks * 0.5); i--) {
+    const peak = Math.abs(peaks[i]);
+    if (peak < fadeThreshold) {
+      outroStartIndex = i;
+    } else {
+      break; // Found the start of fade-out
+    }
+  }
+  
+  // Convert indices to seconds
+  const introEnd = introEndIndex * secondsPerPeak;
+  const outroStart = outroStartIndex * secondsPerPeak;
+  const introSilence = introEnd;
+  const outroSilence = duration - outroStart;
+  
+  // Optimal crossfade start: 5-10 seconds before outro starts fading
+  // This allows for smooth mixing while music is still playing
+  const crossfadeLeadTime = Math.min(8, outroSilence * 0.5); // 8 seconds or half the outro
+  const optimalCrossfadeStart = Math.max(0, outroStart - crossfadeLeadTime);
+  
+  console.log(`🎵 [WaveformAnalysis] Intro: ${introSilence.toFixed(1)}s, Outro: ${outroSilence.toFixed(1)}s, Crossfade at: ${optimalCrossfadeStart.toFixed(1)}s`);
+  
+  return {
+    introSilence,
+    outroSilence,
+    introEnd,
+    outroStart,
+    optimalCrossfadeStart,
+    duration
+  };
+}
+
+/**
+ * Get waveform analysis for a song
+ * Checks cache first, otherwise fetches and analyzes
+ */
+async function getWaveformAnalysis(songId: string, streamUrl: string): Promise<WaveformAnalysis | null> {
+  try {
+    // Check cache first
+    let waveformData = waveformCache.get(songId);
+    
+    if (!waveformData) {
+      // Fetch from server
+      const waveformUrl = `/api/waveform/${songId}?url=${encodeURIComponent(streamUrl)}`;
+      const response = await fetch(waveformUrl);
+      
+      if (response.status === 202) {
+        console.log(`⏳ [WaveformAnalysis] Waveform still generating for ${songId}`);
+        return null; // Not ready yet
+      }
+      
+      if (!response.ok) {
+        console.warn(`⚠️ [WaveformAnalysis] Failed to fetch waveform for ${songId}`);
+        return null;
+      }
+      
+      waveformData = await response.json();
+      
+      if (!waveformData || !waveformData.peaks || waveformData.peaks.length === 0) {
+        console.warn(`⚠️ [WaveformAnalysis] Invalid waveform data for ${songId}`);
+        return null;
+      }
+      
+      // Cache it
+      waveformCache.set(songId, waveformData);
+    }
+    
+    // Analyze and return
+    return analyzeWaveformForCrossfade(waveformData);
+    
+  } catch (error) {
+    console.error(`❌ [WaveformAnalysis] Error analyzing ${songId}:`, error);
+    return null;
+  }
+}
+
+// Track which songs have triggered crossfade (to avoid multiple triggers)
+const crossfadeTriggered = new Set<string>();
+
+/**
+ * Check if we should trigger smart crossfade based on waveform analysis
+ * Called from timeupdate event
+ */
+async function checkAndTriggerSmartCrossfade(side: 'a' | 'b' | 'c' | 'd', currentTime: number) {
+  const currentSong = getCurrentLoadedSong(side);
+  if (!currentSong) return;
+  
+  // Check if already triggered for this song
+  const triggerKey = `${side}-${currentSong.id}`;
+  if (crossfadeTriggered.has(triggerKey)) return;
+  
+  // Get waveform analysis
+  const audio = getAudioElement(side);
+  if (!audio || !audio.src) return;
+  
+  const streamUrl = audio.src;
+  const analysis = await getWaveformAnalysis(currentSong.id, streamUrl);
+  
+  if (!analysis) {
+    // Fallback: Use simple time-based trigger (10 seconds before end)
+    const timeRemaining = audio.duration - currentTime;
+    if (timeRemaining <= 10 && timeRemaining > 0) {
+      crossfadeTriggered.add(triggerKey);
+      triggerNextTrackForCrossfade(side);
+    }
+    return;
+  }
+  
+  // Smart crossfade: trigger at optimal crossfade point
+  if (currentTime >= analysis.optimalCrossfadeStart) {
+    console.log(`🎵 [SmartCrossfade] Triggering at ${currentTime.toFixed(1)}s (optimal: ${analysis.optimalCrossfadeStart.toFixed(1)}s)`);
+    crossfadeTriggered.add(triggerKey);
+    
+    // Remove trigger key when song ends (for reuse)
+    const clearTrigger = () => {
+      crossfadeTriggered.delete(triggerKey);
+      audio.removeEventListener('ended', clearTrigger);
+    };
+    audio.addEventListener('ended', clearTrigger, { once: true });
+    
+    triggerNextTrackForCrossfade(side);
+  }
+}
+
+/**
+ * Trigger next track to start playing for smooth crossfade
+ * This is different from handleAutoQueue - it starts BEFORE current track ends
+ */
+function triggerNextTrackForCrossfade(currentDeck: 'a' | 'b' | 'c' | 'd') {
+  console.log(`🔄 [SmartCrossfade] Starting next track while ${currentDeck.toUpperCase()} is still playing`);
+  
+  // Determine next deck
+  const nextDeck = getNextDeck(currentDeck);
+  if (!nextDeck) {
+    console.log('⏸️ No valid next deck for crossfade');
+    return;
+  }
+  
+  // Check if next deck is ready
+  const nextDeckState = getDeckState(nextDeck);
+  
+  if (nextDeckState === 'ready') {
+    // Deck has a track loaded and ready - start it!
+    console.log(`▶️ [SmartCrossfade] Starting prepared track on ${nextDeck.toUpperCase()}`);
+    simulatePlayButtonClick(nextDeck);
+  } else if (nextDeckState === 'empty') {
+    // Deck is empty - load next track from queue
+    console.log(`🔄 [SmartCrossfade] Loading next track to ${nextDeck.toUpperCase()}`);
+    startNextDeckWithNewTrack(nextDeck); // Will auto-play
+  } else {
+    console.log(`⚠️ [SmartCrossfade] Next deck ${nextDeck.toUpperCase()} is not ready (state: ${nextDeckState})`);
+  }
+  
+  // Prepare the deck after next deck (for next transition)
+  setTimeout(() => {
+    prepareNextDeckInSequence(nextDeck);
+  }, 2000);
+}
+
 // Render waveform background on an element
 async function renderWaveformBackground(element: HTMLElement, songId: string, waveformData: { peaks: number[], duration: number }): Promise<void> {
   if (!waveformData || !waveformData.peaks || waveformData.peaks.length === 0) {
@@ -9130,6 +9344,11 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
           songsMarkedAsPlayed[side].add(currentSong.id);
           addSongToPlayHistory(currentSong, progress);
         }
+      }
+      
+      // 🎵 INTELLIGENT CROSSFADE: Check if we should start next track based on waveform analysis
+      if (!audio.paused && isAutoQueueActiveForDeck(side)) {
+        checkAndTriggerSmartCrossfade(side, audio.currentTime);
       }
       
       // ⭐ CENTER WAVEFORM: Keep playhead centered in zoom view (DJ mode)

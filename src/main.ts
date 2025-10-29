@@ -2748,7 +2748,7 @@ function isMicrophoneQueueItem(item: QueueItem): boolean {
 
 // Auto-Queue System State
 let autoQueueConfig = {
-  deckPairAB: false,   // A+B Deck-Pair standardmäßig deaktiviert
+  deckPairAB: true,   // A+B Deck-Pair standardmäßig AKTIVIERT (entspricht HTML default)
   deckPairCD: false,   // C+D Deck-Pair standardmäßig deaktiviert
   lastPlayedDeck: null as 'a' | 'b' | 'c' | 'd' | null,  // Letztes gespieltes Deck für Rotation
   playbackOrder: ['a', 'b', 'c', 'd'] as ('a' | 'b' | 'c' | 'd')[],  // Playback-Reihenfolge

@@ -581,7 +581,7 @@ app.get('/api/waveform/:songId', async (req, res) => {
     // 12.5 peaks per second = 75% reduction from original 50 peaks/sec
     // Example: 3-minute track = 180s * 12.5 = 2250 peaks (was 9000)
     // This gives 80ms resolution - still smooth for UI, but 4x faster generation
-    const peaksPerSecond = 12;
+    const peaksPerSecond = 24;
     
     console.log(`🌊 [WAVEFORM] ========================================`);
     console.log(`🌊 [WAVEFORM] Request for: ${songId}`);

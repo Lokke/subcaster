@@ -5051,15 +5051,6 @@ function displaySearchResults(results: any, addToHistory: boolean = true) {
     });
 
     songContainer.render();
-    
-    // Load waveform backgrounds for songs asynchronously
-    // Wait for DOM to be ready before loading waveforms
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        console.log('🌊 [SearchResults] Loading waveforms for search results...');
-        loadVisibleSongWaveforms(searchContent);
-      }, 150);
-    });
   }
   
   if (!hasResults) {
@@ -13063,17 +13054,7 @@ function showAlbumDetailView(album: OpenSubsonicAlbum, tracks: OpenSubsonicSong[
       </div>
       <div class="track-list">
         <h4>Tracks</h4>
-        <div class="tracks">
-          ${tracks.map((track, index) => `
-            <div class="track-item" data-track-id="${track.id}" draggable="true">
-              <span class="track-number">${index + 1}</span>
-              <span class="track-title">${track.title}</span>
-              <div class="track-rating" data-track-id="${track.id}">
-                ${generateStarRating(track.userRating || 0)}
-              </div>
-              <span class="track-duration">${formatDuration(track.duration || 0)}</span>
-            </div>
-          `).join('')}
+        <div class="tracks" id="album-tracks-container">
         </div>
       </div>
     </div>
@@ -13081,47 +13062,22 @@ function showAlbumDetailView(album: OpenSubsonicAlbum, tracks: OpenSubsonicSong[
 
   browseContent.appendChild(detailView);
   
-  // Add drag and drop handlers for tracks
-  const trackItems = detailView.querySelectorAll('.track-item');
-  trackItems.forEach((item, index) => {
-    const trackElement = item as HTMLElement;
-    const trackId = trackElement.getAttribute('data-track-id');
-    const track = tracks.find(t => t.id === trackId);
-    
-    // Drag handlers
-    trackElement.addEventListener('dragstart', (e) => {
-      trackElement.classList.add('dragging');
-      if (track && e.dataTransfer) {
-        // Set JSON data (preferred)
-        e.dataTransfer.setData('application/json', JSON.stringify({
-          type: 'track',
-          track: track,
-          sourceUrl: openSubsonicClient?.getStreamUrl(track.id)
-        }));
-        // Set track ID as text/plain for fallback compatibility
-        e.dataTransfer.setData('text/plain', track.id);
-        e.dataTransfer.effectAllowed = 'copy';
-      }
+  // Create unified song elements for tracks
+  const tracksContainer = detailView.querySelector('#album-tracks-container');
+  if (tracksContainer) {
+    tracks.forEach(track => {
+      const songElement = createUnifiedSongElement(track, 'album');
+      tracksContainer.appendChild(songElement);
     });
-    
-    trackElement.addEventListener('dragend', () => {
-      trackElement.classList.remove('dragging');
-    });
-    
-    // Click handler for playing
-    trackElement.addEventListener('click', (e) => {
-      // Ignore clicks on rating stars
-      if ((e.target as HTMLElement).classList.contains('star')) return;
-      
-      if (track) {
-        console.log('Track selected:', track.title);
-        // Feature implementation needed
-      }
-    });
-  });
+  }
   
   // Load waveform backgrounds for tracks asynchronously
-  setTimeout(() => loadVisibleSongWaveforms(detailView), 100);
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      console.log('🌊 [AlbumView] Loading waveforms for album tracks...');
+      loadVisibleSongWaveforms(detailView);
+    }, 150);
+  });
   
   // Add rating handlers
   const ratingContainers = detailView.querySelectorAll('.track-rating');
@@ -13658,7 +13614,7 @@ class LibraryBrowser {
 
       <div class="media-section" id="similar-artists-section" style="display: none;">
         <h3 class="section-title">Similar Artists</h3>
-        <div class="horizontal-scroll artist-grid" id="similar-artists">
+        <div class="horizontal-scroll" id="similar-artists">
           <div class="loading-placeholder">Loading similar artists...</div>
         </div>
       </div>
@@ -13679,36 +13635,36 @@ class LibraryBrowser {
           similarSection.style.display = 'block';
           const similarContainer = document.getElementById('similar-artists');
           if (similarContainer) {
-            similarContainer.innerHTML = artistInfo.similarArtist.map((simArtist: any) => {
-              const simArtistImageUrl = getArtistImageUrl(simArtist.artistImageUrl, 300);
-              return `
-                <div class="artist-card clickable" data-artist-id="${simArtist.id}" data-artist-name="${escapeHtml(simArtist.name)}">
-                  <div class="artist-image">
-                    ${simArtistImageUrl 
-                      ? `<img src="${simArtistImageUrl}" alt="${escapeHtml(simArtist.name)}" onerror="this.parentElement.innerHTML='<span class=\\'material-icons\\'>person</span>';">` 
-                      : `<span class="material-icons">person</span>`
-                    }
-                  </div>
-                  <p class="artist-name">${escapeHtml(simArtist.name)}</p>
-                </div>
-              `;
-            }).join('');
+            const artistsHtml = artistInfo.similarArtist.map((simArtist: any) => `
+          <div class="artist-card clickable" data-artist-id="${simArtist.id}">
+            <div class="artist-image" data-artist-id="${simArtist.id}">
+              <div class="no-cover">🎤</div>
+            </div>
+            <h4 class="artist-name">${escapeHtml(simArtist.name)}</h4>
+          </div>
+        `).join('');
             
-            // Drag scrolling für similar artists
+            similarContainer.className = 'horizontal-scroll';
+            similarContainer.innerHTML = artistsHtml;
+            
+            // Add drag scrolling
             addDragScrollingToContainer(similarContainer);
             
-            // Click events für similar artists
-            similarContainer.querySelectorAll('.artist-card[data-artist-id]').forEach(card => {
+            // Load artist images asynchronously
+            this.loadArtistImages(similarContainer, artistInfo.similarArtist);
+            
+            // Add click events
+            similarContainer.querySelectorAll('[data-artist-id]').forEach(card => {
               card.addEventListener('click', () => {
                 const artistId = card.getAttribute('data-artist-id');
-                const artistName = card.getAttribute('data-artist-name');
-                if (artistId && artistName) {
+                const simArtist = artistInfo.similarArtist.find((a: any) => a.id === artistId);
+                if (simArtist) {
                   const clickedArtist: OpenSubsonicArtist = {
-                    id: artistId,
-                    name: artistName,
-                    albumCount: 0 // Wird später geladen
+                    id: simArtist.id,
+                    name: simArtist.name,
+                    albumCount: simArtist.albumCount || 0
                   };
-                  console.log(`🎤 Similar Artist clicked: "${artistName}"`);
+                  console.log(`🎤 Similar Artist clicked: "${simArtist.name}"`);
                   libraryBrowser.showArtist(clickedArtist);
                 }
               });
@@ -14092,6 +14048,9 @@ class LibraryBrowser {
         
         // Add click listeners for artist and album links in search results
         addSongClickListeners(songSection);
+        
+        // Load waveform backgrounds for songs asynchronously
+        setTimeout(() => loadVisibleSongWaveforms(songSection), 100);
       }
 
       if (!results.artist?.length && !results.album?.length && !results.song?.length) {
@@ -14798,27 +14757,32 @@ class MediaContainer {
   }
 
   private createArtistElement(element: HTMLElement, item: MediaItem) {
-    // Always show fallback icon - no image loading
-    let imageHtml = '<span class="material-icons artist-placeholder">artist</span>';
+    // Get artist image URL with fallback
+    const artistImageUrl = item.artistImageUrl 
+      ? getArtistImageUrl(item.artistImageUrl, 300)
+      : (item.coverArt && openSubsonicClient ? openSubsonicClient.getCoverArtUrl(item.coverArt, 300) : '');
     
     // For search results, use simplified structure with all styling on main element
     if (element.closest('#search-content') || document.getElementById('search-content')) {
       element.className = 'artist-wrapper';
       element.innerHTML = `
-        ${imageHtml}
+        <span class="material-icons artist-placeholder">person</span>
         <div class="artist-content">
           <div class="artist-name">${escapeHtml(item.name)}</div>
           <div class="artist-album-count">${item.albumCount || 0} Albums</div>
         </div>
       `;
     } else {
-      // For browse content, use card layout
-      element.className += ' artist-card';
+      // For browse content, use unified card layout (same as Similar Artists)
+      element.className += ' artist-card clickable';
       element.innerHTML = `
-        <div class="artist-avatar">
-          ${imageHtml}
+        <div class="artist-image">
+          ${artistImageUrl 
+            ? `<img src="${artistImageUrl}" alt="${escapeHtml(item.name)}" onerror="this.parentElement.innerHTML='<span class=\\'material-icons\\'>person</span>';">` 
+            : `<span class="material-icons">person</span>`
+          }
         </div>
-        <div class="artist-name">${escapeHtml(item.name)}</div>
+        <p class="artist-name">${escapeHtml(item.name)}</p>
       `;
     }
   }

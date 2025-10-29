@@ -11,6 +11,22 @@ const SERVER_PORT = 3000;
 const isDev = !app.isPackaged;
 
 // ============================================================================
+// PERFORMANCE & RENDERING
+// ============================================================================
+
+// Enable GPU acceleration for smooth animations
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('ignore-gpu-blacklist');
+app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder,VaapiVideoEncoder');
+
+// Improve CSS animation performance
+app.commandLine.appendSwitch('disable-frame-rate-limit'); // Remove FPS throttling
+app.commandLine.appendSwitch('disable-gpu-vsync'); // Disable VSync for smoother animations
+
+console.log('⚡ [ELECTRON] GPU acceleration and animation performance optimizations enabled');
+
+// ============================================================================
 // CRASH REPORTING & DEBUGGING
 // ============================================================================
 

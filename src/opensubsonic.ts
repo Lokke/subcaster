@@ -612,6 +612,24 @@ class SubsonicApiClient {
     return proxiedUrl;
   }
 
+  // Get ORIGINAL stream URL (not proxied) for server-side operations like waveform generation
+  getOriginalStreamUrl(songId: string): string {
+    if (!this.auth) {
+      throw new Error('Not authenticated');
+    }
+
+    const params = new URLSearchParams({
+      u: this.config.username,
+      t: this.auth.token,
+      s: this.auth.salt,
+      v: '1.16.1',
+      c: 'SubCaster',
+      id: songId
+    });
+
+    return `${this.config.serverUrl}/rest/stream?${params.toString()}`;
+  }
+
   // Cover Art URL erstellen (ohne Cache)
   getCoverArtUrl(coverArtId: string, size = 300): string {
     if (!this.auth || !coverArtId) {

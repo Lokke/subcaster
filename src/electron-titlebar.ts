@@ -35,15 +35,34 @@ export function initElectronTitlebar() {
   // Add window control event listeners
   const electronAPI = (window as any).electronAPI;
   
-  document.getElementById('minimize-btn')?.addEventListener('click', () => {
+  const minimizeBtn = document.getElementById('minimize-btn');
+  const maximizeBtn = document.getElementById('maximize-btn');
+  const closeBtn = document.getElementById('close-btn');
+  
+  console.log('🔍 Titlebar buttons found:', {
+    minimize: !!minimizeBtn,
+    maximize: !!maximizeBtn,
+    close: !!closeBtn
+  });
+  
+  minimizeBtn?.addEventListener('click', (e) => {
+    console.log('🖱️ Minimize button clicked');
+    e.stopPropagation();
+    e.preventDefault();
     electronAPI.minimizeWindow();
   });
   
-  document.getElementById('maximize-btn')?.addEventListener('click', () => {
+  maximizeBtn?.addEventListener('click', (e) => {
+    console.log('🖱️ Maximize button clicked');
+    e.stopPropagation();
+    e.preventDefault();
     electronAPI.maximizeWindow();
   });
   
-  document.getElementById('close-btn')?.addEventListener('click', () => {
+  closeBtn?.addEventListener('click', (e) => {
+    console.log('🖱️ Close button clicked');
+    e.stopPropagation();
+    e.preventDefault();
     electronAPI.closeWindow();
   });
   
@@ -76,6 +95,13 @@ export function initElectronTitlebar() {
   // Add double-click to maximize/restore on drag regions
   document.addEventListener('dblclick', (e) => {
     const target = e.target as HTMLElement;
+    
+    // Never maximize when clicking on buttons or interactive elements
+    if (target.closest('button') || target.closest('input') || target.closest('select') || 
+        target.closest('.titlebar-button') || target.closest('.titlebar-controls')) {
+      return;
+    }
+    
     const computedStyle = window.getComputedStyle(target);
     const appRegion = computedStyle.getPropertyValue('-webkit-app-region');
     

@@ -1,84 +1,104 @@
 /* LCD/CRT Monitor Effect Import */
 @import url(https://fonts.googleapis.com/css?family=Source+Code+Pro:400,500,600,700,900,300,200);
 
-/* Electron Custom Titlebar */
+/* Electron Custom Titlebar - Hidden, only controls visible */
 #electron-titlebar {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  height: 32px;
-  background: #1a1a1a;
+  height: auto;
+  background: transparent;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  justify-content: flex-end;
+  align-items: flex-start;
   z-index: 999999;
-  border-bottom: 1px solid #333;
+  border-bottom: none;
   user-select: none;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+  overflow: visible;
 }
 
 .titlebar-drag-region {
-  flex: 1;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  padding-left: 12px;
-  -webkit-app-region: drag;
+  display: none;
 }
 
 .titlebar-title {
-  font-size: 13px;
-  color: #00ff88;
-  font-weight: 500;
-  font-family: 'Source Code Pro', monospace;
+  display: none;
 }
 
 .titlebar-controls {
   display: flex;
-  height: 100%;
+  height: auto;
+  background: transparent;
+  border-bottom-left-radius: 0;
   -webkit-app-region: no-drag;
+  pointer-events: auto;
+  box-shadow: none;
+  gap: 0;
+  margin: 0;
 }
 
 .titlebar-button {
-  width: 46px;
-  height: 100%;
-  border: none;
-  background: transparent;
+  width: auto;
+  min-width: 32px;
+  height: 28px;
+  border: 2px solid #444;
+  background: rgba(0, 0, 0, 0.9);
   color: #ccc;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: all 0.15s ease;
+  font-family: 'Source Code Pro', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  padding: 0 0.5rem;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  border-radius: 0;
 }
 
 .titlebar-button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.15);
+  border-color: #666;
 }
 
 .titlebar-button.close-btn:hover {
-  background: #e81123;
-  color: white;
+  background: rgba(232, 17, 35, 0.2);
+  border-color: #e81123;
+  color: #e81123;
 }
 
 .titlebar-button svg {
   pointer-events: none;
+  width: 12px;
+  height: 12px;
 }
 
-/* Adjust main content to account for titlebar */
+/* No padding needed - titlebar is overlay */
 body:has(#electron-titlebar) {
-  padding-top: 32px;
+  padding-top: 0;
 }
 
-/* Electron Window Drag Regions - Only on empty backgrounds/borders */
-body:has(#electron-titlebar) .deck-header,
-body:has(#electron-titlebar) .library-header {
+/* Electron Window Drag Regions - Backgrounds are draggable */
+body:has(#electron-titlebar) .dj-section,
+body:has(#electron-titlebar) .player-deck,
+body:has(#electron-titlebar) .deck-container,
+body:has(#electron-titlebar) .center-controls,
+body:has(#electron-titlebar) .center-mixer-panel,
+body:has(#electron-titlebar) .mixer-section,
+body:has(#electron-titlebar) .visualizer-container,
+body:has(#electron-titlebar) .music-library {
   -webkit-app-region: drag;
   -webkit-user-select: none;
   user-select: none;
 }
 
-/* Make ALL interactive elements non-draggable */
+/* Make ALL interactive elements non-draggable (overrides background drag) */
 body:has(#electron-titlebar) button,
 body:has(#electron-titlebar) input,
 body:has(#electron-titlebar) select,
@@ -88,15 +108,19 @@ body:has(#electron-titlebar) .slider,
 body:has(#electron-titlebar) canvas,
 body:has(#electron-titlebar) .waveform,
 body:has(#electron-titlebar) .waveform-container,
-body:has(#electron-titlebar) .player-deck,
-body:has(#electron-titlebar) .deck-container,
-body:has(#electron-titlebar) .mixer-section,
-body:has(#electron-titlebar) .visualizer-container,
 body:has(#electron-titlebar) .album-card,
+body:has(#electron-titlebar) .album-cover-large,
+body:has(#electron-titlebar) .library-album-cover,
+body:has(#electron-titlebar) .album-item-modern,
 body:has(#electron-titlebar) .track-item,
+body:has(#electron-titlebar) .track-item-oneline,
 body:has(#electron-titlebar) .artist-card,
 body:has(#electron-titlebar) .music-card,
 body:has(#electron-titlebar) .song-row,
+body:has(#electron-titlebar) .unified-song-item,
+body:has(#electron-titlebar) .queue-item-wrapper,
+body:has(#electron-titlebar) .queue-song-button,
+body:has(#electron-titlebar) .queue-mic-button,
 body:has(#electron-titlebar) .tilted-breadcrumb-item,
 body:has(#electron-titlebar) .breadcrumb-btn,
 body:has(#electron-titlebar) .breadcrumb-element,
@@ -104,10 +128,32 @@ body:has(#electron-titlebar) .scrollable,
 body:has(#electron-titlebar) .library-content,
 body:has(#electron-titlebar) .albums-grid,
 body:has(#electron-titlebar) .artists-grid,
-body:has(#electron-titlebar) .tracks-list {
+body:has(#electron-titlebar) .tracks-list,
+body:has(#electron-titlebar) .controls,
+body:has(#electron-titlebar) .control-group,
+body:has(#electron-titlebar) .knob,
+body:has(#electron-titlebar) .fader,
+body:has(#electron-titlebar) .eq-control,
+body:has(#electron-titlebar) .mic-btn-pro,
+body:has(#electron-titlebar) .mic-effect-button,
+body:has(#electron-titlebar) .mic-effects-vertical,
+body:has(#electron-titlebar) .stream-live-indicator,
+body:has(#electron-titlebar) .user-status-indicator,
+body:has(#electron-titlebar) .volume-meter-compact,
+body:has(#electron-titlebar) .mic-device-dropdown,
+body:has(#electron-titlebar) .wishbox-frame {
   -webkit-app-region: no-drag;
   -webkit-user-select: auto;
   user-select: auto;
+}
+
+/* Album covers need to be draggable for deck-to-deck drag, but not window drag */
+body:has(#electron-titlebar) .album-cover,
+body:has(#electron-titlebar) .album-cover-container,
+body:has(#electron-titlebar) .album-cover-modern {
+  -webkit-app-region: no-drag;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Material Icons Font - Local */
@@ -6802,6 +6848,7 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
 }
 
 .track-item {
+  position: relative; /* For waveform background positioning */
   background: #333;
   border: 1px solid #555;
   border-radius: 4px;
@@ -6809,6 +6856,7 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   margin-bottom: 0.4rem;
   cursor: grab;
   transition: all 0.3s ease;
+  overflow: hidden; /* Clip waveform to item bounds */
 }
 
 .track-item:hover {
@@ -7154,6 +7202,10 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   animation: neon-pulse-a 7.3s ease-in-out infinite;
   z-index: 10; /* Higher z-index for deck content */
   position: relative;
+  /* Force hardware acceleration for smooth animation in Electron */
+  will-change: box-shadow, border-color;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 #player-b.playing {
@@ -7162,6 +7214,10 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   animation: neon-pulse-b 8.1s ease-in-out infinite;
   z-index: 10; /* Higher z-index for deck content */
   position: relative;
+  /* Force hardware acceleration for smooth animation in Electron */
+  will-change: box-shadow, border-color;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 #player-c.playing {
@@ -7170,6 +7226,10 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   animation: neon-pulse-c 6.7s ease-in-out infinite;
   z-index: 10; /* Higher z-index for deck content */
   position: relative;
+  /* Force hardware acceleration for smooth animation in Electron */
+  will-change: box-shadow, border-color;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 #player-d.playing {
@@ -7178,6 +7238,10 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   animation: neon-pulse-d 9.2s ease-in-out infinite;
   z-index: 10; /* Higher z-index for deck content */
   position: relative;
+  /* Force hardware acceleration for smooth animation in Electron */
+  will-change: box-shadow, border-color;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* Irregular Neon Pulse Animations - Natural breathing patterns with reduced glow */
@@ -7358,6 +7422,8 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   display: flex;
   gap: 2px;
   align-items: center;
+  position: relative;
+  z-index: 2;
 }
 
 .star {
@@ -7426,6 +7492,7 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
 }
 
 .track-item-oneline {
+  position: relative; /* For waveform background positioning */
   display: grid;
   grid-template-columns: 60px 2fr 1.5fr 1.5fr 120px 80px;
   gap: 1rem;
@@ -7434,6 +7501,7 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   cursor: pointer;
   transition: all 0.3s ease;
   align-items: center;
+  overflow: hidden; /* Clip waveform to item bounds */
 }
 
 .track-item-oneline:hover {
@@ -7571,13 +7639,13 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   transform: scale(0.95);
 }
 
-/* Song markers for queue and deck status */
+/* Song markers for queue and deck status - REMOVED background colors, only border-left for visual reference */
 .track-item.in-queue,
 .track-item-oneline.in-queue,
 .song-row.in-queue,
 .unified-song-item.in-queue {
   border-left: 4px solid #7289da !important;
-  background: linear-gradient(90deg, rgba(114, 137, 218, 0.15) 0%, transparent 100%);
+  /* Background removed - waveform will show the color */
 }
 
 .track-item.on-deck-a,
@@ -7585,7 +7653,16 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
 .song-row.on-deck-a,
 .unified-song-item.on-deck-a {
   border-left: 4px solid #ff6b6b !important;
-  background: linear-gradient(90deg, rgba(255, 107, 107, 0.15) 0%, transparent 100%);
+  /* Background removed - waveform will show the color */
+}
+
+/* Color stars when parent is on deck A */
+.track-item.on-deck-a .star.filled,
+.track-item-oneline.on-deck-a .star.filled,
+.song-row.on-deck-a .star.filled,
+.unified-song-item.on-deck-a .star.filled {
+  color: #ff6b6b !important;
+  text-shadow: 0 0 4px rgba(255, 107, 107, 0.5) !important;
 }
 
 .track-item.on-deck-b,
@@ -7593,7 +7670,16 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
 .song-row.on-deck-b,
 .unified-song-item.on-deck-b {
   border-left: 4px solid #4ecdc4 !important;
-  background: linear-gradient(90deg, rgba(78, 205, 196, 0.15) 0%, transparent 100%);
+  /* Background removed - waveform will show the color */
+}
+
+/* Color stars when parent is on deck B */
+.track-item.on-deck-b .star.filled,
+.track-item-oneline.on-deck-b .star.filled,
+.song-row.on-deck-b .star.filled,
+.unified-song-item.on-deck-b .star.filled {
+  color: #4ecdc4 !important;
+  text-shadow: 0 0 4px rgba(78, 205, 196, 0.5) !important;
 }
 
 .track-item.on-deck-c,
@@ -7601,7 +7687,16 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
 .song-row.on-deck-c,
 .unified-song-item.on-deck-c {
   border-left: 4px solid #ffd93d !important;
-  background: linear-gradient(90deg, rgba(255, 217, 61, 0.15) 0%, transparent 100%);
+  /* Background removed - waveform will show the color */
+}
+
+/* Color stars when parent is on deck C */
+.track-item.on-deck-c .star.filled,
+.track-item-oneline.on-deck-c .star.filled,
+.song-row.on-deck-c .star.filled,
+.unified-song-item.on-deck-c .star.filled {
+  color: #ffd93d !important;
+  text-shadow: 0 0 4px rgba(255, 217, 61, 0.5) !important;
 }
 
 .track-item.on-deck-d,
@@ -7609,7 +7704,25 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
 .song-row.on-deck-d,
 .unified-song-item.on-deck-d {
   border-left: 4px solid #95e1d3 !important;
-  background: linear-gradient(90deg, rgba(149, 225, 211, 0.15) 0%, transparent 100%);
+  /* Background removed - waveform will show the color */
+}
+
+/* Color stars when parent is on deck D */
+.track-item.on-deck-d .star.filled,
+.track-item-oneline.on-deck-d .star.filled,
+.song-row.on-deck-d .star.filled,
+.unified-song-item.on-deck-d .star.filled {
+  color: #95e1d3 !important;
+  text-shadow: 0 0 4px rgba(149, 225, 211, 0.5) !important;
+}
+
+/* Color stars when parent is in queue */
+.track-item.in-queue .star.filled,
+.track-item-oneline.in-queue .star.filled,
+.song-row.in-queue .star.filled,
+.unified-song-item.in-queue .star.filled {
+  color: #7289da !important;
+  text-shadow: 0 0 4px rgba(114, 137, 218, 0.5) !important;
 }
 
 /* ========================================
@@ -12339,4 +12452,31 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   .queue-song-artist {
     font-size: 7px;
   }
+}
+
+/* ============================================
+   Waveform Background Styling for Song Items
+   ============================================ */
+
+/* Song waveform background canvas */
+.song-waveform-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.15;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
+}
+
+/* Ensure song content stays above waveform */
+.track-item > *:not(.song-waveform-bg),
+.track-item-oneline > *:not(.song-waveform-bg),
+.song-row > *:not(.song-waveform-bg),
+.unified-song-item > *:not(.song-waveform-bg),
+.music-card > *:not(.song-waveform-bg) {
+  position: relative;
+  z-index: 1;
 }

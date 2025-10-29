@@ -1972,7 +1972,14 @@ function initializeWaveforms(side: 'a' | 'b' | 'c' | 'd', trackDuration?: number
     audioElement.id = `audio-${side}`;
     audioElement.preload = 'metadata';
     audioElement.crossOrigin = 'anonymous'; // For CORS
+    
+    // 🔧 CRITICAL FIX: Audio elements MUST be in DOM to work!
+    // Add to body (hidden)
+    audioElement.style.display = 'none';
+    document.body.appendChild(audioElement);
+    
     deckAudioElements[side] = audioElement;
+    console.log(`🎵 Created and attached audio element for deck ${side}`);
   }
 
   // Get AudioContext from AudioManager
@@ -2111,6 +2118,316 @@ function clearWaveform(side: 'a' | 'b' | 'c' | 'd') {
   console.log(`🗑️ Waveform completely cleared for ${side} player`);
 }
 
+// Cache for waveform data to avoid redundant requests
+const waveformCache = new Map<string, { peaks: number[], duration: number }>();
+
+// Pending waveforms that are being generated on the server
+const pendingWaveforms = new Map<string, { 
+  element: HTMLElement, 
+  streamUrl: string, 
+  attempts: number,
+  lastCheck: number 
+}>();
+
+// Polling interval for checking pending waveforms
+let waveformPollingInterval: number | null = null;
+
+// Start polling for pending waveforms
+function startWaveformPolling() {
+  if (waveformPollingInterval !== null) return; // Already polling
+  
+  console.log('🔄 [LibraryWaveform] Starting background polling for pending waveforms');
+  
+  waveformPollingInterval = window.setInterval(async () => {
+    if (pendingWaveforms.size === 0) {
+      // No pending waveforms, stop polling
+      if (waveformPollingInterval !== null) {
+        clearInterval(waveformPollingInterval);
+        waveformPollingInterval = null;
+        console.log('⏸️ [LibraryWaveform] Stopped polling - no pending waveforms');
+      }
+      return;
+    }
+    
+    console.log(`🔍 [LibraryWaveform] Polling ${pendingWaveforms.size} pending waveforms...`);
+    
+    // Check each pending waveform (don't await - process all in parallel)
+    const checkPromises: Promise<void>[] = [];
+    
+    for (const [songId, info] of pendingWaveforms.entries()) {
+      const now = Date.now();
+      if (now - info.lastCheck < 2000) continue; // Wait at least 2 seconds between checks
+      
+      info.lastCheck = now;
+      
+      // Create a promise for each check (process in parallel)
+      const checkPromise = (async () => {
+        try {
+          const waveformUrl = `/api/waveform/${songId}?url=${encodeURIComponent(info.streamUrl)}`;
+          const response = await fetch(waveformUrl);
+          
+          if (response.status === 202) {
+            // Still generating
+            info.attempts++;
+            console.log(`⏳ [LibraryWaveform] Still generating ${songId} (attempt ${info.attempts})`);
+            
+            // Give up after 20 attempts (40 seconds)
+            if (info.attempts > 20) {
+              console.warn(`⏰ [LibraryWaveform] Giving up on ${songId} after ${info.attempts} attempts`);
+              pendingWaveforms.delete(songId);
+              info.element.dataset.waveformLoading = 'false';
+            }
+            return;
+          }
+          
+          if (response.ok) {
+            // Waveform is ready! Render it IMMEDIATELY
+            const waveformData = await response.json();
+            console.log(`✅ [LibraryWaveform] Waveform ready for ${songId} - rendering NOW!`);
+            
+            // Cache it
+            waveformCache.set(songId, waveformData);
+            
+            // Render it immediately (don't wait for other songs)
+            await renderWaveformBackground(info.element, songId, waveformData);
+            
+            // Remove from pending
+            pendingWaveforms.delete(songId);
+          } else {
+            console.error(`❌ [LibraryWaveform] Failed to fetch ${songId}: ${response.status}`);
+            pendingWaveforms.delete(songId);
+            info.element.dataset.waveformLoading = 'false';
+          }
+        } catch (error) {
+          console.error(`❌ [LibraryWaveform] Error checking ${songId}:`, error);
+          pendingWaveforms.delete(songId);
+          info.element.dataset.waveformLoading = 'false';
+        }
+      })();
+      
+      checkPromises.push(checkPromise);
+    }
+    
+    // Wait for all checks to complete (but each renders independently)
+    await Promise.all(checkPromises);
+  }, 2000); // Check every 2 seconds
+}
+
+// Render waveform background on an element
+async function renderWaveformBackground(element: HTMLElement, songId: string, waveformData: { peaks: number[], duration: number }): Promise<void> {
+  if (!waveformData || !waveformData.peaks || waveformData.peaks.length === 0) {
+    return;
+  }
+  
+  // Check if element has album cover (track-cover)
+  const coverElement = element.querySelector('.track-cover') as HTMLElement;
+  let coverWidth = 0;
+  let leftOffset = 0;
+  
+  if (coverElement) {
+    // Get actual position of cover relative to parent
+    const elementRect = element.getBoundingClientRect();
+    const coverRect = coverElement.getBoundingClientRect();
+    
+    // Calculate left offset (includes padding and gap)
+    leftOffset = coverRect.left - elementRect.left;
+    // Calculate total width including gap after cover
+    coverWidth = coverRect.width;
+    
+    // Add gap after cover (typically 0.75rem = 12px for unified-song-item)
+    const computedStyle = window.getComputedStyle(element);
+    const gap = computedStyle.gap || computedStyle.gridGap || '0px';
+    const gapValue = parseFloat(gap);
+    if (!isNaN(gapValue)) {
+      coverWidth += gapValue;
+    }
+  }
+  
+  const totalLeftOffset = leftOffset + coverWidth;
+  
+  // Determine waveform color based on deck/queue status
+  let waveformColor = { r: 0, g: 255, b: 136 }; // Default green
+  let borderColor = '#7cacff'; // Default light blue
+  
+  if (element.classList.contains('in-queue')) {
+    waveformColor = { r: 114, g: 137, b: 218 }; // Blue #7289da
+    borderColor = '#7289da';
+  } else if (element.classList.contains('on-deck-a')) {
+    waveformColor = { r: 255, g: 107, b: 107 }; // Red #ff6b6b
+    borderColor = '#ff6b6b';
+  } else if (element.classList.contains('on-deck-b')) {
+    waveformColor = { r: 78, g: 205, b: 196 }; // Türkis #4ecdc4
+    borderColor = '#4ecdc4';
+  } else if (element.classList.contains('on-deck-c')) {
+    waveformColor = { r: 255, g: 217, b: 61 }; // Gelb #ffd93d
+    borderColor = '#ffd93d';
+  } else if (element.classList.contains('on-deck-d')) {
+    waveformColor = { r: 149, g: 225, b: 211 }; // Hellgrün #95e1d3
+    borderColor = '#95e1d3';
+  }
+  
+  // Remove existing waveform canvas if present (for re-rendering with new color)
+  const existingCanvas = element.querySelector('.song-waveform-bg');
+  if (existingCanvas) {
+    existingCanvas.remove();
+  }
+  
+  // Create canvas element for waveform background
+  const canvas = document.createElement('canvas');
+  canvas.className = 'song-waveform-bg';
+  canvas.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: ${totalLeftOffset}px;
+    width: calc(100% - ${totalLeftOffset}px);
+    height: 100%;
+    opacity: 0.25;
+    pointer-events: none;
+    z-index: 0;
+    box-sizing: border-box;
+  `;
+  
+  // Set canvas size
+  const rect = element.getBoundingClientRect();
+  canvas.width = (rect.width - totalLeftOffset) || 400;
+  canvas.height = rect.height || 60;
+  
+  // Draw waveform
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const peaks = waveformData.peaks;
+    const barWidth = canvas.width / peaks.length;
+    const halfHeight = canvas.height / 2;
+    
+    // Use a gradient for the waveform (color based on deck/queue status)
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, `rgba(${waveformColor.r}, ${waveformColor.g}, ${waveformColor.b}, 0.4)`);
+    gradient.addColorStop(0.5, `rgba(${waveformColor.r}, ${waveformColor.g}, ${waveformColor.b}, 0.8)`);
+    gradient.addColorStop(1, `rgba(${waveformColor.r}, ${waveformColor.g}, ${waveformColor.b}, 0.4)`);
+    ctx.fillStyle = gradient;
+    
+    // Draw bars
+    for (let i = 0; i < peaks.length; i++) {
+      const peak = Math.abs(peaks[i]);
+      const barHeight = peak * halfHeight;
+      const x = i * barWidth;
+      const y = halfHeight - barHeight;
+      
+      ctx.fillRect(x, y, barWidth * 0.8, barHeight * 2);
+    }
+  }
+  
+  // Insert canvas as first child (background)
+  element.style.position = 'relative';
+  element.insertBefore(canvas, element.firstChild);
+  
+  element.dataset.waveformLoaded = 'true';
+  element.dataset.waveformLoading = 'false';
+  
+  console.log(`✅ [LibraryWaveform] Rendered waveform for ${songId} with color ${borderColor}`);
+}
+
+// Load waveform JSON as background for song items
+async function loadSongWaveformBackground(element: HTMLElement, songId: string, streamUrl: string): Promise<void> {
+  // Check if already loaded or loading
+  if (element.dataset.waveformLoaded === 'true' || element.dataset.waveformLoading === 'true') {
+    return;
+  }
+  
+  element.dataset.waveformLoading = 'true';
+  console.log(`🌊 [LibraryWaveform] Requesting waveform for song ${songId}`);
+  
+  try {
+    // Check cache first
+    let waveformData = waveformCache.get(songId);
+    
+    if (!waveformData) {
+      console.log(`📥 [LibraryWaveform] Cache MISS - fetching from server for ${songId}`);
+      
+      // Use the SAME endpoint as CustomWaveform.ts
+      const waveformUrl = `/api/waveform/${songId}?url=${encodeURIComponent(streamUrl)}`;
+      const response = await fetch(waveformUrl);
+      
+      if (response.status === 202) {
+        // Waveform is being generated - add to pending queue
+        console.log(`⏳ [LibraryWaveform] Waveform generating for ${songId} - added to polling queue`);
+        pendingWaveforms.set(songId, {
+          element,
+          streamUrl,
+          attempts: 0,
+          lastCheck: Date.now()
+        });
+        
+        // Start polling if not already running
+        startWaveformPolling();
+        return;
+      }
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch waveform: ${response.status}`);
+      }
+      
+      waveformData = await response.json();
+      console.log(`✅ [LibraryWaveform] Waveform data received for ${songId}: ${waveformData?.peaks?.length || 0} peaks`);
+      
+      // Validate waveform data before caching
+      if (!waveformData || !waveformData.peaks || waveformData.peaks.length === 0) {
+        console.error(`❌ [LibraryWaveform] Invalid waveform data received for ${songId}:`, waveformData);
+        element.dataset.waveformLoading = 'false';
+        return;
+      }
+      
+      // Cache the waveform data
+      waveformCache.set(songId, waveformData);
+      console.log(`💾 [LibraryWaveform] Cached waveform for ${songId}`);
+    } else {
+      console.log(`✅ [LibraryWaveform] Cache HIT for ${songId}`);
+    }
+    
+    // Render the waveform using the cached data
+    await renderWaveformBackground(element, songId, waveformData);
+    
+  } catch (error) {
+    console.warn(`⚠️ [SongWaveform] Failed to load waveform for ${songId}:`, error);
+    element.dataset.waveformLoading = 'false';
+    // Don't throw - just log and continue without waveform
+  }
+}
+
+// Batch load waveforms for ALL song elements in container (not just visible ones)
+// The polling system will handle background generation efficiently
+function loadVisibleSongWaveforms(container?: HTMLElement) {
+  console.log('🚨 [DEBUG] loadVisibleSongWaveforms CALLED');
+  console.log('🚨 [DEBUG] container:', container);
+  console.log('🚨 [DEBUG] openSubsonicClient exists:', !!openSubsonicClient);
+  
+  if (!openSubsonicClient) {
+    console.warn('⚠️ [LibraryWaveform] openSubsonicClient not available yet');
+    return;
+  }
+  
+  const root = container || document;
+  const songElements = root.querySelectorAll<HTMLElement>(
+    '.track-item, .track-item-oneline, .song-row, .unified-song-item, .music-card'
+  );
+  
+  console.log(`🔍 [LibraryWaveform] Found ${songElements.length} song elements - loading ALL waveforms`);
+  
+  songElements.forEach(element => {
+    const songId = element.dataset.songId || element.dataset.trackId;
+    if (!songId) {
+      console.warn(`⚠️ [LibraryWaveform] Element missing songId/trackId:`, element);
+      return;
+    }
+    
+    // Load waveform for ALL songs (not just visible ones)
+    // The server queue and polling system will handle this efficiently
+    const originalStreamUrl = openSubsonicClient.getOriginalStreamUrl(songId);
+    console.log(`🚀 [LibraryWaveform] Loading waveform for song ${songId}`);
+    loadSongWaveformBackground(element, songId, originalStreamUrl);
+  });
+}
+
 // Load audio file into CustomWaveform for a player
 async function loadWaveform(side: 'a' | 'b' | 'c' | 'd', audioUrl: string, trackDuration?: number) {
   console.log(`🌊 [CustomWaveform] Loading waveform for ${side} player from: ${audioUrl}`);
@@ -2223,6 +2540,99 @@ function getSongDeck(songId: string): 'a' | 'b' | 'c' | 'd' | null {
   return null;
 }
 
+// Fast update: Mark a single song in library (without re-rendering waveform)
+function updateSongStatus(songId: string, targetElement?: HTMLElement) {
+  // If element provided, only update that one (fastest)
+  if (targetElement) {
+    updateSingleElement(targetElement, songId);
+    return;
+  }
+  
+  // Otherwise find all instances of this song in the library
+  const songElements = document.querySelectorAll(`[data-song-id="${songId}"]`);
+  songElements.forEach((element) => {
+    updateSingleElement(element as HTMLElement, songId);
+  });
+}
+
+// Update a single element's status
+function updateSingleElement(el: HTMLElement, songId: string) {
+  // Remove all existing deck/queue markers
+  el.classList.remove('in-queue', 'on-deck-a', 'on-deck-b', 'on-deck-c', 'on-deck-d');
+  el.style.removeProperty('border-left');
+  
+  // Check if song is on a deck (priority)
+  const deck = getSongDeck(songId);
+  if (deck) {
+    el.classList.add(`on-deck-${deck}`);
+    const deckColors = {
+      'a': '#ff6b6b',
+      'b': '#4ecdc4', 
+      'c': '#ffd93d',
+      'd': '#95e1d3'
+    };
+    el.style.borderLeft = `4px solid ${deckColors[deck]}`;
+    
+    // Update waveform color via CSS filter (fast)
+    updateWaveformColor(el, deck);
+    return;
+  }
+  
+  // Check if song is in queue
+  if (isSongInQueue(songId)) {
+    el.classList.add('in-queue');
+    el.style.borderLeft = '4px solid #7289da';
+    
+    // Update waveform color via CSS filter (fast)
+    updateWaveformColor(el, 'queue');
+  } else {
+    // Default state
+    updateWaveformColor(el, 'default');
+  }
+}
+
+// Update waveform color using CSS filter (much faster than re-rendering canvas)
+function updateWaveformColor(element: HTMLElement, status: 'a' | 'b' | 'c' | 'd' | 'queue' | 'default') {
+  const canvas = element.querySelector('.song-waveform-bg') as HTMLCanvasElement;
+  if (!canvas) return;
+  
+  // Remove filter for default green (base color of canvas)
+  // For other colors, apply hue rotation from green base
+  // Base: Green #00ff88 (rgb(0, 255, 136))
+  // Queue: Blue #7289da (rgb(114, 137, 218))
+  // Deck A: Red #ff6b6b (rgb(255, 107, 107))
+  // Deck B: Türkis #4ecdc4 (rgb(78, 205, 196))
+  // Deck C: Gelb #ffd93d (rgb(255, 217, 61))
+  // Deck D: Hellgrün #95e1d3 (rgb(149, 225, 211))
+  
+  switch (status) {
+    case 'queue':
+      // Blue: hue-rotate from green to blue
+      canvas.style.filter = 'hue-rotate(200deg) saturate(0.9) brightness(1.3)';
+      break;
+    case 'a':
+      // Red: hue-rotate from green to red
+      canvas.style.filter = 'hue-rotate(-120deg) saturate(1.5) brightness(1.2)';
+      break;
+    case 'b':
+      // Türkis: hue-rotate from green to türkis
+      canvas.style.filter = 'hue-rotate(30deg) saturate(1.2) brightness(1.1)';
+      break;
+    case 'c':
+      // Gelb: hue-rotate from green to yellow
+      canvas.style.filter = 'hue-rotate(-60deg) saturate(1.8) brightness(1.3)';
+      break;
+    case 'd':
+      // Hellgrün: similar to green but lighter
+      canvas.style.filter = 'hue-rotate(10deg) saturate(0.9) brightness(1.2)';
+      break;
+    case 'default':
+      // Green: No filter (original canvas color)
+      canvas.style.filter = 'none';
+      break;
+  }
+}
+
 // Mark songs in library browser with deck colors
 function markSongsInLibrary() {
   // Get all song elements in library
@@ -2293,6 +2703,14 @@ function markSongsInLibrary() {
         'd': '#95e1d3'
       };
       el.style.borderLeft = `4px solid ${deckColors[deck]}`;
+      
+      // Re-render waveform with new deck color if waveform is loaded
+      if (el.dataset.waveformLoaded === 'true') {
+        const waveformData = waveformCache.get(songId);
+        if (waveformData) {
+          renderWaveformBackground(el, songId, waveformData);
+        }
+      }
       return;
     }
     
@@ -2300,6 +2718,22 @@ function markSongsInLibrary() {
     if (!el.classList.contains('recently-played') && isSongInQueue(songId)) {
       el.classList.add('in-queue');
       el.style.borderLeft = '4px solid #7289da';
+      
+      // Re-render waveform with queue color if waveform is loaded
+      if (el.dataset.waveformLoaded === 'true') {
+        const waveformData = waveformCache.get(songId);
+        if (waveformData) {
+          renderWaveformBackground(el, songId, waveformData);
+        }
+      }
+    } else {
+      // Re-render waveform with default color if waveform is loaded
+      if (el.dataset.waveformLoaded === 'true') {
+        const waveformData = waveformCache.get(songId);
+        if (waveformData) {
+          renderWaveformBackground(el, songId, waveformData);
+        }
+      }
     }
   });
 }
@@ -2555,6 +2989,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   
   // Check configuration and initialize accordingly
   await checkConfigurationAndInitialize();
+  
+  // Add scroll listener for lazy-loading waveform backgrounds
+  let scrollTimeout: number;
+  window.addEventListener('scroll', () => {
+    clearTimeout(scrollTimeout);
+    scrollTimeout = window.setTimeout(() => {
+      loadVisibleSongWaveforms();
+    }, 200);
+  }, { passive: true });
+  
+  // Also trigger on resize
+  window.addEventListener('resize', () => {
+    clearTimeout(scrollTimeout);
+    scrollTimeout = window.setTimeout(() => {
+      loadVisibleSongWaveforms();
+    }, 300);
+  }, { passive: true });
 });
 
 // END OF MAIN APPLICATION INITIALIZATION
@@ -4136,6 +4587,9 @@ function displaySearchResults(results: any, addToHistory: boolean = true) {
     });
 
     songContainer.render();
+    
+    // Load waveform backgrounds for songs asynchronously
+    setTimeout(() => loadVisibleSongWaveforms(searchContent), 100);
   }
   
   if (!hasResults) {
@@ -4436,8 +4890,8 @@ function addSongClickListeners(container: Element) {
         
         console.log(`✓ Added to queue: ${song.title}`);
         
-        // Update library markers
-        markSongsInLibrary();
+        // Fast update: Only update this specific song's element (instant!)
+        updateSongStatus(songId, element as HTMLElement);
         
       } catch (error) {
         console.error('Error adding song to queue:', error);
@@ -5098,6 +5552,10 @@ async function addToQueue(songOrId: string | OpenSubsonicSong): Promise<void> {
     
     queue.push(queueItem);
     updateQueueDisplay();
+    
+    // Fast update: Only update this specific song's status (no full re-render)
+    updateSongStatus(song.id);
+    
     console.log(`➕ Song "${song.title}" added to queue. Queue length: ${queue.length}`);
   }
 }
@@ -6870,8 +7328,8 @@ function setupRadioStreamSelector() {
       const deckType = deck as 'a' | 'b' | 'c' | 'd';
       clearPlayerDeck(deckType);
       
-      // Get the audio element for the deck (after clearing)
-      const audio = document.getElementById(`audio-${deck}`) as HTMLAudioElement;
+      // Get the audio element for the deck (using getAudioElement instead of getElementById)
+      const audio = getAudioElement(deckType);
       
       if (!audio) {
         console.error(`❌ Audio element for deck ${deck} not found`);
@@ -9233,8 +9691,8 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   // REMOVED: applyCrossfader() - Crossfader removed, all decks route directly at full volume
   console.log(`Player ${side.toUpperCase()}: "${song.title}" loaded successfully`);
   
-  // Update library markers to show song is now on deck
-  markSongsInLibrary();
+  // Fast update: Only update this specific song's status
+  updateSongStatus(song.id);
 }
 
 // REMOVED: applyCrossfader() - Crossfader removed, all decks now route directly at full volume via Mixer.ts
@@ -11917,6 +12375,9 @@ function showAlbumDetailView(album: OpenSubsonicAlbum, tracks: OpenSubsonicSong[
     });
   });
   
+  // Load waveform backgrounds for tracks asynchronously
+  setTimeout(() => loadVisibleSongWaveforms(detailView), 100);
+  
   // Add rating handlers
   const ratingContainers = detailView.querySelectorAll('.track-rating');
   ratingContainers.forEach(container => {
@@ -12321,6 +12782,9 @@ class LibraryBrowser {
     addAlbumClickListeners(content);
     addArtistClickListeners(content);
     
+    // Load waveform backgrounds for wizard songs asynchronously
+    setTimeout(() => loadVisibleSongWaveforms(content), 100);
+    
     console.log(`✅ Displayed ${songs.length} wizard songs in library-content`);
   }
 
@@ -12669,6 +13133,9 @@ class LibraryBrowser {
         
         // Add click listeners for artist and album links in songs
         addSongClickListeners(songsContainer);
+        
+        // Load waveform backgrounds for top songs asynchronously
+        setTimeout(() => loadVisibleSongWaveforms(songsContainer), 100);
       } else {
         songsContainer.innerHTML = '<p class="no-items">No songs found</p>';
       }
@@ -12733,6 +13200,9 @@ class LibraryBrowser {
         
         // Add click listeners for artist and album links in songs
         addSongClickListeners(songsContainer);
+        
+        // Load waveform backgrounds for album tracks asynchronously
+        setTimeout(() => loadVisibleSongWaveforms(songsContainer), 100);
       } else {
         songsContainer.innerHTML = '<p class="no-items">No tracks found</p>';
       }

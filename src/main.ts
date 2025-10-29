@@ -22,6 +22,159 @@ import { CustomWaveform, createCustomWaveform } from './audio/CustomWaveform';
 
 console.log("SubCaster loaded!");
 
+// ========================================
+// 🔙 NAVIGATION HISTORY SYSTEM
+// ========================================
+// Enables browser-like navigation with mouse back/forward buttons
+
+interface NavigationState {
+  type: 'browse' | 'home' | 'artist' | 'album' | 'search';
+  data?: any;
+}
+
+class NavigationHistory {
+  private history: NavigationState[] = [];
+  private currentIndex: number = -1;
+  private maxHistorySize: number = 50;
+  private isNavigating: boolean = false;
+
+  constructor() {
+    this.setupMouseButtons();
+  }
+
+  private setupMouseButtons() {
+    // Listen for mouse button 3 (back) and 4 (forward)
+    document.addEventListener('mouseup', (e) => {
+      if (e.button === 3) { // Back button
+        e.preventDefault();
+        this.goBack();
+      } else if (e.button === 4) { // Forward button
+        e.preventDefault();
+        this.goForward();
+      }
+    });
+
+    // Prevent default browser navigation
+    document.addEventListener('mousedown', (e) => {
+      if (e.button === 3 || e.button === 4) {
+        e.preventDefault();
+      }
+    });
+  }
+
+  push(state: NavigationState) {
+    // Don't add to history if we're currently navigating (back/forward)
+    if (this.isNavigating) {
+      this.isNavigating = false;
+      return;
+    }
+
+    // Remove any forward history when pushing new state
+    this.history = this.history.slice(0, this.currentIndex + 1);
+    
+    // Don't add duplicate states
+    const lastState = this.history[this.history.length - 1];
+    if (lastState && this.statesEqual(lastState, state)) {
+      return;
+    }
+
+    // Add new state
+    this.history.push(state);
+    this.currentIndex++;
+
+    // Limit history size
+    if (this.history.length > this.maxHistorySize) {
+      this.history.shift();
+      this.currentIndex--;
+    }
+
+    console.log(`📍 Navigation: Pushed ${state.type} state (${this.currentIndex + 1}/${this.history.length})`);
+  }
+
+  private statesEqual(a: NavigationState, b: NavigationState): boolean {
+    if (a.type !== b.type) return false;
+    
+    if (a.type === 'home' || a.type === 'browse') return true;
+    
+    if (a.type === 'artist' && b.type === 'artist') {
+      return a.data?.id === b.data?.id;
+    }
+    
+    if (a.type === 'album' && b.type === 'album') {
+      return a.data?.id === b.data?.id;
+    }
+    
+    if (a.type === 'search' && b.type === 'search') {
+      return a.data === b.data; // search term
+    }
+    
+    return false;
+  }
+
+  canGoBack(): boolean {
+    return this.currentIndex > 0;
+  }
+
+  canGoForward(): boolean {
+    return this.currentIndex < this.history.length - 1;
+  }
+
+  goBack() {
+    if (!this.canGoBack()) {
+      console.log('🔙 Navigation: Cannot go back');
+      return;
+    }
+
+    this.isNavigating = true;
+    this.currentIndex--;
+    const state = this.history[this.currentIndex];
+    console.log(`🔙 Navigation: Going back to ${state.type} (${this.currentIndex + 1}/${this.history.length})`);
+    this.restoreState(state);
+  }
+
+  goForward() {
+    if (!this.canGoForward()) {
+      console.log('🔜 Navigation: Cannot go forward');
+      return;
+    }
+
+    this.isNavigating = true;
+    this.currentIndex++;
+    const state = this.history[this.currentIndex];
+    console.log(`🔜 Navigation: Going forward to ${state.type} (${this.currentIndex + 1}/${this.history.length})`);
+    this.restoreState(state);
+  }
+
+  private restoreState(state: NavigationState) {
+    if (!libraryBrowser) return;
+
+    switch (state.type) {
+      case 'browse':
+      case 'home':
+        libraryBrowser.showHome();
+        break;
+      case 'artist':
+        if (state.data) {
+          libraryBrowser.showArtist(state.data);
+        }
+        break;
+      case 'album':
+        if (state.data) {
+          libraryBrowser.showAlbum(state.data);
+        }
+        break;
+      case 'search':
+        if (state.data) {
+          libraryBrowser.performSearch(state.data);
+        }
+        break;
+    }
+  }
+}
+
+// Global navigation history instance
+let navigationHistory: NavigationHistory;
+
 // Initialize WebGPU
 initWebGPU().then(() => {
   if (isWebGPUAvailable()) {
@@ -13224,10 +13377,17 @@ class LibraryBrowser {
   };
 
   private container: HTMLElement;
+  private navigationHistory: NavigationHistory;
 
   constructor() {
     console.log("🏗️ LibraryBrowser constructor called");
     this.container = document.getElementById('browse-content')!;
+    
+    // Create navigation history instance
+    if (!navigationHistory) {
+      navigationHistory = new NavigationHistory();
+    }
+    this.navigationHistory = navigationHistory;
     
     if (!this.container) {
       console.error("❌ browse-content container not found in LibraryBrowser constructor!");
@@ -13371,11 +13531,14 @@ class LibraryBrowser {
       breadcrumbs: [{ label: 'Library', type: 'home', action: () => this.showHome() }]
     };
     
+    // Add to navigation history
+    this.navigationHistory.push({ type: 'home' });
+    
     this.updateBreadcrumbs();
     this.loadHomeContent();
   }
 
-  showArtist(artist: OpenSubsonicArtist) {
+  showArtist(artist: OpenSubsonicArtist, addToHistory: boolean = true) {
     this.currentContext = {
       type: 'artist',
       data: artist,
@@ -13385,11 +13548,14 @@ class LibraryBrowser {
       ]
     };
     
+    // Add to navigation history
+    this.navigationHistory.push({ type: 'artist', data: artist });
+    
     this.updateBreadcrumbs();
     this.loadArtistContent(artist);
   }
 
-  showAlbum(album: OpenSubsonicAlbum) {
+  showAlbum(album: OpenSubsonicAlbum, addToHistory: boolean = true) {
     // Create album display name with year if available
     const albumDisplayName = album.year ? `${album.name} (${album.year})` : album.name;
     
@@ -13437,6 +13603,9 @@ class LibraryBrowser {
       data: album,
       breadcrumbs
     };
+    
+    // Add to navigation history
+    this.navigationHistory.push({ type: 'album', data: album });
     
     this.updateBreadcrumbs();
     this.loadAlbumContent(album);
@@ -13921,23 +14090,30 @@ class LibraryBrowser {
       const query = searchInput.value.trim();
       if (!query) return;
 
-      this.currentContext = {
-        type: 'search',
-        data: { query },
-        breadcrumbs: [
-          { label: 'Library', type: 'home', action: () => this.showHome() },
-          { label: `Search: "${query}"`, type: 'home', action: () => {} }
-        ]
-      };
-
-      this.updateBreadcrumbs();
-      await this.loadSearchResults(query);
+      this.performSearch(query);
     };
 
     searchBtn?.addEventListener('click', performSearch);
     searchInput?.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') performSearch();
     });
+  }
+
+  async performSearch(query: string) {
+    this.currentContext = {
+      type: 'search',
+      data: { query },
+      breadcrumbs: [
+        { label: 'Library', type: 'home', action: () => this.showHome() },
+        { label: `Search: "${query}"`, type: 'home', action: () => {} }
+      ]
+    };
+
+    // Add to navigation history
+    this.navigationHistory.push({ type: 'search', data: query });
+
+    this.updateBreadcrumbs();
+    await this.loadSearchResults(query);
   }
 
   private async loadSearchResults(query: string) {

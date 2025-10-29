@@ -2875,6 +2875,7 @@ async function loadSongWaveformBackground(element: HTMLElement, songId: string, 
 // The polling system will handle background generation efficiently
 function loadVisibleSongWaveforms(container?: HTMLElement) {
   if (!openSubsonicClient) {
+    console.warn('🌊 [LibraryWaveform] No OpenSubsonic client available');
     return;
   }
   
@@ -2882,6 +2883,8 @@ function loadVisibleSongWaveforms(container?: HTMLElement) {
   const songElements = root.querySelectorAll<HTMLElement>(
     '.track-item, .track-item-oneline, .song-row, .unified-song-item, .music-card'
   );
+  
+  console.log(`🌊 [LibraryWaveform] Found ${songElements.length} song elements in container:`, container?.id || 'document');
   
   let newLoads = 0;
   
@@ -5050,7 +5053,13 @@ function displaySearchResults(results: any, addToHistory: boolean = true) {
     songContainer.render();
     
     // Load waveform backgrounds for songs asynchronously
-    setTimeout(() => loadVisibleSongWaveforms(searchContent), 100);
+    // Wait for DOM to be ready before loading waveforms
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        console.log('🌊 [SearchResults] Loading waveforms for search results...');
+        loadVisibleSongWaveforms(searchContent);
+      }, 150);
+    });
   }
   
   if (!hasResults) {

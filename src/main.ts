@@ -2397,12 +2397,7 @@ async function loadSongWaveformBackground(element: HTMLElement, songId: string, 
 // Batch load waveforms for ALL song elements in container (not just visible ones)
 // The polling system will handle background generation efficiently
 function loadVisibleSongWaveforms(container?: HTMLElement) {
-  console.log('🚨 [DEBUG] loadVisibleSongWaveforms CALLED');
-  console.log('🚨 [DEBUG] container:', container);
-  console.log('🚨 [DEBUG] openSubsonicClient exists:', !!openSubsonicClient);
-  
   if (!openSubsonicClient) {
-    console.warn('⚠️ [LibraryWaveform] openSubsonicClient not available yet');
     return;
   }
   
@@ -2411,21 +2406,29 @@ function loadVisibleSongWaveforms(container?: HTMLElement) {
     '.track-item, .track-item-oneline, .song-row, .unified-song-item, .music-card'
   );
   
-  console.log(`🔍 [LibraryWaveform] Found ${songElements.length} song elements - loading ALL waveforms`);
+  let newLoads = 0;
   
   songElements.forEach(element => {
     const songId = element.dataset.songId || element.dataset.trackId;
-    if (!songId) {
-      console.warn(`⚠️ [LibraryWaveform] Element missing songId/trackId:`, element);
+    if (!songId) return;
+    
+    // Skip if already loaded or currently loading
+    if (element.dataset.waveformLoaded === 'true' || 
+        element.dataset.waveformLoading === 'true' ||
+        waveformCache.has(songId) ||
+        pendingWaveforms.has(songId)) {
       return;
     }
     
-    // Load waveform for ALL songs (not just visible ones)
-    // The server queue and polling system will handle this efficiently
+    // Load waveform only for new songs
     const originalStreamUrl = openSubsonicClient.getOriginalStreamUrl(songId);
-    console.log(`🚀 [LibraryWaveform] Loading waveform for song ${songId}`);
     loadSongWaveformBackground(element, songId, originalStreamUrl);
+    newLoads++;
   });
+  
+  if (newLoads > 0) {
+    console.log(`� [LibraryWaveform] Loading ${newLoads} new waveforms (${songElements.length} total songs)`);
+  }
 }
 
 // Load audio file into CustomWaveform for a player

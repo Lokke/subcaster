@@ -8,6 +8,9 @@ import { updateChecker } from "./update-checker";
 import { initElectronTitlebar } from "./electron-titlebar";
 import * as THREE from 'three';
 
+// 🚀 WebGPU & Hardware Acceleration
+import { initWebGPU, isWebGPUAvailable, enableHardwareAcceleration } from './webgpu-utils';
+
 // 🎵 NEW AUDIO SYSTEM - Phase 1, 2, 3, 4, 5 & 6
 import * as AudioManager from './audio/AudioManager';
 import { getOrCreateSourceNode as getOrCreateSourceNodeNew, removeSourceNode, hasSourceNode } from './audio/SourceNodeCache';
@@ -18,6 +21,15 @@ import { volumeMeters } from './audio/VolumeMeters';
 import { CustomWaveform, createCustomWaveform } from './audio/CustomWaveform';
 
 console.log("SubCaster loaded!");
+
+// Initialize WebGPU
+initWebGPU().then(() => {
+  if (isWebGPUAvailable()) {
+    console.log('🚀 WebGPU enabled for hardware acceleration');
+  } else {
+    console.log('ℹ️ WebGPU not available - using CPU fallback');
+  }
+});
 
 // Global runtime configuration (loaded from backend at startup)
 let runtimeConfig: Record<string, string> = {};
@@ -234,6 +246,85 @@ function isSongOnAnyDeck(songId: string): 'a' | 'b' | 'c' | 'd' | null {
 function isSongInQueue(songId: string): boolean {
   const location = songLocationRegistry.get(songId);
   return location?.type === 'queue';
+}
+
+// ========================================
+// 🔒 DECK LOADING LOCK SYSTEM
+// ========================================
+// Prevents multiple songs from loading simultaneously on decks
+// Each deck can only load one song at a time
+// Includes timeout protection to prevent permanent locks
+
+type DeckLoadingState = {
+  isLoading: boolean;
+  songId: string | null;
+  startTime: number;
+};
+
+const deckLoadingLocks: Record<'a' | 'b' | 'c' | 'd', DeckLoadingState> = {
+  a: { isLoading: false, songId: null, startTime: 0 },
+  b: { isLoading: false, songId: null, startTime: 0 },
+  c: { isLoading: false, songId: null, startTime: 0 },
+  d: { isLoading: false, songId: null, startTime: 0 }
+};
+
+// Maximum time a deck can be in loading state (30 seconds)
+const DECK_LOADING_TIMEOUT = 30000;
+
+/**
+ * Check if deck is currently loading a song
+ */
+function isDeckLoading(deck: 'a' | 'b' | 'c' | 'd'): boolean {
+  const lock = deckLoadingLocks[deck];
+  
+  // Check for timeout
+  if (lock.isLoading) {
+    const elapsed = Date.now() - lock.startTime;
+    if (elapsed > DECK_LOADING_TIMEOUT) {
+      console.warn(`⚠️ [LoadingLock] Deck ${deck.toUpperCase()} loading timeout (${elapsed}ms) - releasing lock`);
+      releaseDeckLoadingLock(deck);
+      return false;
+    }
+  }
+  
+  return lock.isLoading;
+}
+
+/**
+ * Acquire loading lock for deck
+ * Returns true if lock was acquired, false if deck is already loading
+ */
+function acquireDeckLoadingLock(deck: 'a' | 'b' | 'c' | 'd', songId: string): boolean {
+  if (isDeckLoading(deck)) {
+    console.warn(`⚠️ [LoadingLock] Deck ${deck.toUpperCase()} is already loading song ${deckLoadingLocks[deck].songId}`);
+    return false;
+  }
+  
+  deckLoadingLocks[deck] = {
+    isLoading: true,
+    songId: songId,
+    startTime: Date.now()
+  };
+  
+  console.log(`🔒 [LoadingLock] Acquired lock for Deck ${deck.toUpperCase()} (song: ${songId})`);
+  return true;
+}
+
+/**
+ * Release loading lock for deck
+ */
+function releaseDeckLoadingLock(deck: 'a' | 'b' | 'c' | 'd') {
+  const lock = deckLoadingLocks[deck];
+  if (lock.isLoading) {
+    const elapsed = Date.now() - lock.startTime;
+    console.log(`🔓 [LoadingLock] Released lock for Deck ${deck.toUpperCase()} (${elapsed}ms)`);
+  }
+  
+  deckLoadingLocks[deck] = {
+    isLoading: false,
+    songId: null,
+    startTime: 0
+  };
 }
 
 // Helper: Artist Image URL mit 300px Größe
@@ -7033,6 +7124,27 @@ async function prepareDecksOnActivation(deckPair: ('a' | 'b' | 'c' | 'd')[]) {
         // Mark as assigned to deck
         firstAvailableSong.assignedToDeck = firstDeck;
         
+        // ========================================
+        // 🔒 WAIT FOR FIRST DECK TO FINISH LOADING
+        // ========================================
+        // Wait for the first deck to be ready before loading second deck
+        // This prevents simultaneous loading which causes issues
+        console.log(`⏳ [LoadingLock] Waiting for Deck ${firstDeck.toUpperCase()} to finish loading...`);
+        
+        // Wait for loading lock to be released (with timeout)
+        const maxWaitTime = 15000; // 15 seconds max wait
+        const startWait = Date.now();
+        
+        while (isDeckLoading(firstDeck) && (Date.now() - startWait) < maxWaitTime) {
+          await new Promise(resolve => setTimeout(resolve, 100)); // Check every 100ms
+        }
+        
+        if (isDeckLoading(firstDeck)) {
+          console.warn(`⚠️ [LoadingLock] Timeout waiting for Deck ${firstDeck.toUpperCase()} - proceeding anyway`);
+        } else {
+          console.log(`✅ [LoadingLock] Deck ${firstDeck.toUpperCase()} ready - proceeding to second deck`);
+        }
+        
         // Auto-start playback if no other deck is playing
         if (!hasPlayingDeck) {
           console.log(`🎵 Auto-starting playback on Deck ${firstDeck.toUpperCase()}`);
@@ -8392,7 +8504,7 @@ function prepareNextDeckInSequence(currentDeck: 'a' | 'b' | 'c' | 'd') {
 }
 
 // IMPROVED: Prepare all available decks with maximum efficiency
-function prepareAllAvailableDecks() {
+async function prepareAllAvailableDecks() {
   console.log(`🎵 Comprehensive deck preparation - maximizing deck usage`);
   
   // Get all active deck pairs
@@ -8421,9 +8533,12 @@ function prepareAllAvailableDecks() {
   // Find available decks (empty, ended, or error state)
   const availableForPreparation = availableDecks.filter(deck => isDeckAvailableForNewTrack(deck));
   
-  console.log(`�️ Available decks for preparation: [${availableForPreparation.map(d => d.toUpperCase()).join(', ')}]`);
+  console.log(`🛠️ Available decks for preparation: [${availableForPreparation.map(d => d.toUpperCase()).join(', ')}]`);
   
-  // Prepare decks with available songs
+  // ========================================
+  // 🔒 PREPARE DECKS SEQUENTIALLY, NOT IN PARALLEL
+  // ========================================
+  // This prevents multiple simultaneous loads which cause issues
   let preparationCount = 0;
   for (let i = 0; i < Math.min(availableForPreparation.length, songsNeedingPreparation.length); i++) {
     const deck = availableForPreparation[i];
@@ -8443,10 +8558,28 @@ function prepareAllAvailableDecks() {
       assignQueueItemToDeck(songItem, deck);
       loadTrackToPlayer(deck, songItem.song, false);
       preparationCount++;
+      
+      // ========================================
+      // ⏳ WAIT FOR DECK TO FINISH LOADING
+      // ========================================
+      console.log(`⏳ [LoadingLock] Waiting for Deck ${deck.toUpperCase()} to finish loading...`);
+      
+      const maxWaitTime = 15000; // 15 seconds max wait
+      const startWait = Date.now();
+      
+      while (isDeckLoading(deck) && (Date.now() - startWait) < maxWaitTime) {
+        await new Promise(resolve => setTimeout(resolve, 100)); // Check every 100ms
+      }
+      
+      if (isDeckLoading(deck)) {
+        console.warn(`⚠️ [LoadingLock] Timeout waiting for Deck ${deck.toUpperCase()} - proceeding anyway`);
+      } else {
+        console.log(`✅ [LoadingLock] Deck ${deck.toUpperCase()} ready - proceeding to next deck`);
+      }
     }
   }
   
-  console.log(`✅ Prepared ${preparationCount} decks successfully`);
+  console.log(`✅ Prepared ${preparationCount} decks successfully (sequential loading)`);
 }
 
 // Get the next song item for deck preparation (skipping microphone placeholders)
@@ -8708,16 +8841,32 @@ function checkAndFillEmptyDecks() {
     // ✅ ONLY VALIDATE: Check if deck has invalid song
     // ========================================
     if (currentSong) {
-      // Deck has a song - check if it's still in queue
-      const songInQueue = queue.find(item => 
-        isSongQueueItem(item) && item.song?.id === currentSong.id
-      );
-      if (!songInQueue) {
-        // Song was removed from queue but still on deck - clear it
-        console.log(`🔄 [Auto-Queue] Deck ${deck.toUpperCase()} has song not in queue - clearing deck`);
+      // ❌ CRITICAL FIX: NEVER clear a deck that is playing or paused!
+      // Playing/paused decks are actively in use and should NEVER be touched
+      const audio = getAudioElement(deck);
+      const isPlaying = audio && !audio.paused;
+      
+      if (deckState === 'playing' || deckState === 'paused' || isPlaying) {
+        console.log(`🎵 [Auto-Queue] Deck ${deck.toUpperCase()} is ${deckState} "${currentSong.title}" - PROTECTED`);
+        continue; // Skip this deck completely - it's in active use!
+      }
+      
+      // ✅ NEW: Use Song Location Registry instead of checking queue
+      // Songs are MOVED from queue to deck, so they won't be in queue anymore
+      // But they're still registered in the location registry as being on this deck
+      const songLocation = getSongLocation(currentSong.id);
+      
+      if (!songLocation || songLocation.type === 'nowhere') {
+        // Song is not registered anywhere - this shouldn't happen but clear deck to be safe
+        console.log(`🔄 [Auto-Queue] Deck ${deck.toUpperCase()} has unregistered song - clearing deck`);
         clearPlayerDeck(deck);
-      } else {
+      } else if (songLocation.type === 'deck' && songLocation.deck === deck) {
+        // Song is correctly registered on this deck - everything is fine!
         console.log(`✅ [Auto-Queue] Deck ${deck.toUpperCase()} has valid song "${currentSong.title}" (${deckState})`);
+      } else {
+        // Song is registered elsewhere - this is a sync error, clear the deck
+        console.warn(`⚠️ [Auto-Queue] Deck ${deck.toUpperCase()} has song registered on ${songLocation.type} - clearing deck`);
+        clearPlayerDeck(deck);
       }
     } else {
       // Deck is empty - that's OK, don't auto-fill
@@ -10108,12 +10257,27 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   console.log(`Loading "${song.title}" to Player ${side.toUpperCase()}${autoPlay ? ' (auto-play)' : ''}`);
   
   // ========================================
+  // 🔒 CHECK LOADING LOCK - PREVENT SIMULTANEOUS LOADS
+  // ========================================
+  if (isDeckLoading(side)) {
+    console.warn(`⚠️ [LoadingLock] Deck ${side.toUpperCase()} is already loading - cannot load "${song.title}"`);
+    return;
+  }
+  
+  // Acquire loading lock BEFORE any modifications
+  if (!acquireDeckLoadingLock(side, song.id)) {
+    console.error(`❌ [LoadingLock] Failed to acquire lock for Deck ${side.toUpperCase()}`);
+    return;
+  }
+  
+  // ========================================
   // 🎯 CHECK SONG LOCATION - PREVENT DUPLICATES
   // ========================================
   const existingLocation = getSongLocation(song.id);
   if (existingLocation && existingLocation.type !== 'nowhere') {
     if (existingLocation.type === 'deck') {
       console.error(`❌ [SongRegistry] Song "${song.title}" is already loaded on deck ${existingLocation.deck.toUpperCase()}!`);
+      releaseDeckLoadingLock(side); // Release lock before returning
       return; // PREVENT DUPLICATE!
     }
     if (existingLocation.type === 'queue') {
@@ -10175,6 +10339,26 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   
   // Neuen Track laden
   audio.src = streamUrl;
+  
+  // ========================================
+  // 🔓 RELEASE LOADING LOCK WHEN READY
+  // ========================================
+  // Release lock when audio is loaded and ready to play
+  const releaseLockOnLoad = () => {
+    releaseDeckLoadingLock(side);
+    console.log(`✅ [LoadingLock] Deck ${side.toUpperCase()} ready - lock released`);
+  };
+  
+  // Release lock on successful load
+  audio.addEventListener('loadeddata', releaseLockOnLoad, { once: true });
+  
+  // Also release on error (with longer delay to prevent rapid retries)
+  audio.addEventListener('error', () => {
+    setTimeout(() => {
+      releaseDeckLoadingLock(side);
+      console.error(`❌ [LoadingLock] Deck ${side.toUpperCase()} load error - lock released`);
+    }, 2000); // 2 second delay before allowing retry
+  }, { once: true });
   
   // Track Info anzeigen
   if (titleElement) {

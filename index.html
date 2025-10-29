@@ -7,7 +7,42 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <!-- 🚀 WebGPU & Hardware Acceleration -->
+    <meta http-equiv="origin-trial" content="">
+    <meta name="color-scheme" content="dark light">
+    
     <title>SubCaster</title>
+    
+    <!-- 🚀 Early WebGPU Detection & Initialization -->
+    <script>
+      // Enable WebGPU feature detection early
+      (async function() {
+        if ('gpu' in navigator) {
+          try {
+            console.log('🚀 WebGPU: Requesting adapter...');
+            const adapter = await navigator.gpu.requestAdapter({
+              powerPreference: 'high-performance'
+            });
+            
+            if (adapter) {
+              console.log('✅ WebGPU: Adapter acquired');
+              const device = await adapter.requestDevice();
+              console.log('✅ WebGPU: Device ready');
+              
+              // Store for later use
+              window.__webgpu = { adapter, device };
+            } else {
+              console.warn('⚠️ WebGPU: No adapter available');
+            }
+          } catch (err) {
+            console.warn('⚠️ WebGPU initialization failed:', err);
+          }
+        } else {
+          console.log('ℹ️ WebGPU not supported in this browser');
+        }
+      })();
+    </script>
   </head>
   <body>
     <!-- Setup Wizard Modal -->

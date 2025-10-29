@@ -577,10 +577,11 @@ app.get('/api/waveform/:songId', async (req, res) => {
     const { songId } = req.params;
     const audioUrl = req.query.url;
     
-    // High-resolution waveform: 50 peaks per second for ultra-smooth zooming
-    // Example: 3-minute track = 180s * 50 = 9000 peaks
-    // This gives 20ms resolution - perfect for 60 FPS animation
-    const peaksPerSecond = 50;
+    // ⚡ PERFORMANCE: Reduced resolution for faster generation and smaller cache files
+    // 12.5 peaks per second = 75% reduction from original 50 peaks/sec
+    // Example: 3-minute track = 180s * 12.5 = 2250 peaks (was 9000)
+    // This gives 80ms resolution - still smooth for UI, but 4x faster generation
+    const peaksPerSecond = 12;
     
     console.log(`🌊 [WAVEFORM] ========================================`);
     console.log(`🌊 [WAVEFORM] Request for: ${songId}`);

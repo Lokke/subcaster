@@ -783,6 +783,26 @@ function isDeckAvailableForNewTrack(side: 'a' | 'b' | 'c' | 'd'): boolean {
   return state === 'empty' || state === 'ended' || state === 'error';
 }
 
+/**
+ * Check if a song is already loaded on any deck (excluding specified deck)
+ * Returns the deck letter if found, null otherwise
+ */
+function isSongLoadedOnAnyDeck(songId: string, excludeDeck?: 'a' | 'b' | 'c' | 'd'): 'a' | 'b' | 'c' | 'd' | null {
+  const allDecks: ('a' | 'b' | 'c' | 'd')[] = ['a', 'b', 'c', 'd'];
+  
+  for (const deck of allDecks) {
+    // Skip the excluded deck (usually the target deck we want to load to)
+    if (excludeDeck && deck === excludeDeck) continue;
+    
+    const loadedSong = getCurrentLoadedSong(deck);
+    if (loadedSong && loadedSong.id === songId) {
+      return deck; // Song found on this deck
+    }
+  }
+  
+  return null; // Song not found on any deck
+}
+
 // Debug function to show current player states
 function debugPlayerStates() {
   console.log('?? CURRENT PLAYER STATES DEBUG:');
@@ -8118,6 +8138,32 @@ function startNextDeckWithNewTrack(targetDeck: 'a' | 'b' | 'c' | 'd') {
   
   // Microphone placeholders are handled in handleAutoQueue() before this function is called
   
+  // Ensure we have a song item with a valid song
+  if (!isSongQueueItem(nextQueueItem) || !nextQueueItem.song) {
+    console.error(`❌ Invalid song queue item for deck ${targetDeck.toUpperCase()}`);
+    return;
+  }
+  
+  // 🚫 DUPLICATE CHECK: Verify song is not already loaded on another deck
+  const songOnOtherDeck = isSongLoadedOnAnyDeck(nextQueueItem.song.id, targetDeck);
+  if (songOnOtherDeck) {
+    console.warn(`⚠️ [DuplicateCheck] "${nextQueueItem.song.title}" already loaded on deck ${songOnOtherDeck.toUpperCase()}, skipping and trying next song`);
+    
+    // Remove this item from queue to avoid retrying
+    const itemIndex = queue.findIndex(item => item.id === nextQueueItem.id);
+    if (itemIndex !== -1) {
+      queue.splice(itemIndex, 1);
+      updateQueueDisplay();
+      console.log(`🗑️ Removed duplicate queue item`);
+    }
+    
+    // Try next song in queue
+    setTimeout(() => {
+      startNextDeckWithNewTrack(targetDeck);
+    }, 100);
+    return;
+  }
+  
   // Check if target deck is actually available for new content
   if (!isDeckAvailableForNewTrack(targetDeck)) {
     const targetState = getDeckState(targetDeck);
@@ -8145,12 +8191,6 @@ function startNextDeckWithNewTrack(targetDeck: 'a' | 'b' | 'c' | 'd') {
     setTimeout(() => {
       startNextDeckWithNewTrack(targetDeck);
     }, 1000);
-    return;
-  }
-  
-  // Ensure we have a song item with a valid song
-  if (!isSongQueueItem(nextQueueItem) || !nextQueueItem.song) {
-    console.error(`❌ Invalid song queue item for deck ${targetDeck.toUpperCase()}`);
     return;
   }
   
@@ -8212,6 +8252,13 @@ function prepareAllAvailableDecks() {
     const songItem = songsNeedingPreparation[i];
     
     if (songItem.song) {
+      // 🚫 DUPLICATE CHECK: Skip if song already loaded on another deck
+      const songOnOtherDeck = isSongLoadedOnAnyDeck(songItem.song.id, deck);
+      if (songOnOtherDeck) {
+        console.warn(`⚠️ [DuplicateCheck] "${songItem.song.title}" already on deck ${songOnOtherDeck.toUpperCase()}, skipping preparation`);
+        continue; // Skip this song, try next one
+      }
+      
       console.log(`🔄 Preparing "${songItem.song.title}" on deck ${deck.toUpperCase()}`);
       
       // Assign and load

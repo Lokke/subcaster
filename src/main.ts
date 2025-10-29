@@ -145,6 +145,97 @@ function broadcastCurrentMetadata(force: boolean = false) {
   }
 }
 
+// ========================================
+// 🎯 GLOBAL SONG LOCATION TRACKING SYSTEM
+// ========================================
+// Ensures that every song exists at EXACTLY ONE location at any time
+// Songs are MOVED, not COPIED, between queue and decks
+// This prevents duplicates and ensures data integrity
+
+type SongLocation = 
+  | { type: 'queue'; queueIndex: number }
+  | { type: 'deck'; deck: 'a' | 'b' | 'c' | 'd' }
+  | { type: 'nowhere' }; // Song was removed/played
+
+// Central registry: songId -> location
+const songLocationRegistry = new Map<string, SongLocation>();
+
+/**
+ * Register song location in the global registry
+ * @throws Error if song already exists at a different location
+ */
+function registerSongLocation(songId: string, location: SongLocation) {
+  const existingLocation = songLocationRegistry.get(songId);
+  
+  if (existingLocation && existingLocation.type !== 'nowhere') {
+    console.error(`❌ [SongRegistry] Song ${songId} already exists at:`, existingLocation);
+    throw new Error(`Song ${songId} already exists at ${existingLocation.type}`);
+  }
+  
+  songLocationRegistry.set(songId, location);
+  console.log(`📍 [SongRegistry] Registered song ${songId} at:`, location);
+}
+
+/**
+ * Unregister song from its current location
+ */
+function unregisterSongLocation(songId: string) {
+  const location = songLocationRegistry.get(songId);
+  if (location) {
+    console.log(`🗑️ [SongRegistry] Unregistered song ${songId} from:`, location);
+  }
+  songLocationRegistry.set(songId, { type: 'nowhere' });
+}
+
+/**
+ * Move song from one location to another
+ * Automatically handles cleanup at old location
+ */
+function moveSong(songId: string, fromLocation: SongLocation, toLocation: SongLocation): boolean {
+  const currentLocation = songLocationRegistry.get(songId);
+  
+  // Verify song is at expected location
+  if (!currentLocation || JSON.stringify(currentLocation) !== JSON.stringify(fromLocation)) {
+    console.error(`❌ [SongRegistry] Cannot move song ${songId}: not at expected location`, {
+      expected: fromLocation,
+      actual: currentLocation
+    });
+    return false;
+  }
+  
+  // Update registry
+  songLocationRegistry.set(songId, toLocation);
+  console.log(`🚚 [SongRegistry] Moved song ${songId}:`, { from: fromLocation, to: toLocation });
+  
+  return true;
+}
+
+/**
+ * Check if song exists anywhere in the system
+ */
+function getSongLocation(songId: string): SongLocation | null {
+  return songLocationRegistry.get(songId) || null;
+}
+
+/**
+ * Check if song is on any deck
+ */
+function isSongOnAnyDeck(songId: string): 'a' | 'b' | 'c' | 'd' | null {
+  const location = songLocationRegistry.get(songId);
+  if (location && location.type === 'deck') {
+    return location.deck;
+  }
+  return null;
+}
+
+/**
+ * Check if song is in queue
+ */
+function isSongInQueue(songId: string): boolean {
+  const location = songLocationRegistry.get(songId);
+  return location?.type === 'queue';
+}
+
 // Helper: Artist Image URL mit 300px Größe
 function getArtistImageUrl(imageUrl: string | undefined, size: number = 300): string {
   if (!imageUrl) return '';
@@ -569,8 +660,19 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
   
   const audio = getAudioElement(side);
   
-  // Get song ID BEFORE clearing (for library update later)
+  // Get song ID BEFORE clearing (for library update and registry cleanup)
   const clearedSongId = audio?.dataset.songId || playerStates[side]?.song?.id;
+  
+  // ========================================
+  // 🎯 UNREGISTER SONG FROM LOCATION REGISTRY
+  // ========================================
+  if (clearedSongId) {
+    const location = getSongLocation(clearedSongId);
+    if (location?.type === 'deck' && location.deck === side) {
+      unregisterSongLocation(clearedSongId);
+      console.log(`📍 [SongRegistry] Unregistered song ${clearedSongId} from deck ${side.toUpperCase()}`);
+    }
+  }
   
   const titleElement = document.getElementById(`track-title-${side}`);
   const artistElement = document.getElementById(`track-artist-${side}`);
@@ -580,6 +682,21 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
   const progressBar = document.getElementById(`progress-bar-${side}`);
   const volumeMeter = document.getElementById(`volume-meter-${side}`);
   const playerDeck = document.getElementById(`player-deck-${side}`);
+  
+  // ========================================
+  // 🔊 RESET VOLUME TO DEFAULT (1.0 = 100%)
+  // ========================================
+  if (audio) {
+    audio.volume = 1.0;
+    console.log(`🔊 Reset volume for deck ${side.toUpperCase()} to 100%`);
+  }
+  
+  // Reset volume slider UI
+  const volumeSlider = document.getElementById(`volume-${side}`) as HTMLInputElement;
+  if (volumeSlider) {
+    volumeSlider.value = '100';
+    console.log(`🎚️ Reset volume slider UI for deck ${side.toUpperCase()}`);
+  }
   
   // Clear audio
   if (audio) {
@@ -726,7 +843,7 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
     loadingIndicator.classList.remove('visible');
   }
   
-  console.log(`✅ Player ${side.toUpperCase()} deck cleared completely`);
+  console.log(`✅ Player ${side.toUpperCase()} deck cleared COMPLETELY (including volume reset)`);
   
   // Update only the cleared song's status in library
   if (clearedSongId) {
@@ -780,7 +897,21 @@ function isDeckPlaying(side: 'a' | 'b' | 'c' | 'd'): boolean {
 // Check if deck is truly available for new content
 function isDeckAvailableForNewTrack(side: 'a' | 'b' | 'c' | 'd'): boolean {
   const state = getDeckState(side);
-  return state === 'empty' || state === 'ended' || state === 'error';
+  
+  // ❌ CRITICAL: Deck must be in empty/ended/error state
+  if (!(state === 'empty' || state === 'ended' || state === 'error')) {
+    return false;
+  }
+  
+  // ✅ ADDITIONAL CHECK: Deck must NOT have a song loaded
+  // This prevents overwriting decks that still have a valid song
+  const currentSong = getCurrentLoadedSong(side);
+  if (currentSong) {
+    console.log(`⚠️ [isDeckAvailable] Deck ${side.toUpperCase()} has song "${currentSong.title}" - NOT available`);
+    return false; // Deck has a song, NOT available for new track
+  }
+  
+  return true; // Deck is truly empty and available
 }
 
 /**
@@ -2564,6 +2695,21 @@ async function renderWaveformBackground(element: HTMLElement, songId: string, wa
   element.dataset.waveformLoaded = 'true';
   element.dataset.waveformLoading = 'false';
   
+  // Apply correct color filter based on current CSS classes
+  // This ensures the waveform has the right color even if CSS classes were added after rendering
+  if (element.classList.contains('on-deck-a')) {
+    canvas.style.filter = 'hue-rotate(-120deg) saturate(1.5) brightness(1.2)';
+  } else if (element.classList.contains('on-deck-b')) {
+    canvas.style.filter = 'hue-rotate(30deg) saturate(1.2) brightness(1.1)';
+  } else if (element.classList.contains('on-deck-c')) {
+    canvas.style.filter = 'hue-rotate(-60deg) saturate(1.8) brightness(1.3)';
+  } else if (element.classList.contains('on-deck-d')) {
+    canvas.style.filter = 'hue-rotate(10deg) saturate(0.9) brightness(1.2)';
+  } else if (element.classList.contains('in-queue')) {
+    canvas.style.filter = 'hue-rotate(200deg) saturate(0.9) brightness(1.3)';
+  }
+  // Default green needs no filter
+  
   console.log(`✅ [LibraryWaveform] Rendered waveform for ${songId} with color ${borderColor}`);
 }
 
@@ -2652,15 +2798,19 @@ function loadVisibleSongWaveforms(container?: HTMLElement) {
     const songId = element.dataset.songId || element.dataset.trackId;
     if (!songId) return;
     
-    // Skip if already loaded or currently loading
+    // Skip if already loaded on THIS element or currently loading
+    // NOTE: Don't skip just because it's in cache - cache needs to be rendered to element!
     if (element.dataset.waveformLoaded === 'true' || 
-        element.dataset.waveformLoading === 'true' ||
-        waveformCache.has(songId) ||
-        pendingWaveforms.has(songId)) {
+        element.dataset.waveformLoading === 'true') {
       return;
     }
     
-    // Load waveform only for new songs
+    // Also skip if currently being generated (in pending queue)
+    if (pendingWaveforms.has(songId)) {
+      return;
+    }
+    
+    // Load waveform (will use cache if available, or fetch from server)
     const originalStreamUrl = openSubsonicClient.getOriginalStreamUrl(songId);
     loadSongWaveformBackground(element, songId, originalStreamUrl);
     newLoads++;
@@ -2767,19 +2917,10 @@ function createMicrophoneQueueItem(): QueueItem {
   };
 }
 
-// Check if song is already in queue
-function isSongInQueue(songId: string): boolean {
-  return queue.some(item => isSongQueueItem(item) && item.song.id === songId);
-}
+// [REMOVED - duplicate function, using registry-based version at line 234]
 
 // Check if song is loaded on any deck and return deck letter
 function getSongDeck(songId: string): 'a' | 'b' | 'c' | 'd' | null {
-  for (const deck of ['a', 'b', 'c', 'd'] as const) {
-    const audio = document.getElementById(`audio-${deck}`) as HTMLAudioElement;
-    if (audio?.dataset.songId === songId) {
-      return deck;
-    }
-  }
   return null;
 }
 
@@ -2947,10 +3088,9 @@ function markSongsInLibrary() {
       };
       el.style.borderLeft = `4px solid ${deckColors[deck]}`;
       
-      // Update waveform color via CSS filter (fast!) if waveform is loaded
-      if (el.dataset.waveformLoaded === 'true') {
-        updateWaveformColor(el, deck);
-      }
+      // Update waveform color via CSS filter (fast!)
+      // No need to check if loaded - updateWaveformColor will handle missing canvas gracefully
+      updateWaveformColor(el, deck);
       return;
     }
     
@@ -2959,15 +3099,11 @@ function markSongsInLibrary() {
       el.classList.add('in-queue');
       el.style.borderLeft = '4px solid #7289da';
       
-      // Update waveform color via CSS filter (fast!) if waveform is loaded
-      if (el.dataset.waveformLoaded === 'true') {
-        updateWaveformColor(el, 'queue');
-      }
+      // Update waveform color via CSS filter (fast!)
+      updateWaveformColor(el, 'queue');
     } else {
-      // Update waveform color via CSS filter (fast!) if waveform is loaded
-      if (el.dataset.waveformLoaded === 'true') {
-        updateWaveformColor(el, 'default');
-      }
+      // Update waveform color via CSS filter (fast!)
+      updateWaveformColor(el, 'default');
     }
   });
 }
@@ -5764,7 +5900,24 @@ async function addToQueue(songOrId: string | OpenSubsonicSong): Promise<void> {
       return;
     }
     
-    // ENHANCED: Check if song already exists in queue - prevent duplicates
+    // ========================================
+    // 🎯 CHECK SONG LOCATION - PREVENT DUPLICATES
+    // ========================================
+    const existingLocation = getSongLocation(song.id);
+    if (existingLocation && existingLocation.type !== 'nowhere') {
+      if (existingLocation.type === 'deck') {
+        console.warn(`❌ [SongRegistry] Song "${song.title}" is already on deck ${existingLocation.deck.toUpperCase()}!`);
+        showStatusMessage(`⚠️ "${song.title}" bereits auf Deck ${existingLocation.deck.toUpperCase()}`, 'info');
+        return; // PREVENT DUPLICATE!
+      }
+      if (existingLocation.type === 'queue') {
+        console.warn(`❌ [SongRegistry] Song "${song.title}" is already in queue!`);
+        showStatusMessage(`⚠️ "${song.title}" bereits in Queue`, 'info');
+        return; // PREVENT DUPLICATE!
+      }
+    }
+    
+    // ENHANCED: Check if song already exists in queue - prevent duplicates (legacy check, should be covered by registry)
     const existingIndex = queue.findIndex(item => isSongQueueItem(item) && item.song?.id === song.id);
     if (existingIndex !== -1) {
       const existingItem = queue[existingIndex];
@@ -5785,6 +5938,12 @@ async function addToQueue(songOrId: string | OpenSubsonicSong): Promise<void> {
     const queueItem = createSongQueueItem(song);
     
     queue.push(queueItem);
+    
+    // ========================================
+    // 🎯 REGISTER SONG IN QUEUE
+    // ========================================
+    registerSongLocation(song.id, { type: 'queue', queueIndex: queue.length - 1 });
+    
     updateQueueDisplay();
     
     // Fast update: Only update this specific song's status (no full re-render)
@@ -6584,10 +6743,21 @@ function setupAutoQueueControls() {
     return;
   }
   
+  // ✅ CRITICAL FIX: Remove existing event listeners before adding new ones
+  // This prevents multiple listeners from being attached on re-initialization (e.g., after login)
+  const newAbButton = abButton.cloneNode(true) as HTMLButtonElement;
+  const newCdButton = cdButton.cloneNode(true) as HTMLButtonElement;
+  abButton.parentNode?.replaceChild(newAbButton, abButton);
+  cdButton.parentNode?.replaceChild(newCdButton, cdButton);
+  
+  // Use the new buttons for event listeners
+  const abBtn = newAbButton;
+  const cdBtn = newCdButton;
+  
   // Update button states based on current config
   const updateButtonStates = () => {
-    abButton.classList.toggle('active', autoQueueConfig.deckPairAB);
-    cdButton.classList.toggle('active', autoQueueConfig.deckPairCD);
+    abBtn.classList.toggle('active', autoQueueConfig.deckPairAB);
+    cdBtn.classList.toggle('active', autoQueueConfig.deckPairCD);
     
     // Icons bleiben konstant - nur CSS-Klassen ändern sich für Styling
     // Kein Text-Update nötig, da A+B und C+D konstant bleiben sollen
@@ -6596,7 +6766,7 @@ function setupAutoQueueControls() {
   };
   
   // A+B Button Click Handler
-  abButton.addEventListener('click', () => {
+  abBtn.addEventListener('click', () => {
     autoQueueConfig.deckPairAB = !autoQueueConfig.deckPairAB;
     updateButtonStates();
     
@@ -6628,7 +6798,7 @@ function setupAutoQueueControls() {
   });
   
   // C+D Button Click Handler  
-  cdButton.addEventListener('click', () => {
+  cdBtn.addEventListener('click', () => {
     autoQueueConfig.deckPairCD = !autoQueueConfig.deckPairCD;
     updateButtonStates();
     
@@ -8078,6 +8248,14 @@ function removeQueueItemBySong(song: OpenSubsonicSong) {
     const itemTitle = isSongQueueItem(removedItem) && removedItem.song ? removedItem.song.title : 'Item';
     console.log(`🗑️ Removed "${itemTitle}" from queue`);
     
+    // ========================================
+    // 🎯 UNREGISTER SONG FROM LOCATION REGISTRY
+    // ========================================
+    if (isSongQueueItem(removedItem) && removedItem.song) {
+      unregisterSongLocation(removedItem.song.id);
+      console.log(`📍 [SongRegistry] Unregistered song ${removedItem.song.id} from queue`);
+    }
+    
     // CRITICAL: Auto-adjust queue order after removal
     autoAdjustQueueOrder();
     
@@ -8144,10 +8322,10 @@ function startNextDeckWithNewTrack(targetDeck: 'a' | 'b' | 'c' | 'd') {
     return;
   }
   
-  // 🚫 DUPLICATE CHECK: Verify song is not already loaded on another deck
-  const songOnOtherDeck = isSongLoadedOnAnyDeck(nextQueueItem.song.id, targetDeck);
-  if (songOnOtherDeck) {
-    console.warn(`⚠️ [DuplicateCheck] "${nextQueueItem.song.title}" already loaded on deck ${songOnOtherDeck.toUpperCase()}, skipping and trying next song`);
+  // 🚫 DUPLICATE CHECK: Verify song is not already loaded on another deck (using registry)
+  const songOnOtherDeck = isSongOnAnyDeck(nextQueueItem.song.id);
+  if (songOnOtherDeck && songOnOtherDeck !== targetDeck) {
+    console.warn(`⚠️ [SongRegistry] "${nextQueueItem.song.title}" already loaded on deck ${songOnOtherDeck.toUpperCase()}, skipping and trying next song`);
     
     // Remove this item from queue to avoid retrying
     const itemIndex = queue.findIndex(item => item.id === nextQueueItem.id);
@@ -8252,10 +8430,10 @@ function prepareAllAvailableDecks() {
     const songItem = songsNeedingPreparation[i];
     
     if (songItem.song) {
-      // 🚫 DUPLICATE CHECK: Skip if song already loaded on another deck
-      const songOnOtherDeck = isSongLoadedOnAnyDeck(songItem.song.id, deck);
-      if (songOnOtherDeck) {
-        console.warn(`⚠️ [DuplicateCheck] "${songItem.song.title}" already on deck ${songOnOtherDeck.toUpperCase()}, skipping preparation`);
+      // 🚫 DUPLICATE CHECK: Skip if song already loaded on another deck (using registry)
+      const songOnOtherDeck = isSongOnAnyDeck(songItem.song.id);
+      if (songOnOtherDeck && songOnOtherDeck !== deck) {
+        console.warn(`⚠️ [SongRegistry] "${songItem.song.title}" already on deck ${songOnOtherDeck.toUpperCase()}, skipping preparation`);
         continue; // Skip this song, try next one
       }
       
@@ -8471,6 +8649,22 @@ function triggerQueueSync(reason: string) {
  * Respects the rotation order: A→B→C→D→A
  * ENSURES CORRECT ROTATION BY REORGANIZING IF NEEDED
  */
+/**
+ * ========================================
+ * 🎯 NEW ARCHITECTURE: CHECK AND LET EMPTY DECKS REQUEST SONGS
+ * ========================================
+ * This function checks which decks are empty and in active rotation,
+ * then lets THEM request songs from the queue (PULL architecture)
+ * 
+ * ⚠️ IMPORTANT: Only fills decks if at least one deck is playing
+ *    This prevents auto-filling when user is just building queue
+ * 
+ * ⚠️ CRITICAL CHANGE: Decks are NOT auto-filled just because they're empty!
+ *    Songs are only loaded when explicitly requested via handleAutoQueue()
+ *    This function ONLY validates existing songs and clears invalid ones
+ * 
+ * This is the main auto-queue watcher function
+ */
 function checkAndFillEmptyDecks() {
   // Only run if auto-queue is active for at least one deck pair
   if (!isAutoQueueActive()) {
@@ -8482,45 +8676,52 @@ function checkAndFillEmptyDecks() {
     return;
   }
   
+  // ========================================
+  // 🎯 CRITICAL: Only auto-fill if at least one deck is playing
+  // ========================================
+  // This prevents auto-filling when user is just building the queue
+  // Songs should only be loaded when playback is active
+  const playingCount = countPlayingDecks();
+  if (playingCount === 0) {
+    console.log(`⏸️ [Auto-Queue] No decks playing - skipping auto-fill (user is building queue)`);
+    return;
+  }
+  
   // FIRST: Validate and fix rotation if needed
   validateAndFixRotation();
   
   // Define rotation order based on active deck pairs
   const rotationOrder = getActiveRotationOrder();
   
-  // Determine which decks need to be filled
-  const decksToFill: ('a' | 'b' | 'c' | 'd')[] = [];
+  // ========================================
+  // 🎯 NEW BEHAVIOR: ONLY VALIDATE, DON'T AUTO-FILL
+  // ========================================
+  // We no longer auto-fill empty decks here
+  // Songs are ONLY loaded via explicit calls from handleAutoQueue()
+  console.log(`🔍 [Auto-Queue] Validating decks (${playingCount} deck(s) playing)...`);
   
   for (const deck of rotationOrder) {
     const deckState = getDeckState(deck);
-    const loadedSong = getCurrentLoadedSong(deck);
+    const currentSong = getCurrentLoadedSong(deck);
     
-    // Deck needs a track if it's:
-    // 1. Empty (no track loaded)
-    // 2. Ready but not playing/paused (track ended)
-    // 3. In error state
-    if (deckState === 'empty' || deckState === 'ended' || deckState === 'error') {
-      decksToFill.push(deck);
-    }
-    // Also check if deck has a track but it's not in the queue anymore (was removed)
-    else if (loadedSong && deckState !== 'playing') {
+    // ========================================
+    // ✅ ONLY VALIDATE: Check if deck has invalid song
+    // ========================================
+    if (currentSong) {
+      // Deck has a song - check if it's still in queue
       const songInQueue = queue.find(item => 
-        isSongQueueItem(item) && item.song?.id === loadedSong.id
+        isSongQueueItem(item) && item.song?.id === currentSong.id
       );
       if (!songInQueue) {
-        // Track was removed from queue, deck should be considered empty
-        console.log(`🔄 Deck ${deck.toUpperCase()} has track not in queue, marking for refill`);
-        decksToFill.push(deck);
+        // Song was removed from queue but still on deck - clear it
+        console.log(`🔄 [Auto-Queue] Deck ${deck.toUpperCase()} has song not in queue - clearing deck`);
+        clearPlayerDeck(deck);
+      } else {
+        console.log(`✅ [Auto-Queue] Deck ${deck.toUpperCase()} has valid song "${currentSong.title}" (${deckState})`);
       }
-    }
-  }
-  
-  // Fill empty decks in rotation order
-  if (decksToFill.length > 0) {
-    console.log(`🎯 Auto-Queue Watcher: Found ${decksToFill.length} decks to fill: [${decksToFill.map(d => d.toUpperCase()).join(', ')}]`);
-    
-    for (const deck of decksToFill) {
-      fillDeckFromQueue(deck);
+    } else {
+      // Deck is empty - that's OK, don't auto-fill
+      console.log(`⚪ [Auto-Queue] Deck ${deck.toUpperCase()} is ${deckState} - waiting for explicit request`);
     }
   }
 }
@@ -8798,24 +8999,52 @@ function getCurrentPlayingDeck(): 'a' | 'b' | 'c' | 'd' | null {
 }
 
 /**
- * Fill a specific deck with the next available track from queue
- * RESPECTS ROTATION ORDER - finds the correct song for this deck position
+ * ========================================
+ * 🎯 NEW ARCHITECTURE: PULL-BASED SONG REQUEST
+ * ========================================
+ * Deck requests a song from the queue when it's empty
+ * This is the ONLY way decks should get songs in auto-play mode
+ * 
+ * @param deck - The deck requesting a song
+ * @returns true if song was loaded, false if not available
  */
-function fillDeckFromQueue(deck: 'a' | 'b' | 'c' | 'd') {
-  const rotationOrder = getActiveRotationOrder();
+function requestSongForDeck(deck: 'a' | 'b' | 'c' | 'd'): boolean {
+  console.log(`🎯 [PULL] Deck ${deck.toUpperCase()} requesting song from queue`);
   
+  // ========================================
+  // 1️⃣ CHECK: Is deck in active rotation?
+  // ========================================
+  const rotationOrder = getActiveRotationOrder();
   if (!rotationOrder.includes(deck)) {
-    console.log(`⚠️ Deck ${deck.toUpperCase()} is not in active rotation`);
-    return;
+    console.log(`⚠️ [PULL] Deck ${deck.toUpperCase()} is not in active rotation - request denied`);
+    return false;
   }
   
-  // Get current deck index in rotation
+  // ========================================
+  // 2️⃣ CHECK: Does deck already have a song?
+  // ========================================
+  const currentSong = getCurrentLoadedSong(deck);
+  if (currentSong) {
+    console.log(`⚠️ [PULL] Deck ${deck.toUpperCase()} already has song "${currentSong.title}" - request denied`);
+    return false;
+  }
+  
+  // ========================================
+  // 3️⃣ CHECK: Is deck truly empty?
+  // ========================================
+  const deckState = getDeckState(deck);
+  if (deckState !== 'empty' && deckState !== 'ended' && deckState !== 'error') {
+    console.log(`⚠️ [PULL] Deck ${deck.toUpperCase()} is not empty (state: ${deckState}) - request denied`);
+    return false;
+  }
+  
+  // ========================================
+  // 4️⃣ FIND: Get next available song for this deck position
+  // ========================================
   const deckIndex = rotationOrder.indexOf(deck);
   
   // Count how many songs are already assigned before this deck position
   let songsBeforeThisDeck = 0;
-  
-  // Count assigned songs for each deck that comes before this one in rotation
   for (let i = 0; i < deckIndex; i++) {
     const priorDeck = rotationOrder[i];
     const hasSong = queue.some(item => 
@@ -8836,7 +9065,7 @@ function fillDeckFromQueue(deck: 'a' | 'b' | 'c' | 'd') {
     if (item.assignedToDeck === null) {
       // Skip blacklisted genres during streaming
       if (azuraCastWebcaster?.getConnectionStatus() && hasBlacklistedGenre(item.song)) {
-        console.warn(`🚫 Skipping blacklisted song in auto-fill: "${item.song.title}" (${item.song.genre})`);
+        console.warn(`🚫 [PULL] Skipping blacklisted song: "${item.song.title}" (${item.song.genre})`);
         continue;
       }
       
@@ -8857,7 +9086,7 @@ function fillDeckFromQueue(deck: 'a' | 'b' | 'c' | 'd') {
       
       // Skip blacklisted genres during streaming
       if (azuraCastWebcaster?.getConnectionStatus() && hasBlacklistedGenre(item.song)) {
-        console.warn(`🚫 Skipping blacklisted song in auto-fill fallback: "${item.song.title}" (${item.song.genre})`);
+        console.warn(`🚫 [PULL] Skipping blacklisted song in fallback: "${item.song.title}" (${item.song.genre})`);
         return false;
       }
       
@@ -8866,16 +9095,43 @@ function fillDeckFromQueue(deck: 'a' | 'b' | 'c' | 'd') {
   }
   
   if (!targetSongItem || !isSongQueueItem(targetSongItem) || !targetSongItem.song) {
-    console.log(`⚠️ No available songs in queue to fill deck ${deck.toUpperCase()}`);
-    return;
+    console.log(`⚠️ [PULL] No available songs in queue for deck ${deck.toUpperCase()}`);
+    return false;
   }
   
-  console.log(`📥 Filling deck ${deck.toUpperCase()} (position ${deckIndex}) with: "${targetSongItem.song.title}"`);
+  // ========================================
+  // 5️⃣ CHECK: Is song already on another deck? (should never happen with registry)
+  // ========================================
+  const songOnOtherDeck = isSongOnAnyDeck(targetSongItem.song.id);
+  if (songOnOtherDeck && songOnOtherDeck !== deck) {
+    console.error(`❌ [PULL] Song "${targetSongItem.song.title}" already on deck ${songOnOtherDeck.toUpperCase()} - REGISTRY ERROR!`);
+    
+    // Mark this song as already assigned to prevent retrying
+    targetSongItem.assignedToDeck = songOnOtherDeck;
+    updateQueueDisplay();
+    return false;
+  }
   
-  // Assign and load
+  // ========================================
+  // 6️⃣ LOAD: Assign and load song to deck
+  // ========================================
+  console.log(`✅ [PULL] Loading "${targetSongItem.song.title}" to deck ${deck.toUpperCase()}`);
+  
   targetSongItem.assignedToDeck = deck;
   loadTrackToPlayer(deck, targetSongItem.song, false);
   updateQueueDisplay();
+  
+  return true;
+}
+
+/**
+/**
+ * [DEPRECATED] Old push-based fill function - kept for compatibility
+ * Use requestSongForDeck() instead for pull-based architecture
+ */
+function fillDeckFromQueue(deck: 'a' | 'b' | 'c' | 'd') {
+  console.warn(`⚠️ [DEPRECATED] fillDeckFromQueue() called - use requestSongForDeck() instead`);
+  return requestSongForDeck(deck);
 }
 
 function addMicrophoneToQueue() {
@@ -9851,9 +10107,39 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   
   console.log(`Loading "${song.title}" to Player ${side.toUpperCase()}${autoPlay ? ' (auto-play)' : ''}`);
   
+  // ========================================
+  // 🎯 CHECK SONG LOCATION - PREVENT DUPLICATES
+  // ========================================
+  const existingLocation = getSongLocation(song.id);
+  if (existingLocation && existingLocation.type !== 'nowhere') {
+    if (existingLocation.type === 'deck') {
+      console.error(`❌ [SongRegistry] Song "${song.title}" is already loaded on deck ${existingLocation.deck.toUpperCase()}!`);
+      return; // PREVENT DUPLICATE!
+    }
+    if (existingLocation.type === 'queue') {
+      console.log(`🚚 [SongRegistry] Moving song "${song.title}" from queue to deck ${side.toUpperCase()}`);
+      // Will be removed from queue below
+    }
+  }
+  
   // ✅ CLEAR DECK COMPLETELY before loading new track
   // This removes any previous local files, radio streams, or other track data
   clearPlayerDeck(side);
+  
+  // ========================================
+  // 🎯 REGISTER SONG ON DECK & REMOVE FROM QUEUE
+  // ========================================
+  registerSongLocation(song.id, { type: 'deck', deck: side });
+  
+  // Remove song from queue if it exists there
+  const queueIndex = queue.findIndex(item => 
+    isSongQueueItem(item) && item.song?.id === song.id
+  );
+  if (queueIndex !== -1) {
+    queue.splice(queueIndex, 1);
+    updateQueueDisplay();
+    console.log(`🗑️ [SongRegistry] Removed "${song.title}" from queue (moved to deck ${side.toUpperCase()})`);
+  }
   
   // 📊 Reset play history tracking for this deck
   songsMarkedAsPlayed[side].clear();

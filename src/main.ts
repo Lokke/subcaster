@@ -2707,12 +2707,9 @@ function markSongsInLibrary() {
       };
       el.style.borderLeft = `4px solid ${deckColors[deck]}`;
       
-      // Re-render waveform with new deck color if waveform is loaded
+      // Update waveform color via CSS filter (fast!) if waveform is loaded
       if (el.dataset.waveformLoaded === 'true') {
-        const waveformData = waveformCache.get(songId);
-        if (waveformData) {
-          renderWaveformBackground(el, songId, waveformData);
-        }
+        updateWaveformColor(el, deck);
       }
       return;
     }
@@ -2722,20 +2719,14 @@ function markSongsInLibrary() {
       el.classList.add('in-queue');
       el.style.borderLeft = '4px solid #7289da';
       
-      // Re-render waveform with queue color if waveform is loaded
+      // Update waveform color via CSS filter (fast!) if waveform is loaded
       if (el.dataset.waveformLoaded === 'true') {
-        const waveformData = waveformCache.get(songId);
-        if (waveformData) {
-          renderWaveformBackground(el, songId, waveformData);
-        }
+        updateWaveformColor(el, 'queue');
       }
     } else {
-      // Re-render waveform with default color if waveform is loaded
+      // Update waveform color via CSS filter (fast!) if waveform is loaded
       if (el.dataset.waveformLoaded === 'true') {
-        const waveformData = waveformCache.get(songId);
-        if (waveformData) {
-          renderWaveformBackground(el, songId, waveformData);
-        }
+        updateWaveformColor(el, 'default');
       }
     }
   });

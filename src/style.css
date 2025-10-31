@@ -1048,16 +1048,16 @@ body.logged-in .wishbox-frame {
 /* Specific Breadcrumb Element Styles */
 .breadcrumb-element.time-display {
   font-family: 'Courier New', monospace;
-  min-width: 90px; /* Minimum width */
-  flex: 1; /* Allow expansion to fill space */
-  text-align: center; /* Center the time text */
+  width: max-content;
+  flex: 0 0 auto;
+  justify-content: flex-start;
 }
 
 .breadcrumb-element.rating-display {
   gap: 3px;
-  min-width: 80px; /* Minimum width */
-  flex: 1; /* Allow expansion to fill space */
-  justify-content: center; /* Center the stars */
+  width: max-content; /* Nur so breit wie Inhalt */
+  flex: 0 0 auto; /* Nicht expandieren */
+  justify-content: flex-start; /* Linksbündig */
 }
 
 .breadcrumb-element.rating-display .rating-star {
@@ -1089,12 +1089,15 @@ body.logged-in .wishbox-frame {
 }
 
 .volume-label {
-  font-size: 10px;
+  font-size: 16px;
   color: #ccc;
-  font-weight: 600;
+  font-weight: 400;
   width: 20px;
   text-align: center;
   flex-shrink: 0; /* Prevent label from shrinking */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Horizontal Volume Slider - Custom Design */
@@ -2401,6 +2404,8 @@ body.logged-in .wishbox-frame {
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
   min-height: 160px; /* Gleiche Höhe wie Player */
   height: fit-content;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Login Label - wie Player Label, ohne Punkt */
@@ -2434,6 +2439,7 @@ body.logged-in .wishbox-frame {
   flex-direction: column;
   max-height: 80vh;
   overflow-y: auto;
+  flex: 1;
 }
 
 /* Form Groups for Login Sections */
@@ -2496,6 +2502,7 @@ body.logged-in .wishbox-frame {
   display: flex;
   justify-content: center;
   margin-top: 8px;
+  flex-shrink: 0;
 }
 
 .login-button-container button {
@@ -4937,7 +4944,8 @@ body.logged-in .wishbox-frame {
 .unified-song-item .track-rating {
   display: flex;
   gap: 2px;
-  justify-content: center;
+  justify-content: flex-start;
+  width: max-content;
 }
 
 .unified-song-item .track-duration {
@@ -6171,6 +6179,7 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   align-items: center;
   flex-shrink: 0;
   margin-left: 0.5rem;
+  width: max-content;
 }
 
 .queue-song-rating .star {
@@ -7422,6 +7431,8 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   display: flex;
   gap: 2px;
   align-items: center;
+  justify-content: flex-start;
+  width: max-content;
   position: relative;
   z-index: 2;
 }
@@ -7432,6 +7443,40 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   cursor: pointer;
   transition: all 0.2s ease;
   user-select: none;
+}
+
+.star.hidden-star {
+  opacity: 0;
+  width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Auch für .rating-star Klasse (Player-Bereich) */
+.rating-star.hidden-star {
+  opacity: 0;
+  width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Bei Hover auf Rating-Container: Zeige alle Sterne */
+.track-rating:hover .star.hidden-star,
+.rating-stars:hover .star.hidden-star,
+.queue-song-rating:hover .star.hidden-star,
+.player-rating:hover .star.hidden-star,
+.rating-display:hover .rating-star.hidden-star {
+  opacity: 1;
+  width: auto;
+  position: relative;
+  pointer-events: all;
+  color: #444;
 }
 
 .star:hover {
@@ -7614,7 +7659,8 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
 .track-rating {
   display: flex;
   gap: 2px;
-  justify-content: center;
+  justify-content: flex-start;
+  width: max-content;
 }
 
 .track-rating .star {
@@ -9544,7 +9590,7 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   border-radius: 4px;
   padding: 8px 16px;
   display: grid;
-  grid-template-columns: 40px minmax(150px, 2fr) minmax(100px, 1.5fr) minmax(100px, 1.5fr) minmax(80px, 1fr) 60px 55px;
+  grid-template-columns: 40px minmax(150px, 2fr) minmax(100px, 1.5fr) minmax(100px, 1.5fr) minmax(80px, 1fr) max-content 55px;
   gap: 12px;
   align-items: center;
   width: 100%;

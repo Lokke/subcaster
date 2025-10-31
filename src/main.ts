@@ -1539,7 +1539,7 @@ function createPlayerDeckHTML(side: 'a' | 'b' | 'c' | 'd'): string {
           
           <!-- Volume Control -->
           <div class="breadcrumb-element volume-control">
-            <span class="volume-label">Vol</span>
+            <span class="volume-label material-icons">volume_up</span>
             <input type="range" class="volume-slider-breadcrumb" id="volume-${side}" min="0" max="100" step="1" value="80">
           </div>
           
@@ -4978,12 +4978,25 @@ function createSongHTMLOneline(song: OpenSubsonicSong): string {
 }
 
 // 5-Sterne Rating System erstellen
-function createStarRating(currentRating: number, songId: string): string {
+function createStarRating(currentRating: number, songId: string, useRatingStarClass: boolean = false): string {
   let starsHTML = '';
-  for (let i = 1; i <= 5; i++) {
+  const starClass = useRatingStarClass ? 'rating-star' : 'star';
+  
+  // Nur die tatsächlich bewerteten Sterne anzeigen (gefüllte Sterne)
+  // Wenn Rating 0 ist, zeige mindestens 1 leeren Stern
+  const starsToShow = currentRating > 0 ? currentRating : 1;
+  
+  for (let i = 1; i <= starsToShow; i++) {
     const filled = i <= currentRating ? 'filled' : '';
-    starsHTML += `<span class="star ${filled}" data-rating="${i}" data-song-id="${songId}">★</span>`;
+    starsHTML += `<span class="${starClass} ${filled}" data-rating="${i}" data-song-id="${songId}">★</span>`;
   }
+  
+  // Füge unsichtbare Sterne für Hover-Funktion hinzu (für Bewertung)
+  // Diese sind nur beim Hovern sichtbar
+  for (let i = starsToShow + 1; i <= 5; i++) {
+    starsHTML += `<span class="${starClass} hidden-star" data-rating="${i}" data-song-id="${songId}">★</span>`;
+  }
+  
   return starsHTML;
 }
 
@@ -5001,6 +5014,21 @@ async function setRating(songId: string, rating: number) {
 
 // Rating Display aktualisieren
 function updateRatingDisplay(songId: string, rating: number) {
+  // ✅ 1. Update song objects in queue
+  queue.forEach(queueItem => {
+    if (isSongQueueItem(queueItem) && queueItem.song?.id === songId) {
+      queueItem.song.userRating = rating;
+    }
+  });
+  
+  // ✅ 2. Update song objects in currentSongs array (library cache)
+  currentSongs.forEach(song => {
+    if (song.id === songId) {
+      song.userRating = rating;
+    }
+  });
+  
+  // ✅ 3. Update HTML display
   // Suche nach Rating-Containern in zwei Varianten:
   // 1. .rating-stars innerhalb eines Elements mit data-song-id (Library-Ansicht)
   // 2. .rating-stars mit direktem data-song-id Attribut (Queue-Ansicht)
@@ -5011,7 +5039,7 @@ function updateRatingDisplay(songId: string, rating: number) {
     container.innerHTML = createStarRating(rating, songId);
   });
   
-  // Update player rating if this song is currently playing (ALL DECKS)
+  // ✅ 4. Update player rating if this song is currently playing (ALL DECKS)
   updatePlayerRating('a', songId, rating);
   updatePlayerRating('b', songId, rating);
   updatePlayerRating('c', songId, rating);
@@ -5024,7 +5052,7 @@ function updatePlayerRating(player: string, songId: string, rating: number) {
   if (currentSongId === songId) {
     const playerRating = document.getElementById(`player-rating-${player}`);
     if (playerRating) {
-      playerRating.innerHTML = createStarRating(rating, songId);
+      playerRating.innerHTML = createStarRating(rating, songId, true);
     }
   }
 }
@@ -10559,7 +10587,7 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   // Rating anzeigen (async laden)
   const playerRating = document.getElementById(`player-rating-${side}`);
   if (playerRating) {
-    playerRating.innerHTML = createStarRating(song.userRating || 0, song.id);
+    playerRating.innerHTML = createStarRating(song.userRating || 0, song.id, true);
 
     // Rating async nachladen für bessere Performance
     loadRatingAsync(song.id);

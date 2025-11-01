@@ -20,6 +20,9 @@ import * as MicManager from './audio/MicManager';
 import { volumeMeters } from './audio/VolumeMeters';
 import { CustomWaveform, createCustomWaveform } from './audio/CustomWaveform';
 
+// 🎯 Context Menu System
+import { ContextMenu, showAlbumContextMenu, showSongContextMenu } from './contextMenu';
+
 console.log("SubCaster loaded!");
 
 // ========================================
@@ -5276,7 +5279,7 @@ function returnToLastSearchResults() {
 // Drag & Drop Listeners hinzufügen
 function addDragListeners(container: Element) {
   const trackItems = container.querySelectorAll('.track-item, .track-item-oneline, .song-row, .unified-song-item');
-  const albumItems = container.querySelectorAll('.album-item-modern[draggable="true"]');
+  const albumItems = container.querySelectorAll('.album-item, .album-item-modern, .album-card.clickable');
   
   console.log(`Adding drag listeners to ${trackItems.length} track items and ${albumItems.length} album items`);
   
@@ -5328,6 +5331,41 @@ function addDragListeners(container: Element) {
       const target = e.target as HTMLElement;
       target.classList.remove('dragging');
       console.log('Drag ended for album item');
+    });
+    
+    // Context menu for albums
+    item.addEventListener('contextmenu', async (e: Event) => {
+      const mouseEvent = e as MouseEvent;
+      mouseEvent.preventDefault();
+      mouseEvent.stopPropagation();
+      
+      const target = mouseEvent.target as HTMLElement;
+      const albumCard = target.closest('.album-card, .album-item, .album-item-modern') as HTMLElement;
+      
+      if (!albumCard) return;
+      
+      const albumId = albumCard.dataset.albumId;
+      if (!albumId) {
+        console.error('No album ID found for right-clicked album');
+        return;
+      }
+      
+      // Build album object from dataset
+      const albumName = albumCard.dataset.albumName || 
+                       albumCard.querySelector('.album-title')?.textContent || 
+                       'Unknown Album';
+      const artistName = albumCard.dataset.artistName || 
+                        albumCard.querySelector('.album-artist')?.textContent || 
+                        'Unknown Artist';
+      
+      const album: OpenSubsonicAlbum = {
+        id: albumId,
+        name: albumName,
+        artist: artistName,
+        artistId: albumCard.dataset.artistId
+      };
+      
+      showAlbumContextMenu(mouseEvent, album, apiClient, addToQueue, contextMenu);
     });
   });
 }
@@ -5554,6 +5592,51 @@ function addSongClickListeners(container: Element) {
       element.classList.add('selected');
       
       console.log(`Song selected: ${songTitle} (Double-click to add to queue)`);
+    });
+    
+    // Context menu for songs
+    element.addEventListener('contextmenu', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      if (!songId) {
+        console.error('No song ID found for right-clicked song');
+        return;
+      }
+      
+      // Try to find song in current songs list first
+      let song = findSongById(songId);
+      
+      // If not found, build song object from DOM element data
+      if (!song) {
+        console.log('Building song from DOM element data for context menu');
+        const el = element as HTMLElement;
+        const artist = el.dataset.songArtist || 
+                      el.querySelector('.track-artist')?.textContent || 
+                      'Unknown Artist';
+        const album = el.dataset.songAlbum || 
+                     el.querySelector('.track-album')?.textContent || 
+                     'Unknown Album';
+        const genre = el.dataset.songGenre || 
+                     el.querySelector('.track-genre')?.textContent || 
+                     undefined;
+        const coverArt = el.dataset.coverArt;
+        
+        song = {
+          id: songId,
+          title: songTitle,
+          artist: artist,
+          album: album,
+          genre: genre,
+          duration: 0,
+          size: 0,
+          suffix: 'mp3',
+          bitRate: 0,
+          coverArt: coverArt
+        };
+      }
+      
+      showSongContextMenu(e as MouseEvent, song, addToQueue, loadTrackToPlayer, contextMenu);
     });
   });
   
@@ -6295,6 +6378,17 @@ function updateQueueDisplay() {
             console.log('ℹ️ No free deck available to load queue song via dblclick');
           } catch (err) {
             console.error('Error handling queue dblclick load:', err);
+          }
+        });
+        
+        // Context menu for queue songs
+        itemElement.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const qi = queue[index];
+          if (qi && isSongQueueItem(qi) && qi.song) {
+            showSongContextMenu(e as MouseEvent, qi.song, addToQueue, loadTrackToPlayer, contextMenu);
           }
         });
       } else if (isMicrophoneQueueItem(queueItem)) {
@@ -13917,6 +14011,9 @@ class LibraryBrowser {
               }
             });
           });
+          
+          // Add drag listeners for context menu support
+          addDragListeners(albumsContainer);
         } else {
           albumsContainer.innerHTML = '<p class="no-items">No albums found</p>';
         }
@@ -14236,6 +14333,9 @@ class LibraryBrowser {
         addArtistClickListeners(albumContainer);
         addArtistClickListeners(albumContainer);
         
+        // Add drag listeners for context menu support
+        addDragListeners(albumContainer);
+        
         albumSection.appendChild(albumContainer);
         content.appendChild(albumSection);
       }
@@ -14252,6 +14352,9 @@ class LibraryBrowser {
         
         // Add click listeners for artist and album links in search results
         addSongClickListeners(songSection);
+        
+        // Add drag listeners for context menu support
+        addDragListeners(songSection);
         
         // Load waveform backgrounds for songs asynchronously
         setTimeout(() => loadVisibleSongWaveforms(songSection), 100);
@@ -14345,6 +14448,9 @@ class LibraryBrowser {
         
         // Add artist click listeners
         addArtistClickListeners(recentContainer);
+        
+        // Add drag listeners for context menu support
+        addDragListeners(recentContainer);
       }
 
       // Most Played Albums - Now with caching! 🚀
@@ -14384,6 +14490,9 @@ class LibraryBrowser {
         
         // Add artist click listeners
         addArtistClickListeners(mostPlayedContainer);
+        
+        // Add drag listeners for context menu support
+        addDragListeners(mostPlayedContainer);
       }
 
       // Random Albums - Now with caching! 🚀
@@ -14423,6 +14532,9 @@ class LibraryBrowser {
         
         // Add artist click listeners
         addArtistClickListeners(randomContainer);
+        
+        // Add drag listeners for context menu support
+        addDragListeners(randomContainer);
       }
 
       // Random Artists - Now with caching! 🚀
@@ -16550,5 +16662,10 @@ function initializeDiscordClient() {
 }
 
 (window as any).githubCat = githubCat;
+
+// ========================================
+// 🎯 CONTEXT MENU - Initialize global instance
+// ========================================
+const contextMenu = new ContextMenu();
 
 

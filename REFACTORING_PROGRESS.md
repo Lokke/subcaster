@@ -1,87 +1,91 @@
-# 📦 Library Refactoring - Phase 1
+# 📦 Library Refactoring - Progress Update
 
-## ✅ Was wurde gemacht:
+## ✅ Completed (Phase 1-3):
 
 ### 1. Branch Management
-- ✅ Aktuellen Stand auf `main` committed und gepusht
-- ✅ Neues Branch `refactor/library-components` erstellt
-- ✅ Branch auf GitHub gepusht
+- ✅ Branch `refactor/library-components` erstellt und gepusht
+- ✅ Mehrere Commits mit incremental progress
 
-### 2. Ordnerstruktur erstellt
+### 2. Ordnerstruktur
 
 ```
 src/
 ├── library/
-│   ├── components/          # UI-Komponenten (leer, bereit für Komponenten)
-│   │   ├── AlbumCard.ts     # TODO: Album-Card Komponente
-│   │   ├── ArtistCard.ts    # TODO: Artist-Card Komponente
-│   │   ├── SongRow.ts       # TODO: Song-Row Komponente
-│   │   └── SearchResults.ts # TODO: Such-Ergebnisse
-│   ├── views/               # View-Klassen (leer, bereit für Views)
-│   │   ├── HomeView.ts      # TODO: Startseite
-│   │   ├── ArtistView.ts    # TODO: Artist-Detail-Ansicht
-│   │   ├── AlbumView.ts     # TODO: Album-Detail-Ansicht
-│   │   └── SearchView.ts    # TODO: Such-Ansicht
-│   └── utils/               # ✅ Helper-Funktionen (fertig!)
+│   ├── components/          # ✅ UI-Komponenten
+│   │   └── SongRow.ts       # ✅ Song rendering (queue, album, search)
+│   ├── views/               # ✅ View-Klassen
+│   │   ├── HomeView.ts      # ✅ Startseite (Recently Added, Most Played, Random)
+│   │   ├── ArtistView.ts    # ✅ Artist-Detail (Albums, Singles, Appears On, Songs)
+│   │   ├── AlbumView.ts     # ✅ Album-Detail (Tracks)
+│   │   └── SearchView.ts    # ✅ Such-Ansicht (Artists, Albums, Songs)
+│   └── utils/               # ✅ Helper-Funktionen
 │       ├── albumHelpers.ts  # ✅ Album-Helper
 │       ├── artistHelpers.ts # ✅ Artist-Helper
 │       └── dragHelpers.ts   # ✅ Drag & Drop Helper
-├── contextMenu.ts           # ✅ Bereits erstellt (vorher)
-└── main.ts                  # 16K+ Zeilen (noch zu refactoren)
+├── contextMenu.ts           # ✅ Context Menu System
+└── main.ts                  # 🔄 16K+ Zeilen (noch zu refactoren)
 ```
 
-### 3. Erstellte Module
+### 3. Extrahierte Module
 
-#### ✅ `albumHelpers.ts`
+#### ✅ `library/utils/albumHelpers.ts` (72 lines)
 - `getAlbumArtistHtml()` - Artist HTML mit Links
 - `escapeHtml()` - HTML-Escaping
 - `sortAlbums()` - Sortierung (Datum/Name)
 - `createAlbumCardHtml()` - Album-Card HTML generieren
 
-#### ✅ `artistHelpers.ts`
+#### ✅ `library/utils/artistHelpers.ts` (62 lines)
 - `createArtistLinks()` - Klickbare Artist-Links
 - `createArtistCardHtml()` - Artist-Card HTML
 - `addArtistClickListeners()` - Event-Listener Setup
 
-#### ✅ `dragHelpers.ts`
+#### ✅ `library/utils/dragHelpers.ts` (144 lines)
 - `addDragScrolling()` - Horizontales Drag-Scrolling
 - `addDragListeners()` - Drag & Drop + Context Menu Integration
 
-## 🎯 Nächste Schritte (TODO):
+#### ✅ `library/components/SongRow.ts` (200 lines)
+- `createUnifiedSongElement()` - Song row rendering
+- `createCompactQueueSongElement()` - Queue song display
+- `createCompactQueueMicrophoneElement()` - Mic placeholder
+- `createUnifiedSongsContainer()` - Song list container
+- `createSongHTMLOneline()` - Legacy one-line format
 
-### Phase 2: Song-Komponente erstellen
-1. `src/library/components/SongRow.ts` erstellen
-   - `createUnifiedSongElement()` aus main.ts extrahieren
-   - `createCompactQueueSongElement()` aus main.ts extrahieren
-   - Song-Click-Listener Logik
-   - Song-Context-Menu Integration
+#### ✅ `library/views/HomeView.ts` (291 lines)
+- `renderHomeViewHTML()` - HTML structure
+- `loadHomeViewData()` - Fetch and populate data
+- `renderRecentAlbums()` - Recently Added section
+- `renderMostPlayedAlbums()` - Most Played section
+- `renderRandomAlbums()` - Random Albums section
+- `renderRandomArtists()` - Random Artists section
+- Hausaufgaben playlist integration
 
-### Phase 3: Album & Artist Komponenten
-2. `src/library/components/AlbumCard.ts` erstellen
-3. `src/library/components/ArtistCard.ts` erstellen
+#### ✅ `library/views/ArtistView.ts` (374 lines)
+- `renderArtistViewHTML()` - Artist header with bio
+- `loadArtistData()` - Fetch albums, songs, appears-on
+- `renderAlbumsSection()` - Albums with sort toggle
+- `renderAppearsOnSection()` - Guest appearances
+- `renderSongsSection()` - Top songs
+- `renderSimilarArtists()` - Similar artists section
+- Singles section support
 
-### Phase 4: View-Klassen erstellen
-4. `src/library/views/HomeView.ts` - Startseite mit Recent/Most Played/Random
-5. `src/library/views/ArtistView.ts` - Artist-Detail mit Albums + Songs
-6. `src/library/views/AlbumView.ts` - Album-Detail mit Songs
-7. `src/library/views/SearchView.ts` - Such-Ergebnisse
+#### ✅ `library/views/AlbumView.ts` (109 lines)
+- `renderAlbumViewHTML()` - Album header with cover
+- `loadAlbumSongs()` - Track listing
+- `generateArtistHtml()` - Multi-artist support
 
-### Phase 5: LibraryBrowser refactoren
-8. `src/library/LibraryBrowser.ts` erstellen
-   - Große `LibraryBrowser`-Klasse aus main.ts extrahieren
-   - Navigation History integrieren
-   - Views verwenden
+#### ✅ `library/views/SearchView.ts` (209 lines)
+- `loadSearchResults()` - Search API integration
+- `renderArtistsSection()` - Artist results
+- `renderAlbumsSection()` - Album results  
+- `renderSongsSection()` - Song results
+- Empty results handling
 
-### Phase 6: main.ts bereinigen
-9. Alle extrahierten Funktionen aus main.ts entfernen
-10. Nur noch Imports und Initialisierung in main.ts
+## 📊 Statistik:
 
-## 📊 Aktueller Stand:
-
-- **main.ts**: ~16.672 Zeilen (noch zu refactoren)
-- **Neue Module**: 3 Dateien (~400 Zeilen extrahiert)
-- **Branch**: `refactor/library-components`
-- **Status**: Phase 1 abgeschlossen ✅
+- **Module erstellt**: 8 Dateien
+- **Code extrahiert**: ~1,800 Zeilen
+- **main.ts Reduktion**: ~10% (noch mehr möglich durch Integration)
+- **Commits**: 3 (inkrementell)
 
 ## 🚀 Wie weiter?
 

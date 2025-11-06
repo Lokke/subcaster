@@ -76,5 +76,10 @@ azuracast/
 # Capacitor
 .capacitor/
 capacitor.config.json
-ios/# Compare directory
+ios/
+
+# Waveform cache - ignore JSON files but keep directory
+waveform-cache/*.json
+
+# Compare directory
 compare/

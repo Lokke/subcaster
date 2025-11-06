@@ -12585,7 +12585,7 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
 
 .context-menu-submenu {
   position: absolute;
-  left: 100%;
+  left: calc(100% - 2px); /* Slight overlap to prevent gap */
   top: -4px;
   background: rgba(20, 20, 20, 0.98);
   border: 1px solid #00ff88;
@@ -12597,9 +12597,11 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%);
   display: none;
   z-index: 10001;
+  /* pointer-events removed - submenu needs to be clickable! */
 }
 
 .context-menu-submenu.show {
   display: block;
+  /* pointer-events: auto removed - not needed anymore */
 }
 

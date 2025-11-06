@@ -86,12 +86,69 @@ export class ContextMenu {
         const submenu = this.createSubmenu(item.submenu);
         menuItem.appendChild(submenu);
 
+        let hideTimeout: number | null = null;
+
+        // 🎯 SHOW SUBMENU IMMEDIATELY when context menu opens
+        // This is better UX - user sees all options right away
+        requestAnimationFrame(() => {
+          submenu.classList.add('show');
+          console.log('✅ Submenu auto-opened on context menu show');
+          console.log('📊 Submenu element:', submenu);
+          console.log('📊 Submenu display:', window.getComputedStyle(submenu).display);
+          console.log('📊 Submenu visibility:', window.getComputedStyle(submenu).visibility);
+          console.log('📊 Submenu position:', window.getComputedStyle(submenu).position);
+          console.log('📊 Submenu left:', window.getComputedStyle(submenu).left);
+          console.log('📊 Submenu top:', window.getComputedStyle(submenu).top);
+          console.log('📊 Submenu z-index:', window.getComputedStyle(submenu).zIndex);
+          console.log('📊 Submenu parent:', submenu.parentElement);
+          console.log('📊 Submenu bounds:', submenu.getBoundingClientRect());
+        });
+
+        // Show submenu on hover (in case it was closed)
         menuItem.addEventListener('mouseenter', () => {
+          console.log('🎯 Mouseenter on menu item with submenu');
+          if (hideTimeout) {
+            clearTimeout(hideTimeout);
+            hideTimeout = null;
+          }
+          submenu.classList.add('show');
+          console.log('✅ Submenu shown, classes:', submenu.className);
+        });
+
+        // Delay hiding submenu to allow mouse to move to it
+        menuItem.addEventListener('mouseleave', (e) => {
+          console.log('🎯 Mouseleave on menu item');
+          const relatedTarget = e.relatedTarget as Node;
+          
+          // Don't hide if moving to submenu
+          if (submenu.contains(relatedTarget)) {
+            console.log('⏭️ Moving to submenu, keeping it open');
+            return;
+          }
+          
+          // Longer delay to give user time to reach submenu
+          hideTimeout = window.setTimeout(() => {
+            submenu.classList.remove('show');
+            console.log('❌ Submenu hidden');
+          }, 500);
+        });
+
+        // Keep submenu open when hovering over it
+        submenu.addEventListener('mouseenter', () => {
+          console.log('🎯 Mouseenter on submenu itself');
+          if (hideTimeout) {
+            clearTimeout(hideTimeout);
+            hideTimeout = null;
+          }
           submenu.classList.add('show');
         });
 
-        menuItem.addEventListener('mouseleave', () => {
-          submenu.classList.remove('show');
+        submenu.addEventListener('mouseleave', () => {
+          console.log('🎯 Mouseleave on submenu');
+          hideTimeout = window.setTimeout(() => {
+            submenu.classList.remove('show');
+            console.log('❌ Submenu hidden after leaving submenu');
+          }, 200);
         });
       }
 
@@ -175,13 +232,22 @@ export function getVisibleDecks(): DeckSide[] {
   const visibleDecks: DeckSide[] = [];
   const deckSides: DeckSide[] = ['a', 'b', 'c', 'd'];
   
+  console.log('🔍 Checking visible decks...');
+  
   deckSides.forEach(side => {
     const deckElement = document.getElementById(`player-${side}`);
-    if (deckElement && deckElement.style.display !== 'none') {
+    const isVisible = deckElement && 
+                      deckElement.style.display !== 'none' && 
+                      getComputedStyle(deckElement).display !== 'none';
+    
+    console.log(`  Deck ${side.toUpperCase()}: element=${!!deckElement}, style.display=${deckElement?.style.display}, computed=${deckElement ? getComputedStyle(deckElement).display : 'N/A'}, visible=${isVisible}`);
+    
+    if (isVisible) {
       visibleDecks.push(side);
     }
   });
   
+  console.log(`✅ Visible decks: [${visibleDecks.map(d => d.toUpperCase()).join(', ')}]`);
   return visibleDecks;
 }
 
@@ -209,20 +275,34 @@ export function showAlbumContextMenu(
     {
       label: 'Zur Queue hinzufügen',
       icon: 'playlist_add',
-      action: async () => {
-        try {
-          console.log(`🎵 Loading all songs from album: ${album.name}`);
-          const albumDetails = await apiClient.getAlbum(album.id);
-          
-          if (albumDetails && albumDetails.song) {
-            albumDetails.song.forEach((song: OpenSubsonicSong) => {
-              addToQueue(song);
-            });
-            console.log(`✅ Added ${albumDetails.song.length} songs from album "${album.name}" to queue`);
+      action: () => {
+        // Async action wrapped in IIFE
+        (async () => {
+          try {
+            console.log(`🎵 Loading all songs from album: ${album.name} (ID: ${album.id})`);
+            console.log('API Client:', apiClient);
+            
+            if (!apiClient) {
+              console.error('❌ No API client available');
+              return;
+            }
+            
+            const albumSongs = await apiClient.getAlbumSongs(album.id);
+            console.log('Album songs:', albumSongs);
+            
+            if (albumSongs && albumSongs.length > 0) {
+              console.log(`Adding ${albumSongs.length} songs to queue...`);
+              for (const song of albumSongs) {
+                await addToQueue(song);
+              }
+              console.log(`✅ Added ${albumSongs.length} songs from album "${album.name}" to queue`);
+            } else {
+              console.warn('⚠️ No songs found in album');
+            }
+          } catch (error) {
+            console.error('❌ Error loading album songs:', error);
           }
-        } catch (error) {
-          console.error('❌ Error loading album songs:', error);
-        }
+        })();
       }
     }
   ];
@@ -247,14 +327,8 @@ export function showSongContextMenu(
   e.preventDefault();
   
   const visibleDecks = getVisibleDecks();
-  const deckSubmenu: ContextMenuItem[] = visibleDecks.map(side => ({
-    label: `Deck ${side.toUpperCase()}`,
-    icon: 'album',
-    action: () => {
-      console.log(`🎵 Loading song "${song.title}" to Deck ${side.toUpperCase()}`);
-      loadTrackToPlayer(side, song);
-    }
-  }));
+  console.log(`📋 Creating song context menu for "${song.title}"`);
+  console.log(`📋 Visible decks: [${visibleDecks.map(d => d.toUpperCase()).join(', ')}]`);
   
   const items: ContextMenuItem[] = [
     {
@@ -264,13 +338,46 @@ export function showSongContextMenu(
         addToQueue(song);
         console.log(`✅ Added "${song.title}" to queue`);
       }
-    },
-    {
-      label: 'Auf Deck laden',
-      icon: 'album',
-      submenu: deckSubmenu
     }
   ];
+  
+  // 🔬 TEST: Add a test submenu with dummy entries to debug submenu rendering
+  console.log('🔬 Adding TEST submenu with 3 dummy entries');
+  items.push({
+    label: '🔬 TEST Untermenü',
+    icon: 'bug_report',
+    submenu: [
+      {
+        label: 'Dummy Eintrag 1',
+        icon: 'star',
+        action: () => console.log('✅ Dummy 1 clicked')
+      },
+      {
+        label: 'Dummy Eintrag 2',
+        icon: 'star',
+        action: () => console.log('✅ Dummy 2 clicked')
+      },
+      {
+        label: 'Dummy Eintrag 3',
+        icon: 'star',
+        action: () => console.log('✅ Dummy 3 clicked')
+      }
+    ]
+  });
+  
+  // Add deck loading options directly to main menu (no submenu!)
+  visibleDecks.forEach(side => {
+    items.push({
+      label: `Auf Deck ${side.toUpperCase()} laden`,
+      icon: 'album',
+      action: () => {
+        console.log(`🎵 Loading song "${song.title}" to Deck ${side.toUpperCase()}`);
+        loadTrackToPlayer(side, song);
+      }
+    });
+  });
+  
+  console.log(`📋 Context menu has ${items.length} items (including test submenu):`, items.map(item => item.label));
   
   contextMenu.show(e.clientX, e.clientY, items);
 }

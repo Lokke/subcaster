@@ -1,4 +1,4 @@
-import "./style.css";
+﻿import "./style.css";
 import { SubsonicApiClient, type OpenSubsonicSong, type OpenSubsonicAlbum, type OpenSubsonicArtist, type OpenSubsonicPlaylist, type OpenSubsonicArtistRef } from "./opensubsonic";
 import { AzuraCastWebcaster, createAzuraCastConfig, fetchAzuraCastStations, fetchAllAzuraCastStations, type AzuraCastMetadata, type AzuraCastStation, type AzuraCastNowPlayingResponse } from "./azuracast";
 import { azuraCastWebSocket, type AzuraCastNowPlayingData } from "./azuracast-websocket";
@@ -2525,6 +2525,15 @@ function clearWaveform(side: 'a' | 'b' | 'c' | 'd') {
 // Cache for waveform data to avoid redundant requests
 const waveformCache = new Map<string, { peaks: number[], duration: number }>();
 
+/**
+ * Add waveform data to cache
+ */
+function addToWaveformCache(songId: string, waveformData: { peaks: number[], duration: number }): void {
+  waveformCache.set(songId, waveformData);
+  console.log(`💾 [WaveformCache] Cached waveform for ${songId}`);
+}
+
+
 // Pending waveforms that are being generated on the server
 const pendingWaveforms = new Map<string, { 
   element: HTMLElement, 
@@ -2590,7 +2599,7 @@ function startWaveformPolling() {
             console.log(`✅ [LibraryWaveform] Waveform ready for ${songId} - rendering NOW!`);
             
             // Cache it
-            waveformCache.set(songId, waveformData);
+            addToWaveformCache(songId, waveformData);
             
             // Render it immediately (don't wait for other songs)
             await renderWaveformBackground(info.element, songId, waveformData);
@@ -2736,7 +2745,7 @@ async function getWaveformAnalysis(songId: string, streamUrl: string): Promise<W
       }
       
       // Cache it
-      waveformCache.set(songId, waveformData);
+      addToWaveformCache(songId, waveformData);
     }
     
     // Analyze and return
@@ -3011,7 +3020,7 @@ async function loadSongWaveformBackground(element: HTMLElement, songId: string, 
       }
       
       // Cache the waveform data
-      waveformCache.set(songId, waveformData);
+      addToWaveformCache(songId, waveformData);
       console.log(`💾 [LibraryWaveform] Cached waveform for ${songId}`);
     } else {
       console.log(`✅ [LibraryWaveform] Cache HIT for ${songId}`);
@@ -5365,7 +5374,7 @@ function addDragListeners(container: Element) {
         artistId: albumCard.dataset.artistId
       };
       
-      showAlbumContextMenu(mouseEvent, album, apiClient, addToQueue, contextMenu);
+      showAlbumContextMenu(mouseEvent, album, openSubsonicClient, addToQueue, contextMenu);
     });
   });
 }

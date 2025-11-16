@@ -694,6 +694,22 @@ class SubsonicApiClient {
     }
   }
 
+  // Scrobble a song (mark as played)
+  async scrobble(songId: string, submission: boolean = true): Promise<boolean> {
+    try {
+      await this.makeRequest('scrobble', { 
+        id: songId,
+        submission: submission.toString()
+      });
+      
+      console.log(`✅ Scrobbled song ${songId}`);
+      return true;
+    } catch (error) {
+      console.error('Error scrobbling song:', error);
+      return false;
+    }
+  }
+
   // Rating für einen Song abrufen
   async getRating(songId: string): Promise<number | null> {
     try {

@@ -9591,7 +9591,7 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   border-radius: 4px;
   padding: 8px 16px;
   display: grid;
-  grid-template-columns: 40px minmax(150px, 2fr) minmax(100px, 1.5fr) minmax(100px, 1.5fr) minmax(80px, 1fr) max-content 55px;
+  grid-template-columns: 40px minmax(150px, 2fr) minmax(100px, 1.5fr) minmax(100px, 1.5fr) minmax(80px, 1fr) 40px max-content 55px;
   gap: 12px;
   align-items: center;
   width: 100%;
@@ -9682,6 +9682,14 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   padding: 2px 6px;
   border-radius: 3px;
   border: 1px solid rgba(255, 68, 68, 0.3);
+}
+
+.track-playcount {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
 }
 
 .track-rating {

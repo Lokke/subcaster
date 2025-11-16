@@ -741,10 +741,28 @@ let playerStates: Record<'a' | 'b' | 'c' | 'd', PlayerState> = {
 
 interface PlayHistoryEntry {
   songId: string;
-  artistName: string;
+  title: string;
+  artist: string;
   playedAt: number; // Timestamp
   progress: number; // 0-1 (percentage played)
 }
+
+// Scrobble tracking: Track actual listen time (not just position)
+interface ScrobbleTracker {
+  songId: string;
+  duration: number; // Total song duration
+  listenedSegments: Array<{start: number, end: number}>; // Time segments actually listened
+  scrobbled: boolean; // Whether already scrobbled
+  lastPosition: number; // Last known position for detecting seeks
+  lastUpdateTime: number; // Last time we updated (for calculating delta)
+}
+
+const scrobbleTrackers: Record<'a' | 'b' | 'c' | 'd', ScrobbleTracker | null> = {
+  a: null,
+  b: null,
+  c: null,
+  d: null
+};
 
 // Track which songs have been marked as >50% played (per deck, per session)
 const songsMarkedAsPlayed: Record<'a' | 'b' | 'c' | 'd', Set<string>> = {
@@ -801,10 +819,12 @@ function addSongToPlayHistory(song: OpenSubsonicSong, progress: number): void {
     console.log(`⏩ Song "${song.title}" already in recent play history, skipping`);
     return;
   }
-  
+
+  // Add new entry
   const entry: PlayHistoryEntry = {
     songId: song.id,
-    artistName: song.artist || 'Unknown Artist',
+    title: song.title,
+    artist: song.artist,
     playedAt: now,
     progress: progress
   };
@@ -812,13 +832,123 @@ function addSongToPlayHistory(song: OpenSubsonicSong, progress: number): void {
   history.push(entry);
   savePlayHistory(history);
   
-  console.log(`✅ Added to play history: "${song.title}" by ${entry.artistName} (${Math.round(progress * 100)}% played)`);
+  console.log(`📊 Added "${song.title}" to play history (${Math.round(progress * 100)}% played)`);
+}
+
+// Initialize scrobble tracker for a song
+function initScrobbleTracker(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, duration: number): void {
+  scrobbleTrackers[side] = {
+    songId: song.id,
+    duration: duration,
+    listenedSegments: [],
+    scrobbled: false,
+    lastPosition: 0,
+    lastUpdateTime: Date.now()
+  };
+  console.log(`🎵 Initialized scrobble tracker for "${song.title}" on deck ${side.toUpperCase()}`);
+}
+
+// Update scrobble tracker (called on timeupdate)
+function updateScrobbleTracker(side: 'a' | 'b' | 'c' | 'd', currentPosition: number, isPlaying: boolean): void {
+  const tracker = scrobbleTrackers[side];
+  if (!tracker || tracker.scrobbled) return;
   
-  // Update library markers
-  setTimeout(() => markSongsInLibrary(), 100);
+  const now = Date.now();
+  const timeDelta = (now - tracker.lastUpdateTime) / 1000; // seconds
   
-  // Update queue display to reflect new play history (transparency, cooldown effects)
-  updateQueueDisplay();
+  // Only track if playing and time delta is reasonable (< 2 seconds to detect seeks)
+  if (isPlaying && timeDelta > 0 && timeDelta < 2) {
+    const positionDelta = Math.abs(currentPosition - tracker.lastPosition);
+    
+    // If position jumped significantly (>2 seconds), it's a seek - don't count
+    if (positionDelta < 2) {
+      // Add this segment to listened time
+      tracker.listenedSegments.push({
+        start: tracker.lastPosition,
+        end: currentPosition
+      });
+      
+      // Check if we've listened to 50% of the song
+      const totalListened = calculateTotalListenedTime(tracker);
+      const listenPercentage = totalListened / tracker.duration;
+      
+      if (listenPercentage >= 0.5 && !tracker.scrobbled) {
+        tracker.scrobbled = true;
+        scrobbleSong(side, tracker.songId);
+        console.log(`📊 Scrobble threshold reached: ${Math.round(listenPercentage * 100)}% of "${tracker.songId}" actually listened`);
+      }
+    }
+  }
+  
+  tracker.lastPosition = currentPosition;
+  tracker.lastUpdateTime = now;
+}
+
+// Calculate total listened time from segments
+function calculateTotalListenedTime(tracker: ScrobbleTracker): number {
+  // Merge overlapping segments and sum up
+  const sortedSegments = [...tracker.listenedSegments].sort((a, b) => a.start - b.start);
+  let totalTime = 0;
+  let currentStart = -1;
+  let currentEnd = -1;
+  
+  for (const segment of sortedSegments) {
+    if (currentStart === -1) {
+      currentStart = segment.start;
+      currentEnd = segment.end;
+    } else if (segment.start <= currentEnd) {
+      // Overlapping or adjacent - merge
+      currentEnd = Math.max(currentEnd, segment.end);
+    } else {
+      // Gap - add previous segment and start new one
+      totalTime += (currentEnd - currentStart);
+      currentStart = segment.start;
+      currentEnd = segment.end;
+    }
+  }
+  
+  // Add last segment
+  if (currentStart !== -1) {
+    totalTime += (currentEnd - currentStart);
+  }
+  
+  return totalTime;
+}
+
+// Scrobble song to server and update playCount locally
+async function scrobbleSong(side: 'a' | 'b' | 'c' | 'd', songId: string): Promise<void> {
+  if (!openSubsonicClient) return;
+  
+  try {
+    const success = await openSubsonicClient.scrobble(songId, true); // submission=true updates playCount
+    if (success) {
+      console.log(`✅ Successfully scrobbled song ${songId} from deck ${side.toUpperCase()}`);
+      
+      // Update playCount in all visible UI elements
+      updatePlayCountInUI(songId);
+    }
+  } catch (error) {
+    console.error(`❌ Failed to scrobble song ${songId}:`, error);
+  }
+}
+
+// Update playCount display in all UI instances of a song
+function updatePlayCountInUI(songId: string): void {
+  // Find all track elements with this songId
+  const trackElements = document.querySelectorAll(`[data-song-id="${songId}"]`);
+  
+  trackElements.forEach(element => {
+    const playCountElement = element.querySelector('.track-playcount');
+    if (playCountElement) {
+      const currentCount = parseInt(playCountElement.textContent || '0');
+      playCountElement.textContent = (currentCount + 1).toString();
+    }
+  });
+}
+
+// Clear scrobble tracker (when song ends or deck is ejected)
+function clearScrobbleTracker(side: 'a' | 'b' | 'c' | 'd'): void {
+  scrobbleTrackers[side] = null;
 }
 
 // Get time since song was last played (in hours)
@@ -837,7 +967,7 @@ function getTimeSinceArtistPlayed(artistName: string): number | null {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
   
   const recentArtistPlay = history.find(e => 
-    e.artistName === artistName && 
+    e.artist === artistName && 
     e.playedAt > oneHourAgo
   );
   
@@ -920,6 +1050,9 @@ function clearPlayerDeck(side: 'a' | 'b' | 'c' | 'd') {
       console.log(`📍 [SongRegistry] Unregistered song ${clearedSongId} from deck ${side.toUpperCase()}`);
     }
   }
+  
+  // Clear scrobble tracker
+  clearScrobbleTracker(side);
   
   const titleElement = document.getElementById(`track-title-${side}`);
   const artistElement = document.getElementById(`track-artist-${side}`);
@@ -4916,6 +5049,7 @@ function createUnifiedSongElement(song: OpenSubsonicSong, context: 'search' | 'a
     <div class="track-artist">${createArtistLinks(song)}</div>
     <div class="track-album clickable-album" draggable="false" data-album-id="${song.albumId || ''}" data-album-name="${escapeHtml(song.album)}" title="View album details">${escapeHtml(song.album)}</div>
     <div class="${genreClass}">${escapeHtml(song.genre || '')}</div>
+    <div class="track-playcount">${song.playCount || 0}</div>
     <div class="track-rating" data-song-id="${song.id}">
       ${createStarRating(song.userRating || 0, song.id)}
     </div>
@@ -10115,7 +10249,10 @@ function setupAudioPlayer(side: 'a' | 'b' | 'c' | 'd', audio: HTMLAudioElement) 
       // Zeit-Anzeige aktualisieren
       updateTimeDisplay(side, audio.currentTime, audio.duration);
       
-      // 📊 PLAY HISTORY: Track songs played >50%
+      // 📊 SCROBBLE TRACKING: Track actual listen time for scrobbling
+      updateScrobbleTracker(side, audio.currentTime, !audio.paused);
+      
+      // 📊 PLAY HISTORY: Track songs played >50% (legacy system, kept for backwards compatibility)
       const progress = audio.currentTime / audio.duration;
       if (progress >= 0.5 && !audio.paused) {
         const currentSong = getCurrentLoadedSong(side);
@@ -10729,6 +10866,11 @@ function loadTrackToPlayer(side: 'a' | 'b' | 'c' | 'd', song: OpenSubsonicSong, 
   
   // Song ID für Rating-System speichern
   audio.dataset.songId = song.id;
+  
+  // Initialize scrobble tracker for this song
+  if (song.duration) {
+    initScrobbleTracker(side, song, song.duration);
+  }
   
   // Rating anzeigen (async laden)
   const playerRating = document.getElementById(`player-rating-${side}`);

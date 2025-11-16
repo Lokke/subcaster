@@ -3156,7 +3156,7 @@ interface QueueItem {
 }
 
 let queue: QueueItem[] = [];
-let autoQueueEnabled = true; // Auto-Queue standardmäßig aktiviert
+let autoQueueEnabled = false; // Auto-Queue standardmäßig deaktiviert
 
 // Queue item helper functions
 function createSongQueueItem(song: OpenSubsonicSong): QueueItem {
@@ -4838,6 +4838,8 @@ function createArtistLinks(song: OpenSubsonicSong): string {
 }
 // Kompakte Song-Darstellung für Queue (Stream-Button Style)
 function createCompactQueueSongElement(song: OpenSubsonicSong): HTMLElement {
+  console.log(`⭐ createCompactQueueSongElement: Creating element for "${song.title}" with rating: ${song.userRating}`);
+  
   const songButton = document.createElement('div');
   songButton.className = 'queue-song-button';
   songButton.dataset.songId = song.id;
@@ -4854,6 +4856,8 @@ function createCompactQueueSongElement(song: OpenSubsonicSong): HTMLElement {
       ${createStarRating(song.userRating || 0, song.id)}
     </div>
   `;
+  
+  console.log(`⭐ Created queue element HTML with ${song.userRating || 0} stars`);
   
   // WICHTIG: Element selbst ist NICHT draggable, da der Wrapper das Drag-Event handelt
   // Dies verhindert doppelte DragStart-Events die sich gegenseitig überschreiben
@@ -4994,19 +4998,10 @@ function createStarRating(currentRating: number, songId: string, useRatingStarCl
   let starsHTML = '';
   const starClass = useRatingStarClass ? 'rating-star' : 'star';
   
-  // Nur die tatsächlich bewerteten Sterne anzeigen (gefüllte Sterne)
-  // Wenn Rating 0 ist, zeige mindestens 1 leeren Stern
-  const starsToShow = currentRating > 0 ? currentRating : 1;
-  
-  for (let i = 1; i <= starsToShow; i++) {
+  // Zeige immer alle 5 Sterne - gefüllt bis zur Bewertung, ungefüllt danach
+  for (let i = 1; i <= 5; i++) {
     const filled = i <= currentRating ? 'filled' : '';
     starsHTML += `<span class="${starClass} ${filled}" data-rating="${i}" data-song-id="${songId}">★</span>`;
-  }
-  
-  // Füge unsichtbare Sterne für Hover-Funktion hinzu (für Bewertung)
-  // Diese sind nur beim Hovern sichtbar
-  for (let i = starsToShow + 1; i <= 5; i++) {
-    starsHTML += `<span class="${starClass} hidden-star" data-rating="${i}" data-song-id="${songId}">★</span>`;
   }
   
   return starsHTML;
@@ -5552,6 +5547,15 @@ function addSongClickListeners(container: Element) {
                        undefined;
           const coverArt = el.dataset.coverArt;
           
+          // ⭐ Extract rating from DOM - find filled stars in the rating container
+          let userRating = 0;
+          const ratingContainer = el.querySelector('.track-rating');
+          if (ratingContainer) {
+            const filledStars = ratingContainer.querySelectorAll('.star.filled, .rating-star.filled');
+            userRating = filledStars.length;
+            console.log(`⭐ Extracted rating from DOM: ${userRating} stars for "${songTitle}"`);
+          }
+          
           song = {
             id: songId,
             title: songTitle,
@@ -5562,7 +5566,8 @@ function addSongClickListeners(container: Element) {
             size: 0,
             suffix: 'mp3',
             bitRate: 0,
-            coverArt: coverArt
+            coverArt: coverArt,
+            userRating: userRating  // ⭐ Include rating in song object
           };
         }
         
@@ -6257,6 +6262,40 @@ async function addToQueue(songOrId: string | OpenSubsonicSong): Promise<void> {
     console.log('🔍 addToQueue - Streaming status:', azuraCastWebcaster?.getConnectionStatus());
     console.log('🔍 addToQueue - Blacklisted genres:', blacklistedGenres);
     
+    // ✨ Load current rating from server to ensure fresh data
+    if (openSubsonicClient) {
+      try {
+        console.log(`⭐ Fetching rating for "${song.title}" (ID: ${song.id})...`);
+        const currentRating = await openSubsonicClient.getRating(song.id);
+        console.log(`⭐ Rating fetch result:`, currentRating);
+        
+        if (currentRating !== null && currentRating !== undefined) {
+          song.userRating = currentRating;
+          console.log(`⭐ ✅ Set song.userRating to ${currentRating} stars for "${song.title}"`);
+          
+          // Also update the rating in currentSongs array to keep cache in sync
+          const cachedSong = currentSongs.find(s => s.id === song.id);
+          if (cachedSong) {
+            cachedSong.userRating = currentRating;
+            console.log(`⭐ ✅ Updated cache: cachedSong.userRating = ${currentRating}`);
+          }
+        } else {
+          // Ensure rating is 0 if no rating exists
+          song.userRating = 0;
+          console.log(`⭐ ℹ️ No rating found for "${song.title}", set to 0 stars`);
+        }
+      } catch (error) {
+        console.error(`⭐ ❌ Failed to fetch rating for "${song.title}":`, error);
+        // Set to 0 on error
+        song.userRating = 0;
+      }
+    } else {
+      console.warn(`⭐ ⚠️ No openSubsonicClient available, cannot fetch rating`);
+      song.userRating = 0;
+    }
+    
+    console.log(`⭐ Final rating before adding to queue: ${song.userRating} stars for "${song.title}"`);
+    
     // Prüfe ob Song blacklisted Genre hat (nur wenn Streaming aktiv)
     if (azuraCastWebcaster?.getConnectionStatus() && hasBlacklistedGenre(song)) {
       console.warn(`🚫 Cannot add song with blacklisted genre to queue while streaming: "${song.title}" (${song.genre})`);
@@ -6308,12 +6347,14 @@ async function addToQueue(songOrId: string | OpenSubsonicSong): Promise<void> {
     // ========================================
     registerSongLocation(song.id, { type: 'queue', queueIndex: queue.length - 1 });
     
+    // ⚠️ IMPORTANT: Update queue display AFTER rating is loaded to show correct stars
+    // This is called after the rating fetch above completes
     updateQueueDisplay();
     
     // Fast update: Only update this specific song's status (no full re-render)
     updateSongStatus(song.id);
     
-    console.log(`➕ Song "${song.title}" added to queue. Queue length: ${queue.length}`);
+    console.log(`➕ Song "${song.title}" added to queue with ${song.userRating || 0} stars. Queue length: ${queue.length}`);
   }
 }
 
@@ -11709,6 +11750,14 @@ function findSongById(songId: string): OpenSubsonicSong | null {
         const albumElement = element.querySelector('.track-album');
         const coverArt = element.dataset.coverArt || undefined;
         
+        // ⭐ Extract rating from DOM
+        let userRating = 0;
+        const ratingContainer = element.querySelector('.track-rating');
+        if (ratingContainer) {
+          const filledStars = ratingContainer.querySelectorAll('.star.filled, .rating-star.filled');
+          userRating = filledStars.length;
+        }
+        
         if (titleElement && artistElement && albumElement) {
           return {
             id: songId,
@@ -11719,7 +11768,8 @@ function findSongById(songId: string): OpenSubsonicSong | null {
             size: 0,
             suffix: 'mp3',
             bitRate: 0,
-            coverArt: coverArt // Cover Art aus DOM extrahieren
+            coverArt: coverArt,
+            userRating: userRating  // ⭐ Include rating
           };
         }
       }
@@ -11728,6 +11778,14 @@ function findSongById(songId: string): OpenSubsonicSong | null {
       const titleElement = element.querySelector('h4');
       const infoElement = element.querySelector('p');
       const coverArt = element.dataset.coverArt || undefined;
+      
+      // ⭐ Extract rating from DOM (for old track items too)
+      let userRating = 0;
+      const ratingContainer = element.querySelector('.track-rating');
+      if (ratingContainer) {
+        const filledStars = ratingContainer.querySelectorAll('.star.filled, .rating-star.filled');
+        userRating = filledStars.length;
+      }
       
       if (titleElement && infoElement) {
         const title = titleElement.textContent || 'Unknown';
@@ -11743,7 +11801,8 @@ function findSongById(songId: string): OpenSubsonicSong | null {
           size: 0,
           suffix: 'mp3',
           bitRate: 0,
-          coverArt: coverArt // Cover Art auch für alte Items
+          coverArt: coverArt,
+          userRating: userRating  // ⭐ Include rating
         };
       }
     }
@@ -11784,149 +11843,6 @@ function initializeRatingListeners() {
         // Async Rating laden für bessere Performance
         loadRatingAsync(songId);
       }
-    }
-  });
-  
-  // Hover-Effekte für Sterne
-  document.addEventListener('mouseover', (event) => {
-    const target = event.target as HTMLElement;
-    
-    if (target.classList.contains('star') || target.classList.contains('rating-star')) {
-      let rating = parseInt(target.dataset.rating || '0');
-      let songId = target.dataset.songId;
-      
-      // Fallback: Wenn kein data-song-id, prüfe ob es ein Player-Rating ist
-      if (!songId) {
-        const playerRatingContainer = target.closest('[id^="player-rating-"]');
-        if (playerRatingContainer) {
-          const playerId = playerRatingContainer.id.split('-')[2]; // z.B. "a" aus "player-rating-a"
-          const audio = document.getElementById(`audio-${playerId}`) as HTMLAudioElement;
-          songId = audio?.dataset.songId;
-          
-          // Rating über Position im Container ermitteln
-          if (!rating) {
-            const stars = Array.from(playerRatingContainer.querySelectorAll('.star, .rating-star'));
-            rating = stars.indexOf(target) + 1;
-          }
-        }
-      }
-      
-      if (songId && rating > 0) {
-        highlightStars(songId, rating);
-      }
-    }
-  });
-  
-  document.addEventListener('mouseout', (event) => {
-    const target = event.target as HTMLElement;
-    
-    if (target.classList.contains('star') || target.classList.contains('rating-star')) {
-      let songId = target.dataset.songId;
-      
-      // Fallback: Wenn kein data-song-id, prüfe ob es ein Player-Rating ist
-      if (!songId) {
-        const playerRatingContainer = target.closest('[id^="player-rating-"]');
-        if (playerRatingContainer) {
-          const playerId = playerRatingContainer.id.split('-')[2]; // z.B. "a" aus "player-rating-a"
-          const audio = document.getElementById(`audio-${playerId}`) as HTMLAudioElement;
-          songId = audio?.dataset.songId;
-        }
-      }
-      
-      if (songId) {
-        resetStarHighlight(songId);
-      }
-    }
-  });
-}
-
-// Sterne für Hover-Effekt hervorheben
-function highlightStars(songId: string, rating: number) {
-  // Alle Rating-Container für diesen Song finden
-  // Variante 1: Container mit data-song-id (Library-Elemente haben data-song-id am Parent)
-  const parentContainers = document.querySelectorAll(`[data-song-id="${songId}"]`);
-  parentContainers.forEach(container => {
-    // Alle Sterne in diesem Container (sowohl .star als auch .rating-star)
-    const stars = container.querySelectorAll('.star, .rating-star');
-    
-    stars.forEach((star, index) => {
-      const starElement = star as HTMLElement;
-      if (index < rating) {
-        starElement.classList.add('hover-preview');
-      } else {
-        starElement.classList.remove('hover-preview');
-      }
-    });
-  });
-  
-  // Variante 2: Rating-Container mit direktem data-song-id (Queue-Elemente)
-  const directContainers = document.querySelectorAll(`.rating-stars[data-song-id="${songId}"]`);
-  directContainers.forEach(container => {
-    const stars = container.querySelectorAll('.star, .rating-star');
-    
-    stars.forEach((star, index) => {
-      const starElement = star as HTMLElement;
-      if (index < rating) {
-        starElement.classList.add('hover-preview');
-      } else {
-        starElement.classList.remove('hover-preview');
-      }
-    });
-  });
-  
-  // Auch Player-Rating-Container für diesen Song hervorheben
-  const playerRatings = document.querySelectorAll(`[id^="player-rating-"]`);
-  playerRatings.forEach(playerRating => {
-    const stars = playerRating.querySelectorAll('.star, .rating-star');
-    // Prüfen ob dieser Player den Song hat
-    const playerId = playerRating.id.split('-')[2] as 'a' | 'b' | 'c' | 'd'; // z.B. "a" aus "player-rating-a"
-    const audio = getAudioElement(playerId);
-    
-    if (audio && audio.dataset.songId === songId) {
-      stars.forEach((star, index) => {
-        const starElement = star as HTMLElement;
-        if (index < rating) {
-          starElement.classList.add('hover-preview');
-        } else {
-          starElement.classList.remove('hover-preview');
-        }
-      });
-    }
-  });
-}
-
-// Stern-Highlight zurücksetzen
-function resetStarHighlight(songId: string) {
-  // Variante 1: Alle Rating-Container für diesen Song finden (Parent hat data-song-id)
-  const parentContainers = document.querySelectorAll(`[data-song-id="${songId}"]`);
-  parentContainers.forEach(container => {
-    const stars = container.querySelectorAll('.star, .rating-star');
-    stars.forEach(star => {
-      star.classList.remove('hover-preview');
-    });
-  });
-  
-  // Variante 2: Rating-Container mit direktem data-song-id (Queue-Elemente)
-  const directContainers = document.querySelectorAll(`.rating-stars[data-song-id="${songId}"]`);
-  directContainers.forEach(container => {
-    const stars = container.querySelectorAll('.star, .rating-star');
-    stars.forEach(star => {
-      star.classList.remove('hover-preview');
-    });
-  });
-  
-  // Auch Player-Rating-Container für diesen Song zurücksetzen
-  const playerRatings = document.querySelectorAll(`[id^="player-rating-"]`);
-  playerRatings.forEach(playerRating => {
-    const stars = playerRating.querySelectorAll('.star, .rating-star');
-    // Prüfen ob dieser Player den Song hat
-    const playerId = playerRating.id.split('-')[2] as 'a' | 'b' | 'c' | 'd'; // z.B. "a" aus "player-rating-a"
-    const audio = getAudioElement(playerId);
-    
-    if (audio && audio.dataset.songId === songId) {
-      stars.forEach(star => {
-        star.classList.remove('hover-preview');
-      });
     }
   });
 }

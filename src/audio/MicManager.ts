@@ -4,7 +4,7 @@
  * Manages:
  * - getUserMedia() microphone access and device selection
  * - Professional broadcast audio processing chain
- * - Radio broadcast effects (compressor, EQ, limiter, de-esser)
+ * - Radio broadcast effects (compressor, EQ, limiter)
  * - Microphone stream lifecycle and cleanup
  * 
  * Part of the audio system rewrite to fix Electron renderer crashes.
@@ -20,7 +20,6 @@ interface ProcessingState {
   compressor: boolean;
   eq: boolean;
   limiter: boolean;
-  deesser: boolean;
 }
 
 /**
@@ -36,15 +35,13 @@ let micEqLowNode: BiquadFilterNode | null = null;
 let micEqMidNode: BiquadFilterNode | null = null;
 let micEqHighNode: BiquadFilterNode | null = null;
 let micLimiterNode: DynamicsCompressorNode | null = null;
-let micDeEsserNode: DynamicsCompressorNode | null = null;
 let micProcessingGain: GainNode | null = null;
 
-// Processing state (defaults: compressor ON, EQ ON, limiter ON, de-esser OFF)
+// Processing state (defaults: compressor ON, EQ ON, limiter ON)
 let processingState: ProcessingState = {
   compressor: true,
   eq: true,
-  limiter: true,
-  deesser: false
+  limiter: true
 };
 
 /**
@@ -176,55 +173,47 @@ async function initializeRadioProcessing(): Promise<void> {
   micProcessingGain = ctx.createGain();
   micProcessingGain.gain.setValueAtTime(1.0, ctx.currentTime);
   
-  // Professional Radio Compressor
+  // Professional Radio Compressor - MODERATE settings
   micCompressorNode = ctx.createDynamicsCompressor();
-  micCompressorNode.threshold.setValueAtTime(-18, ctx.currentTime);  // -18dB threshold
-  micCompressorNode.knee.setValueAtTime(15, ctx.currentTime);        // 15dB knee
-  micCompressorNode.ratio.setValueAtTime(8, ctx.currentTime);        // 8:1 ratio
-  micCompressorNode.attack.setValueAtTime(0.001, ctx.currentTime);   // 1ms attack
-  micCompressorNode.release.setValueAtTime(0.1, ctx.currentTime);    // 100ms release
+  micCompressorNode.threshold.setValueAtTime(-24, ctx.currentTime);  // -24dB threshold (more gentle)
+  micCompressorNode.knee.setValueAtTime(12, ctx.currentTime);        // 12dB knee (softer)
+  micCompressorNode.ratio.setValueAtTime(4, ctx.currentTime);        // 4:1 ratio (less aggressive)
+  micCompressorNode.attack.setValueAtTime(0.003, ctx.currentTime);   // 3ms attack (more natural)
+  micCompressorNode.release.setValueAtTime(0.15, ctx.currentTime);   // 150ms release (smoother)
   
-  // 3-Band EQ for Voice Optimization
+  // 3-Band EQ for Voice Optimization - REDUCED boost/cut
   micEqLowNode = ctx.createBiquadFilter();
   micEqLowNode.type = 'peaking';
   micEqLowNode.frequency.setValueAtTime(200, ctx.currentTime);
   micEqLowNode.Q.setValueAtTime(1.0, ctx.currentTime);
-  micEqLowNode.gain.setValueAtTime(-2, ctx.currentTime); // Reduce muddiness
+  micEqLowNode.gain.setValueAtTime(-1, ctx.currentTime); // Reduce muddiness (less cut)
   
   micEqMidNode = ctx.createBiquadFilter();
   micEqMidNode.type = 'peaking';
   micEqMidNode.frequency.setValueAtTime(2500, ctx.currentTime);
   micEqMidNode.Q.setValueAtTime(1.2, ctx.currentTime);
-  micEqMidNode.gain.setValueAtTime(4, ctx.currentTime); // Presence boost
+  micEqMidNode.gain.setValueAtTime(2, ctx.currentTime); // Presence boost (reduced from 4)
   
   micEqHighNode = ctx.createBiquadFilter();
   micEqHighNode.type = 'peaking';
   micEqHighNode.frequency.setValueAtTime(8000, ctx.currentTime);
   micEqHighNode.Q.setValueAtTime(0.8, ctx.currentTime);
-  micEqHighNode.gain.setValueAtTime(2, ctx.currentTime); // Air/brightness
+  micEqHighNode.gain.setValueAtTime(1, ctx.currentTime); // Air/brightness (reduced from 2)
   
-  // Broadcast Limiter (prevents clipping)
+  // Broadcast Limiter (prevents clipping) - MODERATE settings
   micLimiterNode = ctx.createDynamicsCompressor();
-  micLimiterNode.threshold.setValueAtTime(-3, ctx.currentTime);      // -3dB threshold
-  micLimiterNode.knee.setValueAtTime(0, ctx.currentTime);            // Hard knee
-  micLimiterNode.ratio.setValueAtTime(20, ctx.currentTime);          // 20:1 ratio
-  micLimiterNode.attack.setValueAtTime(0.0001, ctx.currentTime);     // 0.1ms attack
-  micLimiterNode.release.setValueAtTime(0.05, ctx.currentTime);      // 50ms release
-  
-  // De-Esser (frequency-specific compressor)
-  micDeEsserNode = ctx.createDynamicsCompressor();
-  micDeEsserNode.threshold.setValueAtTime(-20, ctx.currentTime);
-  micDeEsserNode.knee.setValueAtTime(5, ctx.currentTime);
-  micDeEsserNode.ratio.setValueAtTime(6, ctx.currentTime);
-  micDeEsserNode.attack.setValueAtTime(0.001, ctx.currentTime);
-  micDeEsserNode.release.setValueAtTime(0.1, ctx.currentTime);
+  micLimiterNode.threshold.setValueAtTime(-6, ctx.currentTime);      // -6dB threshold (less limiting)
+  micLimiterNode.knee.setValueAtTime(2, ctx.currentTime);            // 2dB knee (softer)
+  micLimiterNode.ratio.setValueAtTime(12, ctx.currentTime);          // 12:1 ratio (less brick-wall)
+  micLimiterNode.attack.setValueAtTime(0.001, ctx.currentTime);      // 1ms attack
+  micLimiterNode.release.setValueAtTime(0.08, ctx.currentTime);      // 80ms release (faster recovery)
   
   console.log('✅ MicManager: Broadcast processing initialized');
 }
 
 /**
  * Setup microphone with professional broadcast processing chain
- * Creates: Mic → High-Pass → PreAmp → Compressor → EQ → De-Esser → Limiter → Output → Analyser → Mixer
+ * Creates: Mic → High-Pass → PreAmp → Compressor → EQ → Limiter → Output → Analyser → Mixer
  * 
  * @returns true if setup successful, false otherwise
  */
@@ -237,8 +226,14 @@ export async function setupMicrophone(): Promise<boolean> {
     return false;
   }
   
+  // If microphone is already active and stream exists, don't re-initialize
+  if (micActive && microphoneStream) {
+    console.log('✅ MicManager: Microphone already active, skipping setup');
+    return true;
+  }
+  
   try {
-    // Clean up existing stream
+    // Clean up existing stream (only if switching devices or re-initializing)
     if (microphoneStream) {
       microphoneStream.getTracks().forEach(track => {
         track.stop();
@@ -328,29 +323,30 @@ export async function setupMicrophone(): Promise<boolean> {
     highPassFilter.frequency.setValueAtTime(85, ctx.currentTime); // 85Hz cutoff
     highPassFilter.Q.setValueAtTime(0.7, ctx.currentTime);
     
-    // 2. PREAMP/INPUT GAIN (boost before compression)
+    // 2. PREAMP/INPUT GAIN (boost before compression) - REDUCED for natural sound
     const preAmp = ctx.createGain();
-    preAmp.gain.setValueAtTime(2.5, ctx.currentTime); // +8dB input gain
+    preAmp.gain.setValueAtTime(0, ctx.currentTime); // Start at 0 for fade-in
+    preAmp.gain.linearRampToValueAtTime(1.5, ctx.currentTime + 0.05); // Fade to +3.5dB over 50ms
     
     // 3. Initialize processing nodes if not already created
     if (!micCompressorNode) {
       await initializeRadioProcessing();
     }
     
-    // 4. OUTPUT GAIN (final level control)
+    // 4. OUTPUT GAIN (final level control) - REDUCED for natural sound
     const outputGain = ctx.createGain();
-    outputGain.gain.setValueAtTime(1.8, ctx.currentTime); // +5dB output
+    outputGain.gain.setValueAtTime(0, ctx.currentTime); // Start at 0 for fade-in
+    outputGain.gain.linearRampToValueAtTime(1.2, ctx.currentTime + 0.05); // Fade to +1.6dB over 50ms
     
     // 📻 WIRE UP PROCESSING CHAIN 📻
-    // Mic → High-Pass → PreAmp → Compressor → EQ (Low/Mid/High) → De-Esser → Limiter → Output → Analyser → Mic Gain
+    // Mic → High-Pass → PreAmp → Compressor → EQ (Low/Mid/High) → Limiter → Output → Analyser → Mic Gain
     micSourceNode.connect(highPassFilter);
     highPassFilter.connect(preAmp);
     preAmp.connect(micCompressorNode!);
     micCompressorNode!.connect(micEqLowNode!);
     micEqLowNode!.connect(micEqMidNode!);
     micEqMidNode!.connect(micEqHighNode!);
-    micEqHighNode!.connect(micDeEsserNode!);
-    micDeEsserNode!.connect(micLimiterNode!);
+    micEqHighNode!.connect(micLimiterNode!);
     micLimiterNode!.connect(outputGain);
     outputGain.connect(micAnalyser);
     micAnalyser.connect(micGain); // Connect to microphone gain from AudioManager
@@ -390,7 +386,7 @@ export async function setupMicrophone(): Promise<boolean> {
 /**
  * Toggle radio broadcast processing effects
  */
-export function toggleProcessing(process: 'compressor' | 'eq' | 'limiter' | 'deesser'): void {
+export function toggleProcessing(process: 'compressor' | 'eq' | 'limiter'): void {
   const ctx = AudioManager.getContext();
   if (!ctx) return;
   
@@ -400,31 +396,24 @@ export function toggleProcessing(process: 'compressor' | 'eq' | 'limiter' | 'dee
   switch (process) {
     case 'compressor':
       if (micCompressorNode) {
-        micCompressorNode.ratio.setValueAtTime(isActive ? 8 : 1, ctx.currentTime);
-        console.log(`📻 MicManager COMPRESSOR: ${isActive ? 'ON (8:1)' : 'OFF (1:1)'}`);
+        micCompressorNode.ratio.setValueAtTime(isActive ? 4 : 1, ctx.currentTime);
+        console.log(`📻 MicManager COMPRESSOR: ${isActive ? 'ON (4:1)' : 'OFF (1:1)'}`);
       }
       break;
       
     case 'eq':
       if (micEqLowNode && micEqMidNode && micEqHighNode) {
-        micEqLowNode.gain.setValueAtTime(isActive ? -2 : 0, ctx.currentTime);
-        micEqMidNode.gain.setValueAtTime(isActive ? 4 : 0, ctx.currentTime);
-        micEqHighNode.gain.setValueAtTime(isActive ? 2 : 0, ctx.currentTime);
+        micEqLowNode.gain.setValueAtTime(isActive ? -1 : 0, ctx.currentTime);
+        micEqMidNode.gain.setValueAtTime(isActive ? 2 : 0, ctx.currentTime);
+        micEqHighNode.gain.setValueAtTime(isActive ? 1 : 0, ctx.currentTime);
         console.log(`📻 MicManager EQ: ${isActive ? 'ON (voice optimized)' : 'OFF (flat)'}`);
       }
       break;
       
     case 'limiter':
       if (micLimiterNode) {
-        micLimiterNode.threshold.setValueAtTime(isActive ? -3 : 0, ctx.currentTime);
-        console.log(`📻 MicManager LIMITER: ${isActive ? 'ON (-3dB)' : 'OFF (0dB)'}`);
-      }
-      break;
-      
-    case 'deesser':
-      if (micDeEsserNode) {
-        micDeEsserNode.ratio.setValueAtTime(isActive ? 6 : 1, ctx.currentTime);
-        console.log(`📻 MicManager DE-ESSER: ${isActive ? 'ON (6:1)' : 'OFF (1:1)'}`);
+        micLimiterNode.threshold.setValueAtTime(isActive ? -6 : 0, ctx.currentTime);
+        console.log(`📻 MicManager LIMITER: ${isActive ? 'ON (-6dB)' : 'OFF (0dB)'}`);
       }
       break;
   }
@@ -466,8 +455,7 @@ export function cleanup(): void {
     micEqLowNode,
     micEqMidNode,
     micEqHighNode,
-    micLimiterNode,
-    micDeEsserNode
+    micLimiterNode
   ];
   
   nodes.forEach(node => {
@@ -487,7 +475,6 @@ export function cleanup(): void {
   micEqMidNode = null;
   micEqHighNode = null;
   micLimiterNode = null;
-  micDeEsserNode = null;
   micActive = false;
   
   console.log('✅ MicManager: Cleaned up');
@@ -507,8 +494,7 @@ export function getState() {
       eqLow: micEqLowNode !== null,
       eqMid: micEqMidNode !== null,
       eqHigh: micEqHighNode !== null,
-      limiter: micLimiterNode !== null,
-      deesser: micDeEsserNode !== null
+      limiter: micLimiterNode !== null
     }
   };
 }

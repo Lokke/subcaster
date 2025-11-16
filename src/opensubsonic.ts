@@ -43,7 +43,7 @@ interface OpenSubsonicAlbum {
   id: string;
   name: string;
   artist: string;
-  artistId: string;
+  artistId?: string;
   songCount: number;
   duration: number;
   year?: number;

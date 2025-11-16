@@ -3787,8 +3787,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   micDeEsserBtn?.addEventListener('click', () => {
-    toggleRadioProcessing('deesser');
-    micDeEsserBtn.classList.toggle('active', micProcessingState.deesser);
+    // De-esser removed - feature was ineffective
+    console.log('De-esser feature removed');
   });
 
   // AzuraCast Station Dropdown Initialization (Triggered by STREAM button)
@@ -4498,7 +4498,7 @@ async function initializeRadioProcessing(): Promise<void> {
 // ============================================================================
 // FACADE: Toggle Radio Processing (routes to MicManager - Phase 4)
 // ============================================================================
-function toggleRadioProcessing(process: 'compressor' | 'eq' | 'limiter' | 'deesser'): void {
+function toggleRadioProcessing(process: 'compressor' | 'eq' | 'limiter'): void {
   // Route to new MicManager module
   MicManager.toggleProcessing(process);
 }
@@ -5366,7 +5366,9 @@ function addDragListeners(container: Element) {
         id: albumId,
         name: albumName,
         artist: artistName,
-        artistId: albumCard.dataset.artistId
+        artistId: albumCard.dataset.artistId || undefined,
+        songCount: 0,
+        duration: 0
       };
       
       showAlbumContextMenu(mouseEvent, album, openSubsonicClient, addToQueue, contextMenu);

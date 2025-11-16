@@ -11816,6 +11816,7 @@ function findSongById(songId: string): OpenSubsonicSong | null {
 
 // Rating-Event-Listeners initialisieren
 function initializeRatingListeners() {
+  // Global click handler for rating stars
   document.addEventListener('click', async (event) => {
     const target = event.target as HTMLElement;
     
@@ -11845,6 +11846,118 @@ function initializeRatingListeners() {
         // Async Rating laden für bessere Performance
         loadRatingAsync(songId);
       }
+    }
+  });
+  
+  // Global hover handler for rating preview - shows filled stars up to hovered position
+  // Using mouseover instead of mouseenter since we need event delegation on document level
+  let lastHoveredStar: HTMLElement | null = null;
+  
+  document.addEventListener('mouseover', (event) => {
+    const target = event.target as HTMLElement;
+    
+    if (target.classList.contains('star') || target.classList.contains('rating-star')) {
+      // Prevent duplicate hover updates
+      if (lastHoveredStar === target) return;
+      lastHoveredStar = target;
+      
+      const rating = parseInt(target.dataset.rating || '0');
+      const songId = target.dataset.songId;
+      
+      if (songId && rating > 0) {
+        // Update ALL instances of this song's rating display with hover preview
+        updateRatingHoverPreview(songId, rating);
+      }
+    }
+  });
+  
+  // Clear hover when leaving any star
+  document.addEventListener('mouseout', (event) => {
+    const target = event.target as HTMLElement;
+    const relatedTarget = (event as MouseEvent).relatedTarget as HTMLElement;
+    
+    if (target.classList.contains('star') || target.classList.contains('rating-star')) {
+      // Only clear if we're not moving to another star of the same song
+      const songId = target.dataset.songId;
+      
+      if (!relatedTarget || 
+          (!relatedTarget.classList.contains('star') && !relatedTarget.classList.contains('rating-star')) ||
+          relatedTarget.dataset.songId !== songId) {
+        
+        if (songId) {
+          lastHoveredStar = null;
+          // Clear hover preview for ALL instances of this song
+          clearRatingHoverPreview(songId);
+        }
+      }
+    }
+  });
+}
+
+// Update rating hover preview globally for all instances of a song
+function updateRatingHoverPreview(songId: string, hoverRating: number) {
+  // Find all rating containers for this song (library, queue, player decks)
+  const ratingContainers = document.querySelectorAll(
+    `[data-song-id="${songId}"] .rating-stars, .rating-stars[data-song-id="${songId}"], ` +
+    `[data-song-id="${songId}"] .track-rating, .track-rating[data-song-id="${songId}"]`
+  );
+  
+  ratingContainers.forEach(container => {
+    const stars = container.querySelectorAll('.star, .rating-star');
+    stars.forEach((star, index) => {
+      const starRating = index + 1;
+      if (starRating <= hoverRating) {
+        star.classList.add('hover-preview');
+      } else {
+        star.classList.remove('hover-preview');
+      }
+    });
+  });
+  
+  // Also update player deck ratings for this song
+  ['a', 'b', 'c', 'd'].forEach(deck => {
+    const playerRating = document.getElementById(`player-rating-${deck}`);
+    const audio = document.getElementById(`audio-${deck}`) as HTMLAudioElement;
+    
+    if (playerRating && audio && audio.dataset.songId === songId) {
+      const stars = playerRating.querySelectorAll('.star, .rating-star');
+      stars.forEach((star, index) => {
+        const starRating = index + 1;
+        if (starRating <= hoverRating) {
+          star.classList.add('hover-preview');
+        } else {
+          star.classList.remove('hover-preview');
+        }
+      });
+    }
+  });
+}
+
+// Clear rating hover preview globally for all instances of a song
+function clearRatingHoverPreview(songId: string) {
+  // Find all rating containers for this song (library, queue, player decks)
+  const ratingContainers = document.querySelectorAll(
+    `[data-song-id="${songId}"] .rating-stars, .rating-stars[data-song-id="${songId}"], ` +
+    `[data-song-id="${songId}"] .track-rating, .track-rating[data-song-id="${songId}"]`
+  );
+  
+  ratingContainers.forEach(container => {
+    const stars = container.querySelectorAll('.star, .rating-star');
+    stars.forEach(star => {
+      star.classList.remove('hover-preview');
+    });
+  });
+  
+  // Also clear player deck ratings for this song
+  ['a', 'b', 'c', 'd'].forEach(deck => {
+    const playerRating = document.getElementById(`player-rating-${deck}`);
+    const audio = document.getElementById(`audio-${deck}`) as HTMLAudioElement;
+    
+    if (playerRating && audio && audio.dataset.songId === songId) {
+      const stars = playerRating.querySelectorAll('.star, .rating-star');
+      stars.forEach(star => {
+        star.classList.remove('hover-preview');
+      });
     }
   });
 }
@@ -13281,34 +13394,8 @@ function showAlbumDetailView(album: OpenSubsonicAlbum, tracks: OpenSubsonicSong[
     }, 150);
   });
   
-  // Add rating handlers
-  const ratingContainers = detailView.querySelectorAll('.track-rating');
-  ratingContainers.forEach(container => {
-    const trackId = container.getAttribute('data-track-id');
-    const stars = container.querySelectorAll('.star');
-    
-    stars.forEach((star, index) => {
-      const starElement = star as HTMLElement;
-      
-      // Hover effects
-      starElement.addEventListener('mouseenter', () => {
-        stars.forEach((s, i) => {
-          s.classList.toggle('hover', i <= index);
-        });
-      });
-      
-      starElement.addEventListener('mouseleave', () => {
-        stars.forEach(s => s.classList.remove('hover'));
-      });
-      
-      // Click to rate
-      starElement.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const rating = parseInt(starElement.getAttribute('data-rating') || '0');
-        await updateTrackRating(trackId!, rating);
-      });
-    });
-  });
+  // Note: Rating handlers are now managed globally by initializeRatingListeners()
+  // No need for local event listeners anymore - hover and click work across all instances
 }
 
 // Show artist detail view
@@ -14805,45 +14892,17 @@ class MediaContainer {
       this.enableSmartDragScrolling();
     }
     
-    // Add rating handlers for songs
-    this.setupSongRatingHandlers();
+    // Note: Rating handlers are now managed globally by initializeRatingListeners()
+    // No need for local event listeners anymore - hover and click work across all instances
     
     // Add click handlers for albums and artists
     this.setupAlbumAndArtistClickHandlers();
   }
   
   private setupSongRatingHandlers() {
-    if (!this.container) return;
-    
-    const ratingContainers = this.container.querySelectorAll('.song-rating');
-    ratingContainers.forEach(container => {
-      const songId = container.getAttribute('data-song-id');
-      const stars = container.querySelectorAll('.star');
-      
-      stars.forEach((star, index) => {
-        const starElement = star as HTMLElement;
-        
-        // Hover effects
-        starElement.addEventListener('mouseenter', () => {
-          stars.forEach((s, i) => {
-            s.classList.toggle('hover', i <= index);
-          });
-        });
-        
-        starElement.addEventListener('mouseleave', () => {
-          stars.forEach(s => s.classList.remove('hover'));
-        });
-        
-        // Click to rate
-        starElement.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const rating = parseInt(starElement.getAttribute('data-rating') || '0');
-          if (songId) {
-            await updateTrackRating(songId, rating);
-          }
-        });
-      });
-    });
+    // DEPRECATED: Rating handlers are now global via initializeRatingListeners()
+    // This method kept for backwards compatibility but does nothing
+    return;
   }
 
   private createMediaElement(item: MediaItem): HTMLElement {

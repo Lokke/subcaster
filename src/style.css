@@ -7481,7 +7481,6 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
 
 .star:hover {
   color: #ffd700;
-  transform: scale(1.2);
 }
 
 .star.filled {
@@ -7489,9 +7488,11 @@ body:has(#player-c[style*="display: none"]):has(#player-d[style*="display: none"
   text-shadow: 0 0 4px rgba(255, 215, 0, 0.5);
 }
 
+/* Hover preview: Show filled stars up to hovered position */
 .star.hover-preview,
 .rating-star.hover-preview {
-  color: #ffed4a;
+  color: #ffd700 !important;
+  text-shadow: 0 0 4px rgba(255, 215, 0, 0.5);
 }
 
 /* Player Rating Styles */
